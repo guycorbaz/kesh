@@ -52,8 +52,10 @@
 		buildReportSearch,
 		isClassicTab,
 		parseReportUrl,
+		reportPart,
 		resolveClassicPeriod,
 		type ClassicTab,
+		type Presentation,
 		type TabId,
 	} from '$lib/features/reports/reports-url';
 	import { etatDuMenu, type EtatMenu } from '$lib/features/reports/fiscal-year-menu';
@@ -272,15 +274,16 @@
 		const report = activeTab as GroupedReport;
 		setGroupingView(report, next);
 		const displayed = displayedReport(report);
-		// Revue P1 M2 (a) — pendant le premier chargement (`loading`, rien
-		// d'affiché), la demande en vol est partie avec l'ancienne vue : la
-		// redemander, sans quoi les contrôles diraient une vue que l'écran
-		// n'affiche pas. Un chargement complet reste un chargement complet.
-		const loadingThis = loading && inFlightTab === report;
+		// Revue P1 M2 (a) — pendant une demande de ce rapport, elle est partie avec
+		// l'ancienne vue : la redemander, sans quoi les contrôles diraient une vue
+		// que l'écran n'affiche pas. Story 55-1b (T0) : chargement **ou rechargement**
+		// (`refreshing`, d'autres paramètres en vol) — la requête en vol est reprise,
+		// non celle du rapport affiché, sans quoi la période demandée serait perdue.
+		const inFlightThis = inFlightTab === report && inFlightClassic !== null;
 		// Story 55-1a — la redemande porte sur la période du rapport affiché (ou de la demande en vol),
 		// non sur des champs modifiés depuis : seule la présentation change.
-		if (loadingThis) {
-			void generate({ keepDisplay: false, classicQuery: inFlightClassic ?? undefined });
+		if (inFlightThis) {
+			void generate({ keepDisplay: displayed !== null, classicQuery: inFlightClassic ?? undefined });
 		} else if (displayed) {
 			void generate({ keepDisplay: true, classicQuery: displayedClassic[report] });
 		}
@@ -308,7 +311,9 @@
 	function resyncActiveGroupedTab(): void {
 		if (!isGroupedReport(activeTab)) return;
 		const displayed = displayedReport(activeTab);
-		if (displayed && !loading && !displayedMatchesView(activeTab)) {
+		// Story 55-1b — ni pendant une demande de CET onglet (redemande comprise, `refreshing`) : elle
+		// est déjà partie avec la vue des contrôles, ou `loadActiveIfNeeded` l'a jugée (V6-5).
+		if (displayed && !loading && inFlightTab !== activeTab && !displayedMatchesView(activeTab)) {
 			void generate({ keepDisplay: true, classicQuery: displayedClassic[activeTab] });
 		}
 	}
@@ -466,9 +471,23 @@
 		return { fiscalYearId: menu.id, periodStart, periodEnd };
 	}
 
-	/** La clé (recherche canonique) d'un rapport classique pour une requête. */
-	function classicKey(tab: ClassicTab, q: ReportQuery): string {
-		return buildReportSearch({ tab, fy: q.fiscalYearId, from: q.periodStart, to: q.periodEnd });
+	/**
+	 * La clé (recherche canonique) d'un rapport classique pour une requête. Story 55-1b (D4) : sur un
+	 * onglet groupé, la présentation en fait partie (`presentation`), sans quoi deux présentations du même
+	 * rapport auraient la même clé.
+	 */
+	function classicKey(tab: ClassicTab, q: ReportQuery, presentation?: Presentation): string {
+		return buildReportSearch({ tab, fy: q.fiscalYearId, from: q.periodStart, to: q.periodEnd, presentation });
+	}
+
+	/** La présentation de paramètres de regroupement : `'flat'` quand aucun n'est envoyé (hiérarchie masquée). */
+	function presentationOfParams(params: GroupingParams | undefined): Presentation {
+		return params ?? 'flat';
+	}
+
+	/** La présentation des contrôles d'un onglet groupé (celle qu'une demande enverrait), sinon rien. */
+	function controlsPresentation(tab: TabId): Presentation | undefined {
+		return isGroupedReport(tab) ? presentationOfParams(groupingParamsOf(groupingViews[tab])) : undefined;
 	}
 
 	/** La clé du grand livre pour une requête. */
@@ -489,7 +508,7 @@
 	function fieldsKey(tab: TabId): string | null {
 		if (isClassicTab(tab)) {
 			const q = classicQueryOfFields();
-			return q ? classicKey(tab, q) : null;
+			return q ? classicKey(tab, q, controlsPresentation(tab)) : null;
 		}
 		if (tab === 'general-ledger') {
 			const q = ledgerQuery();
@@ -506,7 +525,32 @@
 	 */
 	function urlForTab(tab: TabId): string {
 		if (tab === 'general-ledger') return displayedKeys[tab] ?? buildReportSearch({ tab });
-		return fieldsKey(tab) ?? buildReportSearch({ tab, from: periodStart, to: periodEnd });
+		const key = fieldsKey(tab);
+		if (key === null) return buildReportSearch({ tab, from: periodStart, to: periodEnd });
+		// Story 55-1b (D4, C-55-1b-2) — la présentation n'entre dans l'URL que par la réponse : si l'onglet
+		// affiche ce rapport (mêmes paramètres) et que la demande en vol n'est pas celle des champs, l'URL
+		// est la clé AFFICHÉE ; la réponse d'une redemande l'écrira.
+		const shown = displayedKeys[tab];
+		const champsEnVol = inFlightTab === tab && inFlightKey === key;
+		if (isGroupedReport(tab) && !champsEnVol && shown !== undefined && reportPart(shown) === reportPart(key)) {
+			return shown;
+		}
+		return key;
+	}
+
+	/**
+	 * Story 55-1b (D4, R-1) — la réponse acceptée d'un onglet groupé écrit sa clé affichée (écho compris),
+	 * en remplaçant l'entrée : seulement pour l'onglet actif, et seulement si la dernière adresse écrite
+	 * ou appliquée par la page désigne encore **le même rapport** que la requête (présentation exceptée).
+	 * Une navigation entre-temps vers un autre onglet, d'autres dates ou d'autres paramètres a changé
+	 * cette adresse : elle n'est pas réécrite. ⚠️ Comparer à `lastHandledKey` et non à `page.url` relevée
+	 * au départ : un geste lance sa demande avant d'écrire son adresse (`selectTab`, `commitPeriod`).
+	 */
+	function writeUrlAtResponse(tab: TabId, requestKey: string): void {
+		const shown = displayedKeys[tab];
+		if (tab !== activeTab || shown === undefined || lastHandledKey === null) return;
+		if (reportPart(lastHandledKey) !== reportPart(requestKey)) return;
+		writeUrl(shown, true);
 	}
 
 	/**
@@ -613,8 +657,15 @@
 		if (!query) return;
 		const keepDisplay = options.keepDisplay ?? isDisplayed(myTab);
 		const mySeq = invalidateInFlight();
+		// Story 55-1b — la présentation envoyée fait partie de la clé en vol (onglets groupés).
+		const sentGrouping = isGroupedReport(myTab) ? groupingParamsOf(groupingViews[myTab]) : undefined;
+		const requestKey = classicKey(
+			myTab,
+			query,
+			isGroupedReport(myTab) ? presentationOfParams(sentGrouping) : undefined,
+		);
 		inFlightTab = myTab;
-		inFlightKey = classicKey(myTab, query);
+		inFlightKey = requestKey;
 		inFlightClassic = query;
 		if (keepDisplay) refreshing = true;
 		else loading = true;
@@ -623,35 +674,43 @@
 			displayedKeys[myTab] = classicKey(myTab, query);
 			displayedClassic[myTab] = query;
 		};
+		/** Story 55-1b — un rapport groupé accepté : sa clé porte la présentation de la réponse (écho compris). */
+		const acceptGroupedKey = (report: GroupedReport) => {
+			displayedKeys[report] = classicKey(report, query, presentationOfParams(displayedGrouping[report]));
+			writeUrlAtResponse(report, requestKey);
+		};
 		try {
 			switch (myTab) {
 				case 'balance-sheet': {
-					const params = groupingParamsOf(groupingViews['balance-sheet']);
+					const params = sentGrouping;
 					const result = await getBalanceSheet(query, params);
 					if (mySeq === genSeq) {
 						balanceSheet = result;
 						accept();
 						acceptGrouped('balance-sheet', params, result);
+						acceptGroupedKey('balance-sheet');
 					}
 					break;
 				}
 				case 'income-statement': {
-					const params = groupingParamsOf(groupingViews['income-statement']);
+					const params = sentGrouping;
 					const result = await getIncomeStatement(query, params);
 					if (mySeq === genSeq) {
 						incomeStatement = result;
 						accept();
 						acceptGrouped('income-statement', params, result);
+						acceptGroupedKey('income-statement');
 					}
 					break;
 				}
 				case 'trial-balance': {
-					const params = groupingParamsOf(groupingViews['trial-balance']);
+					const params = sentGrouping;
 					const result = await getTrialBalance(query, params);
 					if (mySeq === genSeq) {
 						trialBalance = result;
 						accept();
 						acceptGrouped('trial-balance', params, result);
+						acceptGroupedKey('trial-balance');
 					}
 					break;
 				}
@@ -715,14 +774,29 @@
 	 * les champs ne le demandent pas, ou si c'est déjà la demande en vol ; repris de la mémoire si c'est
 	 * le rapport affiché — et une demande de CET onglet en vol avec une autre clé est alors périmée
 	 * (l'écran garde le rapport des champs, R-1, R-17) ; demandé sinon. Rend vrai si une requête est partie.
+	 *
+	 * @param options.byClick — Story 55-1b (R-3, AC-5) : au CLIC sur un onglet groupé, un rapport affiché qui
+	 *   ne diffère des champs que par la présentation est repris de la mémoire, sans requête : la règle de
+	 *   la 46-2 (`resyncActiveGroupedTab`) le redemande, tout de suite ou à la fin de la génération d'un
+	 *   autre onglet, qu'elle n'interrompt pas. Une adresse (Retour, lien) le demande, elle (55-1a, AC-13).
 	 */
-	function loadActiveIfNeeded(): boolean {
+	function loadActiveIfNeeded(options: { byClick?: boolean } = {}): boolean {
 		const tab = activeTab;
 		const key = fieldsKey(tab);
 		if (key === null) return false;
 		if (inFlightTab === tab && inFlightKey === key) return false;
-		if (displayedKeys[tab] === key) {
+		const shown = displayedKeys[tab];
+		if (shown === key) {
 			if (inFlightTab === tab) invalidateInFlight();
+			return false;
+		}
+		if (
+			options.byClick &&
+			isGroupedReport(tab) &&
+			inFlightTab !== tab &&
+			shown !== undefined &&
+			reportPart(shown) === reportPart(key)
+		) {
 			return false;
 		}
 		void generate();
@@ -763,14 +837,21 @@
 	const hiddenByMenu = $derived(
 		isClassicTab(activeTab) && data.fiscalYears.length > 0 && menu.kind !== 'fy',
 	);
-	let canExport = $derived(
-		!activeBusy &&
+	// Story 55-1b — la présentation n'y entre pas : l'export reprend celle de la réponse affichée
+	// (`displayedGrouping`, 46-2 AC-6), même quand les contrôles en demandent une autre (redemande en erreur).
+	let canExport = $derived.by(() => {
+		const shown = displayedKeys[activeTab];
+		const fields = fieldsKey(activeTab);
+		return (
+			!activeBusy &&
 			!exporting &&
 			isClassicTab(activeTab) &&
 			activeReportPeriod() !== null &&
-			displayedKeys[activeTab] !== undefined &&
-			displayedKeys[activeTab] === fieldsKey(activeTab),
-	);
+			shown !== undefined &&
+			fields !== null &&
+			reportPart(shown) === reportPart(fields)
+		);
+	});
 
 	/**
 	 * Handler factorisé : déclenche le download d'un rapport au format demandé.
@@ -985,6 +1066,9 @@
 		if (isClassicTab(tab)) {
 			const r = resolveClassicPeriod(p, data.fiscalYears);
 			if (r) setPeriod(r.from, r.to);
+			// Story 55-1b (D4) — une adresse complète d'un onglet groupé pose sa présentation (URL d'abord) ;
+			// une adresse incomplète ne change pas la vue.
+			if (r?.fy != null && isGroupedReport(tab)) applyPresentation(tab, p.presentation);
 			requested = loadActiveIfNeeded();
 		} else if (tab === 'general-ledger') {
 			// Le grand livre ne se charge seul que sur une adresse complète (sa sortie de la 55-2).
@@ -998,15 +1082,37 @@
 		} else if (tab === 'aged-receivables') {
 			requested = loadActiveIfNeeded();
 		}
-		// Règle de la 46-2 (V8-1) : un rapport groupé repris de la mémoire est remis d'accord.
-		if (!requested) resyncActiveGroupedTab();
 		const canonical =
 			tab === 'general-ledger'
 				? p.from && p.to
 					? (fieldsKey(tab) ?? buildReportSearch({ ...p, tab }))
 					: buildReportSearch({ ...p, tab })
 				: urlForTab(tab);
+		// Règle de la 46-2 (V8-1) : un rapport groupé repris de la mémoire est remis d'accord.
+		if (!requested) resyncActiveGroupedTab();
 		writeUrl(canonical, true);
+	}
+
+	/**
+	 * Story 55-1b (D4, C-55-1b-1) — la présentation d'une adresse complète devient celle des contrôles (et
+	 * de la mémoire du navigateur, `setGroupingView`) : `view=flat` masque la hiérarchie en gardant les
+	 * autres choix ; une présentation valide est prise tout entière (champs absents : vue par défaut) ;
+	 * sans présentation valide, la vue des contrôles reste (elle porte déjà la mémoire).
+	 */
+	function applyPresentation(tab: GroupedReport, presentation: Presentation | null): void {
+		if (presentation === null) return;
+		const current = groupingViews[tab];
+		const next: GroupingView =
+			presentation === 'flat'
+				? { ...current, shown: false }
+				: {
+						shown: true,
+						detailLevel: presentation.detailLevel,
+						subtotalPosition: presentation.subtotalPosition,
+						open: [...presentation.open],
+						closed: [...presentation.closed],
+					};
+		if (JSON.stringify(next) !== JSON.stringify(current)) setGroupingView(tab, next);
 	}
 
 	$effect(() => {
@@ -1046,11 +1152,14 @@
 		activeTab = next;
 		errorMsg = null;
 		const requested =
-			(isClassicTab(next) || next === 'aged-receivables') && loadActiveIfNeeded();
+			(isClassicTab(next) || next === 'aged-receivables') && loadActiveIfNeeded({ byClick: true });
+		// Story 55-1b — l'adresse est calculée AVANT la règle de la 46-2 : une redemande de présentation
+		// n'entre dans l'URL que par sa réponse (le clic empile la clé affichée).
+		const url = urlForTab(next);
 		// Story 46-2, revue P1 M2 (b) — retour sur un rapport groupé dont la redemande a été jetée :
 		// l'écran est remis d'accord avec ses contrôles (ou, si une génération est en vol, à sa fin).
 		if (!requested) resyncActiveGroupedTab();
-		writeUrl(urlForTab(next), replace);
+		writeUrl(url, replace);
 	}
 
 	// ----- Gestes de la période (D15, D16) -------------------------------------------------

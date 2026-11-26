@@ -68,6 +68,9 @@ const FY26 = { id: 2, companyId: 7, name: 'Exercice 2026', startDate: '2026-01-0
 const data = { fiscalYears: [FY26, FY25], companyName: 'Test SA', companyId: 7 } as never;
 
 const URL_BILAN_26 = 'tab=balance-sheet&fy=2&from=2026-01-01&to=2026-12-31';
+// Story 55-1b (D4) — la présentation des contrôles (vue par défaut : mémoire vide), écrite après les paramètres.
+const PRES = '&view=grouped&level=all&subtotals=header';
+const URL_BILAN_26_P = URL_BILAN_26 + PRES;
 
 function bilan(q: ReportQuery): BalanceSheetDto {
 	return {
@@ -141,7 +144,7 @@ describe('arrivée, rechargement, lien partagé (AC-4, AC-5, D16)', () => {
 		const r = await monter('/reports');
 		expect(appels(m.getBalanceSheet)).toBe(1);
 		expect(m.getBalanceSheet.mock.calls[0][0]).toEqual({ fiscalYearId: 2, periodStart: '2026-01-01', periodEnd: '2026-12-31' });
-		expect(rechercheCourante()).toBe(URL_BILAN_26);
+		expect(rechercheCourante()).toBe(URL_BILAN_26_P);
 		expect(historique.entrees).toHaveLength(1);
 		expect(onglet(r, 'Bilan').getAttribute('aria-selected')).toBe('true');
 		expect(du(r).value).toBe('2026-01-01');
@@ -156,15 +159,18 @@ describe('arrivée, rechargement, lien partagé (AC-4, AC-5, D16)', () => {
 		expect(du(r).value).toBe('2025-02-01');
 		expect(au(r).value).toBe('2025-03-31');
 		expect((r.getByRole('combobox', { name: 'Exercice' }) as HTMLSelectElement).value).toBe('1');
-		expect(m.goto).not.toHaveBeenCalled(); // déjà canonique
+		// Story 55-1b — une seule normalisation, sans entrée : la présentation des contrôles s'ajoute.
+		expect(m.goto).toHaveBeenCalledTimes(1);
+		expect(rechercheCourante()).toBe('tab=income-statement&fy=1&from=2025-02-01&to=2025-03-31' + PRES);
+		expect(historique.entrees).toHaveLength(1);
 	});
 
 	it.each([
-		['tab=xyz', URL_BILAN_26],
-		['tab=balance-sheet&fy=999999', URL_BILAN_26],
-		['tab=balance-sheet&fy=abc', URL_BILAN_26],
-		['tab=balance-sheet&from=2026-02-30&to=2026-03-31', URL_BILAN_26],
-		['tab=balance-sheet&fy=2&from=2026-01-01&to=2026-12-31&accountId=4', URL_BILAN_26],
+		['tab=xyz', URL_BILAN_26_P],
+		['tab=balance-sheet&fy=999999', URL_BILAN_26_P],
+		['tab=balance-sheet&fy=abc', URL_BILAN_26_P],
+		['tab=balance-sheet&from=2026-02-30&to=2026-03-31', URL_BILAN_26_P],
+		['tab=balance-sheet&fy=2&from=2026-01-01&to=2026-12-31&accountId=4', URL_BILAN_26_P],
 		['tab=general-ledger&from=2026-01-01&to=2026-12-31&accountId=-3', 'tab=general-ledger&from=2026-01-01&to=2026-12-31'],
 		['tab=general-ledger&from=2026-01-01&to=2026-06-30&accountId=5', 'tab=general-ledger&accountId=5&from=2026-01-01&to=2026-06-30'],
 	])('valeur invalide ou ordre non canonique (%s) : ignorée, adresse normalisée sans entrée', async (entree, canonique) => {
@@ -178,7 +184,7 @@ describe('arrivée, rechargement, lien partagé (AC-4, AC-5, D16)', () => {
 	it('un fy qui contredit les dates est réécrit : les dates décident (R-9)', async () => {
 		await monter('/reports?tab=balance-sheet&fy=1&from=2026-01-01&to=2026-06-30');
 		expect(m.getBalanceSheet.mock.calls[0][0]).toMatchObject({ fiscalYearId: 2 });
-		expect(rechercheCourante()).toBe('tab=balance-sheet&fy=2&from=2026-01-01&to=2026-06-30');
+		expect(rechercheCourante()).toBe('tab=balance-sheet&fy=2&from=2026-01-01&to=2026-06-30' + PRES);
 	});
 
 	it('balance âgée par son adresse : chargée, 1 requête, 0 goto (AC-7)', async () => {
@@ -216,7 +222,7 @@ describe('Retour et Suivant (AC-1, AC-2, AC-13)', () => {
 		await fireEvent.click(onglet(r, 'Compte de résultat'));
 		await pause();
 		expect(appels(m.getIncomeStatement)).toBe(1);
-		expect(rechercheCourante()).toBe('tab=income-statement&fy=2&from=2026-01-01&to=2026-12-31');
+		expect(rechercheCourante()).toBe('tab=income-statement&fy=2&from=2026-01-01&to=2026-12-31' + PRES);
 		expect(historique.entrees).toHaveLength(2);
 		retour();
 		await tick();
@@ -310,7 +316,7 @@ describe('le chargement sans Générer (D16, AC-20 à AC-26)', () => {
 		await pause();
 		expect(appels(m.getBalanceSheet)).toBe(2);
 		expect(m.getBalanceSheet.mock.calls[1][0]).toMatchObject({ periodStart: '2026-04-01', periodEnd: '2026-12-31' });
-		expect(rechercheCourante()).toBe('tab=balance-sheet&fy=2&from=2026-04-01&to=2026-12-31');
+		expect(rechercheCourante()).toBe('tab=balance-sheet&fy=2&from=2026-04-01&to=2026-12-31' + PRES);
 		expect(historique.entrees).toHaveLength(1);
 	});
 
@@ -390,7 +396,7 @@ describe('le chargement sans Générer (D16, AC-20 à AC-26)', () => {
 		await pause();
 		expect(appels(m.getBalanceSheet)).toBe(1);
 		expect(m.getIncomeStatement.mock.calls[0][0]).toMatchObject({ periodEnd: '2026-06-30' });
-		expect(rechercheCourante()).toBe('tab=income-statement&fy=2&from=2026-01-01&to=2026-06-30');
+		expect(rechercheCourante()).toBe('tab=income-statement&fy=2&from=2026-01-01&to=2026-06-30' + PRES);
 		retour(); // l'onglet quitté garde son rapport et sa clé : sans requête
 		await tick();
 		await pause();
@@ -461,7 +467,7 @@ describe('le chargement sans Générer (D16, AC-20 à AC-26)', () => {
 		expect(r.getByTestId('report-needs-one-fy')).toBeTruthy();
 		const select = r.getByRole('combobox', { name: 'Exercice' }) as HTMLSelectElement;
 		expect(select.value).toBe('__multiple');
-		expect(rechercheCourante()).toBe(URL_BILAN_26);
+		expect(rechercheCourante()).toBe(URL_BILAN_26_P);
 		await fireEvent.input(du(r), { target: { value: '2026-06-01' } });
 		await fireEvent.focusOut(du(r), { relatedTarget: null });
 		await pause();
@@ -553,6 +559,452 @@ describe('X1 de la 46-2 rejoué avec une adresse qui suit goto (AC-6)', () => {
 		// la règle de la 46-2 redemande le bilan à la fin de l'autre chargement, sans passer à vide
 		expect(appels(m.getBalanceSheet)).toBe(avant + 1);
 		expect(m.getBalanceSheet.mock.calls.at(-1)?.[1]).toMatchObject({ detailLevel: 1 });
-		expect(rechercheCourante()).toBe(URL_BILAN_26);
+		expect(rechercheCourante()).toBe(URL_BILAN_26 + '&view=grouped&level=1&subtotals=header'); // 55-1b : la réponse écrit la clé affichée
 	});
 });
+
+// =====================================================================================
+// Story 55-1b (D4) — la présentation des rapports groupés dans l'URL : lue à l'arrivée et à chaque
+// navigation (l'URL prime sur la mémoire), écrite par la seule réponse affichée (écho compris).
+// =====================================================================================
+
+describe('la présentation dans l’URL (Story 55-1b)', () => {
+	const CLE_MEMOIRE = 'kesh-report-grouping:7:balance-sheet';
+	/** Un bilan groupé : l'écho de l'API rend les paramètres reçus, le groupe 77 « disparu du plan » en moins. */
+	const groupe = (q: ReportQuery, p?: Record<string, unknown>) => ({
+		...bilan(q),
+		...(p
+			? {
+					grouping: {
+						...p,
+						open: ((p.open as number[]) ?? []).filter((id) => id !== 77),
+						closed: ((p.closed as number[]) ?? []).filter((id) => id !== 77),
+						maxDepth: 5,
+					},
+					groupedRows: {
+						assets: [{ kind: 'group', depth: 1, accountId: 90, accountNumber: '10', accountName: 'Actifs', balance: '100', open: true }],
+						liabilities: [],
+						equity: [],
+					},
+				}
+			: {}),
+	});
+	const niveau = (r: R) => r.getByTestId('grouping-level') as HTMLSelectElement;
+	const changerNiveau = (r: R, v: string) => fireEvent.change(niveau(r), { target: { value: v } });
+	/** Les paramètres de regroupement de la dernière demande du bilan. */
+	const dernierBilan = () => m.getBalanceSheet.mock.calls.at(-1)?.[1];
+	/** Une redemande du bilan suspendue. */
+	function bilanSuspendu() {
+		let finir!: () => void;
+		m.getBalanceSheet.mockImplementationOnce(
+			(q: ReportQuery, p?: Record<string, unknown>) => new Promise((res) => (finir = () => res(groupe(q, p)))),
+		);
+		return () => finir();
+	}
+	const memoire = () => JSON.parse(localStorage.getItem(CLE_MEMOIRE) ?? 'null');
+	const avec = (pres: string) => `${URL_BILAN_26}${pres}`;
+	const L2 = '&view=grouped&level=2&subtotals=header';
+	const L3 = '&view=grouped&level=3&subtotals=header';
+
+	beforeEach(() => {
+		m.getBalanceSheet.mockImplementation(async (q: ReportQuery, p?: Record<string, unknown>) => groupe(q, p));
+	});
+
+	it('AC-1, AC-2 — une adresse avec présentation l’emporte sur la mémoire, qui la prend ensuite', async () => {
+		localStorage.setItem(CLE_MEMOIRE, JSON.stringify({ shown: true, detailLevel: 2, subtotalPosition: 'header', open: [], closed: [] }));
+		const r = await monter(`/reports?${avec('&view=grouped&level=3&subtotals=footer&open=10')}`);
+		expect(appels(m.getBalanceSheet)).toBe(1);
+		expect(dernierBilan()).toEqual({ detailLevel: 3, subtotalPosition: 'footer', open: [10], closed: [] });
+		expect(niveau(r).value).toBe('3');
+		expect((r.getByTestId('grouping-position') as HTMLSelectElement).value).toBe('footer');
+		expect(memoire()).toMatchObject({ detailLevel: 3, subtotalPosition: 'footer', open: [10] });
+		expect(m.goto).not.toHaveBeenCalled(); // canonique, la réponse égale l'adresse
+	});
+
+	it('AC-3 — adresse complète sans présentation : la vue des contrôles (mémoire), 1 requête, 1 goto', async () => {
+		localStorage.setItem(CLE_MEMOIRE, JSON.stringify({ shown: true, detailLevel: 2, subtotalPosition: 'header', open: [], closed: [] }));
+		await monter(`/reports?${URL_BILAN_26}`);
+		expect(appels(m.getBalanceSheet)).toBe(1);
+		expect(dernierBilan()).toMatchObject({ detailLevel: 2 });
+		expect(m.goto).toHaveBeenCalledTimes(1);
+		expect(rechercheCourante()).toBe(avec(L2));
+	});
+
+	it('AC-3 — bilan gardé par la page avec cette vue : 0 requête, 1 goto', async () => {
+		const r = await monter('/reports');
+		await fireEvent.click(onglet(r, 'Compte de résultat'));
+		await pause();
+		m.goto.mockClear();
+		const avant = appels(m.getBalanceSheet);
+		naviguer(`/reports?${URL_BILAN_26}`); // un lien sans présentation
+		await tick();
+		await pause();
+		expect(appels(m.getBalanceSheet)).toBe(avant);
+		expect(m.goto).toHaveBeenCalledTimes(1);
+		expect(rechercheCourante()).toBe(URL_BILAN_26_P);
+	});
+
+	it('AC-4, AC-6 — Retour vers une autre présentation : le Bilan au niveau 2, contrôles au niveau 2', async () => {
+		const r = await monter('/reports');
+		await r.findByTestId('grouped-group-10');
+		await changerNiveau(r, '2');
+		await pause();
+		expect(rechercheCourante()).toBe(avec(L2)); // la réponse a écrit la présentation
+		await fireEvent.click(onglet(r, 'Compte de résultat'));
+		await pause();
+		await fireEvent.click(onglet(r, 'Bilan'));
+		await pause();
+		expect(rechercheCourante()).toBe(avec(L2)); // le clic empile la clé affichée
+		await changerNiveau(r, '3');
+		await pause();
+		expect(rechercheCourante()).toBe(avec(L3));
+		const avant = appels(m.getBalanceSheet);
+		retour();
+		await tick();
+		await pause();
+		retour();
+		await tick();
+		await pause();
+		expect(onglet(r, 'Bilan').getAttribute('aria-selected')).toBe('true');
+		expect(niveau(r).value).toBe('2');
+		expect(appels(m.getBalanceSheet)).toBe(avant + 1);
+		expect(dernierBilan()).toMatchObject({ detailLevel: 2 });
+		expect(rechercheCourante()).toBe(avec(L2));
+	});
+
+	it('AC-6 — un geste de présentation n’écrit pas l’URL : 0 goto avant la réponse, 1 à la réponse, 2 écritures en mémoire', async () => {
+		const r = await monter('/reports');
+		await r.findByTestId('grouped-group-10');
+		m.goto.mockClear();
+		const ecrire = vi.spyOn(Storage.prototype, 'setItem');
+		const finir = bilanSuspendu();
+		await changerNiveau(r, '2');
+		await tick();
+		expect(m.goto).not.toHaveBeenCalled();
+		expect(appels(m.getBalanceSheet)).toBe(2);
+		finir();
+		await pause();
+		expect(m.goto).toHaveBeenCalledTimes(1);
+		expect(m.goto.mock.calls[0][1]).toMatchObject({ replaceState: true });
+		expect(rechercheCourante()).toBe(avec(L2));
+		expect(ecrire.mock.calls.filter((c) => c[0] === CLE_MEMOIRE)).toHaveLength(2);
+		ecrire.mockRestore();
+	});
+
+	it('AC-6 — sans rapport affiché ni chargement : un geste de présentation ne fait rien (0 goto, 0 requête)', async () => {
+		m.getBalanceSheet.mockImplementationOnce(async () => {
+			throw new Error('réseau');
+		});
+		const r = await monter('/reports');
+		m.goto.mockClear();
+		await changerNiveau(r, 'all');
+		await fireEvent.click(r.getByTestId('grouping-shown'));
+		await pause();
+		expect(appels(m.getBalanceSheet)).toBe(1);
+		expect(m.goto).not.toHaveBeenCalled();
+	});
+
+	it('AC-5 — X1 par Retour : la vue de l’entrée, 0 requête, l’autre chargement n’est pas interrompu', async () => {
+		const r = await monter('/reports');
+		await r.findByTestId('grouped-group-10');
+		const finirResultat = suspendre(m.getIncomeStatement, resultat);
+		bilanSuspendu();
+		await changerNiveau(r, '2'); // redemande en vol
+		await fireEvent.click(onglet(r, 'Compte de résultat')); // la périme
+		const avant = appels(m.getBalanceSheet);
+		retour(); // vers le Bilan tel qu'affiché
+		await tick();
+		await pause();
+		expect(niveau(r).value).toBe('all');
+		expect(appels(m.getBalanceSheet)).toBe(avant);
+		finirResultat();
+		await pause();
+		expect(appels(m.getBalanceSheet)).toBe(avant); // la règle de la 46-2 ne redemande rien : accord
+		// le compte de résultat a bien été accepté : revenir dessus ne le redemande pas
+		const avantResultat = appels(m.getIncomeStatement);
+		await fireEvent.click(onglet(r, 'Compte de résultat'));
+		await pause();
+		expect(appels(m.getIncomeStatement)).toBe(avantResultat);
+	});
+
+	it('V5-5 (a) — clic, contrôles différents de l’affiché, rien en vol : 1 requête, 2 goto (clé affichée, puis réponse)', async () => {
+		const r = await monter('/reports');
+		await r.findByTestId('grouped-group-10');
+		bilanSuspendu();
+		await changerNiveau(r, '2');
+		await fireEvent.click(onglet(r, 'Compte de résultat')); // périme la redemande
+		await pause();
+		m.goto.mockClear();
+		const avant = appels(m.getBalanceSheet);
+		await fireEvent.click(onglet(r, 'Bilan'));
+		await pause();
+		expect(appels(m.getBalanceSheet)).toBe(avant + 1);
+		expect(dernierBilan()).toMatchObject({ detailLevel: 2 });
+		expect(m.goto).toHaveBeenCalledTimes(2);
+		expect(m.goto.mock.calls[0][0]).toBe(`?${URL_BILAN_26_P}`);
+		expect(m.goto.mock.calls[0][1]).toMatchObject({ replaceState: false });
+		expect(rechercheCourante()).toBe(avec(L2));
+	});
+
+	it('flèches du clavier comme le clic : la clé affichée, présentation comprise, en remplaçant', async () => {
+		const r = await monter(`/reports?${avec(L2)}`);
+		await fireEvent.click(onglet(r, 'Compte de résultat'));
+		await pause();
+		const longueur = historique.entrees.length;
+		await fireEvent.keyDown(onglet(r, 'Compte de résultat'), { key: 'ArrowLeft' });
+		await pause();
+		expect(rechercheCourante()).toBe(avec(L2));
+		expect(historique.entrees).toHaveLength(longueur);
+	});
+
+	it('AC-7 — écho : un groupe disparu sort de l’URL et de la mémoire ; Retour puis Suivant : 0 requête', async () => {
+		const r = await monter(`/reports?${avec('&view=grouped&level=2&subtotals=header&open=10%2C77')}`);
+		expect(dernierBilan()).toMatchObject({ open: [10, 77] });
+		expect(rechercheCourante()).toBe(avec('&view=grouped&level=2&subtotals=header&open=10'));
+		expect(memoire()).toMatchObject({ open: [10] });
+		await fireEvent.click(onglet(r, 'Compte de résultat'));
+		await pause();
+		const avant = appels(m.getBalanceSheet);
+		retour();
+		await tick();
+		await pause();
+		suivant();
+		await tick();
+		await pause();
+		expect(appels(m.getBalanceSheet)).toBe(avant);
+	});
+
+	it.each([
+		['&level=0', PRES],
+		['&level=21', PRES],
+		['&level=03', PRES],
+		['&level=3.0', PRES],
+		['&level=%2B3', PRES],
+		['&level=ALL', PRES],
+		['&open=1,a', PRES],
+		['&open=1,,2', PRES],
+		['&open=99999999999999999999', PRES],
+		['&closed=x', PRES],
+		['&view=xyz', PRES],
+		['&open=', PRES],
+		['&open=5&closed=5', PRES],
+		['&view=flat&level=3', '&view=flat'],
+	])('AC-8 — %s : ignoré, adresse normalisée, rien d’invalide envoyé', async (pres, attendu) => {
+		await monter(`/reports?${URL_BILAN_26}${pres}`);
+		expect(appels(m.getBalanceSheet)).toBe(1);
+		expect(dernierBilan()).toEqual(
+			attendu === '&view=flat' ? undefined : { detailLevel: 'all', subtotalPosition: 'header', open: [], closed: [] },
+		);
+		expect(rechercheCourante()).toBe(URL_BILAN_26 + attendu);
+		expect(historique.entrees).toHaveLength(1);
+	});
+
+	it('AC-8 — 501 identifiants : la liste est ignorée', async () => {
+		const ids = Array.from({ length: 501 }, (_, i) => i + 1).join(',');
+		await monter(`/reports?${URL_BILAN_26}&open=${ids}`);
+		expect(dernierBilan()).toMatchObject({ open: [] });
+		expect(rechercheCourante()).toBe(URL_BILAN_26_P);
+	});
+
+	it('AC-8 — un paramètre invalide seul laisse la vue des contrôles (mémoire)', async () => {
+		localStorage.setItem(CLE_MEMOIRE, JSON.stringify({ shown: true, detailLevel: 2, subtotalPosition: 'header', open: [], closed: [] }));
+		await monter(`/reports?${URL_BILAN_26}&level=0&open=5&closed=5`);
+		expect(dernierBilan()).toMatchObject({ detailLevel: 2 });
+		expect(rechercheCourante()).toBe(avec(L2));
+	});
+
+	it('C-55-1b-4 — une adresse incomplète ne lit pas sa présentation : le rapport des champs, vue des contrôles', async () => {
+		const r = await monter('/reports?tab=balance-sheet&level=3');
+		expect(dernierBilan()).toMatchObject({ detailLevel: 'all' });
+		expect(niveau(r).value).toBe('all');
+		expect(rechercheCourante()).toBe(URL_BILAN_26_P);
+	});
+
+	it('AC-9 — view=flat sur des contrôles au niveau 2 : à plat, puis « hiérarchie montrée » rend le niveau 2', async () => {
+		localStorage.setItem(CLE_MEMOIRE, JSON.stringify({ shown: true, detailLevel: 2, subtotalPosition: 'footer', open: [], closed: [] }));
+		const r = await monter(`/reports?${avec('&view=flat')}`);
+		expect(dernierBilan()).toBeUndefined();
+		expect((r.getByTestId('grouping-shown') as HTMLInputElement).checked).toBe(false);
+		expect(rechercheCourante()).toBe(avec('&view=flat'));
+		await fireEvent.click(r.getByTestId('grouping-shown'));
+		await pause();
+		expect(dernierBilan()).toEqual({ detailLevel: 2, subtotalPosition: 'footer', open: [], closed: [] });
+		expect(rechercheCourante()).toBe(avec('&view=grouped&level=2&subtotals=footer'));
+	});
+
+	it('AC-10 — Retour deux fois pendant une redemande de l’onglet : 0 requête, redemande périmée, écran et contrôles au niveau 2', async () => {
+		const r = await monter(`/reports?${avec(L2)}`);
+		await fireEvent.click(onglet(r, 'Compte de résultat'));
+		await pause();
+		await fireEvent.click(onglet(r, 'Bilan'));
+		await pause();
+		const finir = bilanSuspendu();
+		await changerNiveau(r, '3');
+		const avant = appels(m.getBalanceSheet);
+		retour();
+		await tick();
+		await pause();
+		retour();
+		await tick();
+		await pause();
+		expect(appels(m.getBalanceSheet)).toBe(avant);
+		expect(niveau(r).value).toBe('2');
+		finir(); // périmée : ni affichée, ni écrite
+		await pause();
+		expect(rechercheCourante()).toBe(avec(L2));
+		expect(r.getByRole('tabpanel').getAttribute('aria-busy')).toBe('false');
+		expect(memoire()).toMatchObject({ detailLevel: 2 });
+	});
+
+	it('AC-10 — de même avec une autre période en vol (dates changées et quittées), Retour deux fois : 0 requête', async () => {
+		const r = await monter(`/reports?${avec(L2)}`);
+		await fireEvent.click(onglet(r, 'Compte de résultat'));
+		await pause();
+		await fireEvent.click(onglet(r, 'Bilan'));
+		await pause();
+		const finir = bilanSuspendu();
+		await fireEvent.input(du(r), { target: { value: '2026-04-01' } });
+		await fireEvent.focusOut(du(r), { relatedTarget: null });
+		const avant = appels(m.getBalanceSheet);
+		retour();
+		await tick();
+		await pause();
+		expect(onglet(r, 'Compte de résultat').getAttribute('aria-selected')).toBe('true');
+		retour();
+		await tick();
+		await pause();
+		expect(appels(m.getBalanceSheet)).toBe(avant);
+		finir();
+		await pause();
+		expect(r.getByTestId('report-period-heading').textContent).toContain('Exercice 2026 — du 01.01.2026 au 31.12.2026');
+		expect(rechercheCourante()).toBe(avec(L2));
+	});
+
+	it('AC-10 — une adresse égale à la clé en vol : 0 requête ; la réponse égale l’adresse', async () => {
+		const r = await monter(`/reports?${avec(L2)}`);
+		const finir = bilanSuspendu();
+		await changerNiveau(r, '3');
+		const avant = appels(m.getBalanceSheet);
+		naviguer(`/reports?${avec(L3)}`);
+		await tick();
+		await pause();
+		expect(appels(m.getBalanceSheet)).toBe(avant);
+		m.goto.mockClear();
+		finir();
+		await pause();
+		expect(m.goto).not.toHaveBeenCalled();
+		expect(rechercheCourante()).toBe(avec(L3));
+	});
+
+	it('V6-2 — une troisième clé pendant une redemande de l’onglet : 1 requête, la redemande ancienne ne s’affiche pas', async () => {
+		const r = await monter(`/reports?${avec(L2)}`);
+		const finir = bilanSuspendu();
+		await changerNiveau(r, '3');
+		const avant = appels(m.getBalanceSheet);
+		naviguer(`/reports?${avec('&view=grouped&level=4&subtotals=header')}`);
+		await tick();
+		await pause();
+		expect(appels(m.getBalanceSheet)).toBe(avant + 1);
+		expect(dernierBilan()).toMatchObject({ detailLevel: 4 });
+		finir(); // la redemande du niveau 3 répond après : périmée
+		await pause();
+		expect(niveau(r).value).toBe('4');
+		expect(rechercheCourante()).toBe(avec('&view=grouped&level=4&subtotals=header'));
+	});
+
+	it('R-2 — Retour vers d’autres paramètres pendant une redemande : le rapport reste affiché, grisé, puis celui de l’adresse', async () => {
+		const r = await monter(`/reports?${avec(L2)}`);
+		bilanSuspendu();
+		await changerNiveau(r, '3');
+		const finirAutre = bilanSuspendu();
+		naviguer('/reports?tab=balance-sheet&fy=2&from=2026-01-01&to=2026-06-30');
+		await tick();
+		expect(r.getByRole('tabpanel').getAttribute('aria-busy')).toBe('true');
+		expect(r.getByTestId('report-content').className).toContain('opacity-60');
+		finirAutre();
+		await pause();
+		expect(r.getByTestId('report-period-heading').textContent).toContain('30.06.2026');
+		expect(rechercheCourante()).toBe('tab=balance-sheet&fy=2&from=2026-01-01&to=2026-06-30' + L3);
+	});
+
+	it.each([
+		['un autre onglet', 'tab=income-statement&fy=2&from=2026-01-01&to=2026-12-31'],
+		['des dates dans deux exercices', 'tab=balance-sheet&from=2025-06-01&to=2026-06-30'],
+	])('R-1 — navigation vers %s pendant une redemande : la réponse ne réécrit pas l’adresse', async (_nom, cible) => {
+		const r = await monter(`/reports?${avec(L2)}`);
+		const finir = bilanSuspendu();
+		await changerNiveau(r, '3');
+		naviguer(`/reports?${cible}`);
+		await tick();
+		await pause();
+		const ici = rechercheCourante();
+		expect(reportPartDe(ici)).toBe(reportPartDe(cible));
+		finir();
+		await pause();
+		expect(rechercheCourante()).toBe(ici);
+	});
+
+	it('T0 — un contrôle changé pendant le rechargement d’une autre période : la période en vol est gardée', async () => {
+		const r = await monter(`/reports?${avec(L2)}`);
+		bilanSuspendu();
+		await fireEvent.input(du(r), { target: { value: '2026-04-01' } });
+		await fireEvent.focusOut(du(r), { relatedTarget: null });
+		await changerNiveau(r, '3');
+		await pause();
+		expect(m.getBalanceSheet.mock.calls.at(-1)?.[0]).toMatchObject({ periodStart: '2026-04-01' });
+		expect(dernierBilan()).toMatchObject({ detailLevel: 3 });
+		expect(rechercheCourante()).toBe('tab=balance-sheet&fy=2&from=2026-04-01&to=2026-12-31' + L3);
+	});
+
+	it('AC-11 — export désactivé pendant un chargement lancé par Retour, puis la présentation de l’entrée', async () => {
+		const r = await monter('/reports');
+		await r.findByTestId('grouped-group-10');
+		await changerNiveau(r, '2');
+		await pause();
+		await fireEvent.click(onglet(r, 'Compte de résultat'));
+		await pause();
+		await fireEvent.click(onglet(r, 'Bilan'));
+		await pause();
+		await changerNiveau(r, '3');
+		await pause();
+		const exporter = () => r.getByRole('button', { name: 'Export CSV' }) as HTMLButtonElement;
+		const finir = bilanSuspendu();
+		retour();
+		await tick();
+		retour(); // vers l'entrée du niveau 2 : redemandée
+		await tick();
+		await pause();
+		expect(exporter().disabled).toBe(true);
+		finir();
+		await pause();
+		expect(exporter().disabled).toBe(false);
+		await fireEvent.click(exporter());
+		await waitFor(() => expect(m.downloadReport).toHaveBeenCalledTimes(1));
+		expect((m.downloadReport.mock.calls[0] as unknown[])[4]).toMatchObject({ detailLevel: 2 });
+	});
+
+	it('stockage refusé, puis Retour vers une entrée sans présentation : les contrôles ne changent pas', async () => {
+		const refus = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+			throw new Error('refusé');
+		});
+		const r = await monter('/reports');
+		await r.findByTestId('grouped-group-10');
+		await changerNiveau(r, '2');
+		await pause();
+		await fireEvent.click(onglet(r, 'Compte de résultat'));
+		await pause();
+		naviguer(`/reports?${URL_BILAN_26}`);
+		await tick();
+		await pause();
+		expect(niveau(r).value).toBe('2');
+		expect(rechercheCourante()).toBe(avec(L2));
+		refus.mockRestore();
+	});
+});
+
+/** La partie « rapport » d'une recherche (sans la présentation), pour les tests de la garde R-1. */
+function reportPartDe(s: string): string {
+	const qs = new URLSearchParams(s);
+	for (const n of ['view', 'level', 'subtotals', 'open', 'closed']) qs.delete(n);
+	return qs.toString();
+}

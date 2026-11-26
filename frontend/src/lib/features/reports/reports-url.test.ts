@@ -5,6 +5,7 @@ import {
 	buildReportSearch,
 	parseReportUrl,
 	reportHref,
+	reportPart,
 	resolveClassicPeriod,
 	REPORT_TABS,
 } from './reports-url';
@@ -26,6 +27,7 @@ describe('reports-url — lecture (D5)', () => {
 			to: '2026-03-31',
 			accountId: null,
 			includeZero: false,
+			presentation: null,
 		});
 		expect(lire('tab=general-ledger&accountId=17&from=2026-01-01&to=2026-12-31&includeZero=1')).toEqual({
 			tab: 'general-ledger',
@@ -34,6 +36,7 @@ describe('reports-url — lecture (D5)', () => {
 			to: '2026-12-31',
 			accountId: 17,
 			includeZero: true,
+			presentation: null,
 		});
 	});
 
@@ -145,5 +148,70 @@ describe('reports-url — période d’un onglet classique (AC-15, R-9)', () => 
 		expect(buildReportSearch({ tab: 'balance-sheet', fy: null, from: '2025-06-01', to: '2026-06-30' })).toBe(
 			'tab=balance-sheet&from=2025-06-01&to=2026-06-30',
 		);
+	});
+});
+
+// Story 55-1b (D4) — la présentation des onglets groupés dans l'URL.
+describe('reports-url — présentation (Story 55-1b)', () => {
+	const B = 'tab=balance-sheet&fy=2&from=2026-01-01&to=2026-12-31';
+
+	it('écriture groupée : view, level, subtotals, puis open et closed croissants, sans doublon, virgule encodée', () => {
+		expect(
+			buildReportSearch({
+				tab: 'balance-sheet',
+				fy: 2,
+				from: '2026-01-01',
+				to: '2026-12-31',
+				presentation: { detailLevel: 2, subtotalPosition: 'footer', open: [9, 3, 3], closed: [12, 4] },
+			}),
+		).toBe(`${B}&view=grouped&level=2&subtotals=footer&open=3%2C9&closed=4%2C12`);
+	});
+
+	it('écriture groupée sans liste : ni open ni closed', () => {
+		expect(
+			buildReportSearch({
+				tab: 'trial-balance',
+				fy: 2,
+				presentation: { detailLevel: 'all', subtotalPosition: 'header', open: [], closed: [] },
+			}),
+		).toBe('tab=trial-balance&fy=2&view=grouped&level=all&subtotals=header');
+	});
+
+	it('écriture à plat : view=flat seul', () => {
+		expect(buildReportSearch({ tab: 'income-statement', fy: 2, presentation: 'flat' })).toBe(
+			'tab=income-statement&fy=2&view=flat',
+		);
+	});
+
+	it('onglet sans présentation (journaux) : rien n’est écrit, rien n’est lu', () => {
+		expect(buildReportSearch({ tab: 'journals', fy: 2, presentation: 'flat' })).toBe('tab=journals&fy=2');
+		expect(lire('tab=journals&fy=2&view=flat').presentation).toBeNull();
+	});
+
+	it('lecture : la présentation, la virgule brute comme encodée ; view=flat seul retenu', () => {
+		expect(lire(`${B}&view=grouped&level=2&subtotals=footer&open=3,9`).presentation).toEqual({
+			detailLevel: 2,
+			subtotalPosition: 'footer',
+			open: [3, 9],
+			closed: [],
+		});
+		expect(lire(`${B}&open=3%2C9`).presentation).toMatchObject({ open: [3, 9] });
+		expect(lire(`${B}&view=flat&level=3`).presentation).toBe('flat');
+		expect(lire(B).presentation).toBeNull();
+		expect(lire(`${B}&open=5&closed=5`).presentation).toBeNull();
+	});
+
+	it.each([
+		`${B}&view=grouped&level=2&subtotals=footer&open=3%2C9&closed=4`,
+		`${B}&view=grouped&level=all&subtotals=header`,
+		`${B}&view=flat`,
+	])('aller-retour canonique : %s', (u) => {
+		expect(buildReportSearch({ ...lire(u), tab: 'balance-sheet' })).toBe(u);
+	});
+
+	it('reportPart retire la présentation, et elle seule', () => {
+		expect(reportPart(`${B}&view=grouped&level=2&subtotals=footer&open=3%2C9`)).toBe(B);
+		expect(reportPart(`${B}&view=flat`)).toBe(B);
+		expect(reportPart(B)).toBe(B);
 	});
 });

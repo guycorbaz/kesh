@@ -4,13 +4,16 @@
  * onglet classique déduite de l'URL, l'exercice qui contient une date). Aucun état, aucun `goto` : la
  * page appelle ces fonctions, et seulement elle.
  *
- * **Ordre canonique** : `tab`, `fy`, `accountId`, `from`, `to`, `includeZero`, forme de
- * `URLSearchParams.toString()`. Pour le grand livre, il rend exactement la sortie historique de
+ * **Ordre canonique** : `tab`, `fy`, `accountId`, `from`, `to`, `includeZero`, puis, sur les onglets
+ * groupés (Story 55-1b), la présentation `view`, `level`, `subtotals`, `open`, `closed` ; forme de
+ * `URLSearchParams.toString()` (la virgule des listes s'écrit `%2C`, la lecture accepte aussi la virgule brute). Pour le grand livre, il rend exactement la sortie historique de
  * `ledgerHref` (`tab`, `accountId`, `from`, `to`), et `build(parse(u)) === u` pour toute URL canonique.
  */
 
 import { estDateStockable } from '$lib/shared/utils/date-filtre';
 import type { FiscalYearResponse } from '$lib/features/fiscal-years/fiscal-years.types';
+import { groupingFromParams } from './reports-grouping';
+import type { GroupingParams } from './reports.types';
 
 /** Les neuf onglets de la page des Rapports, dans l'ordre de l'écran. */
 export const REPORT_TABS = [
@@ -32,6 +35,23 @@ export type TabId = (typeof REPORT_TABS)[number];
 export type ClassicTab = 'balance-sheet' | 'income-statement' | 'trial-balance' | 'journals' | 'vat';
 
 const CLASSIC: readonly TabId[] = ['balance-sheet', 'income-statement', 'trial-balance', 'journals', 'vat'];
+
+/** Les onglets qui ont une présentation groupée (Epic 46) : le bilan, le compte de résultat, la balance. */
+const GROUPED: readonly TabId[] = ['balance-sheet', 'income-statement', 'trial-balance'];
+
+/**
+ * Story 55-1b (D4) — la présentation d'un rapport groupé dans l'URL : les paramètres de regroupement
+ * envoyés à l'API (hiérarchie montrée), ou `'flat'` (hiérarchie masquée, aucun paramètre envoyé).
+ */
+export type Presentation = GroupingParams | 'flat';
+
+/** Les paramètres de présentation, dans leur ordre canonique. */
+export const PRESENTATION_PARAMS = ['view', 'level', 'subtotals', 'open', 'closed'] as const;
+
+/** Vrai pour un onglet qui a une présentation groupée. */
+export function isGroupedTab(tab: TabId): boolean {
+	return GROUPED.includes(tab);
+}
 
 /** Vrai pour un identifiant d'onglet connu. */
 export function isTabId(value: string | null | undefined): value is TabId {
@@ -67,6 +87,12 @@ export interface ReportUrlParams {
 	accountId: number | null;
 	/** « Comptes sans mouvement » du grand livre (`includeZero=1`). */
 	includeZero: boolean;
+	/**
+	 * Story 55-1b — la présentation (onglets groupés) : `null` si l'adresse n'en porte aucun champ
+	 * valide ({@link groupingFromParams}, `anyValid` faux) ; `'flat'` pour `view=flat`, les autres champs
+	 * étant alors ignorés ; sinon la vue de l'adresse, les champs absents à leur valeur par défaut.
+	 */
+	presentation: Presentation | null;
 }
 
 const ENTIER = /^[1-9][0-9]*$/;
@@ -100,7 +126,26 @@ export function parseReportUrl(
 		to: datee && estDateStockable(to) ? to : null,
 		accountId: ledger ? entier(search.get('accountId')) : null,
 		includeZero: ledger && search.get('includeZero') === '1',
+		presentation: tab !== null && isGroupedTab(tab) ? presentationOf(search) : null,
 	};
+}
+
+/** La présentation d'une adresse (règles de `reports-grouping.ts`, aucune copie ici). */
+function presentationOf(search: URLSearchParams): Presentation | null {
+	const { view, anyValid } = groupingFromParams(search);
+	if (!anyValid) return null;
+	if (!view.shown) return 'flat';
+	return {
+		detailLevel: view.detailLevel,
+		subtotalPosition: view.subtotalPosition,
+		open: view.open,
+		closed: view.closed,
+	};
+}
+
+/** Une liste d'identifiants écrite : croissante, sans doublon. */
+function idList(ids: readonly number[]): string {
+	return [...new Set(ids)].sort((a, b) => a - b).join(',');
 }
 
 /**
@@ -116,6 +161,27 @@ export function buildReportSearch(p: Partial<ReportUrlParams> & { tab: TabId }):
 	if ((classic || ledger) && p.from) qs.set('from', p.from);
 	if ((classic || ledger) && p.to) qs.set('to', p.to);
 	if (ledger && p.includeZero) qs.set('includeZero', '1');
+	if (isGroupedTab(p.tab) && p.presentation != null) {
+		if (p.presentation === 'flat') {
+			qs.set('view', 'flat');
+		} else {
+			qs.set('view', 'grouped');
+			qs.set('level', String(p.presentation.detailLevel));
+			qs.set('subtotals', p.presentation.subtotalPosition);
+			if (p.presentation.open.length > 0) qs.set('open', idList(p.presentation.open));
+			if (p.presentation.closed.length > 0) qs.set('closed', idList(p.presentation.closed));
+		}
+	}
+	return qs.toString();
+}
+
+/**
+ * Story 55-1b — la recherche sans sa présentation : deux clés qui désignent **le même rapport** (onglet,
+ * exercice, période, compte) ont la même partie « rapport », quelle que soit leur présentation.
+ */
+export function reportPart(search: string): string {
+	const qs = new URLSearchParams(search);
+	for (const name of PRESENTATION_PARAMS) qs.delete(name);
 	return qs.toString();
 }
 
