@@ -1,6 +1,6 @@
 # Story 53-3 : L'ouverture ne se passe pas sur un compte de résultat — le contrôle des types, sous verrou (#513)
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-25 (Sonnet 5.5), worktree `kesh-53-3`, branche `story/53-3-ouverture-sous-verrou` partie de
 `origin/epic/53-ecritures-justes` à `4d540a6ea`, par le workflow `bmad-create-story`, en autonomie. Epic 53 « Écritures justes »,
@@ -254,33 +254,33 @@ n'est qu'un contrôle d'absence de régression). Le story file n'affirme que ce 
 
 ## Tâches
 
-- [ ] **T0 — étape 0 du développement (avant tout code).** Rejouer à la main : `git grep -n "find_types_by_ids_in_tx"` (appelants) et
+- [x] **T0 — étape 0 du développement (avant tout code).** Rejouer à la main : `git grep -n "find_types_by_ids_in_tx"` (appelants) et
   `git grep -n "SET .*account_type"` sur `crates/*/src` (un seul écrivain, `accounts.rs:1271`) ; relire les verrous de
   `accounts::update` (`:1132-1137`) et de `create_opening_entry` ; **recontrôler P5** par une sonde sur la base de dev (une session
   `UPDATE accounts SET account_type='Revenue'` sous `companies LOCK IN SHARE MODE`, non commitée ; une seconde exécute
   `create_opening_entry` : elle doit attendre sur `companies`) ; **revérifier l'absence d'arête neuve** (D5) avec la place de D1. Écart avec la fiche → l'écrire au Change Log.
-- [ ] **T1 — test rouge d'abord** (AC-3, AC-4 **et AC-5 (e) (1)(2)(3)**, ces derniers rouges à `4d540a6ea` **avant** T4) (AC-3, AC-4 dans `crates/kesh-db/tests/opening_balances_repository.rs` ; AC-5 (e) dans `crates/kesh-api/tests/opening_balances_e2e.rs`), **en réemployant
+- [x] **T1 — test rouge d'abord** (AC-3, AC-4 **et AC-5 (e) (1)(2)(3)**, ces derniers rouges à `4d540a6ea` **avant** T4) (AC-3, AC-4 dans `crates/kesh-db/tests/opening_balances_repository.rs` ; AC-5 (e) dans `crates/kesh-api/tests/opening_balances_e2e.rs`), **en réemployant
   `kesh_db::test_fixtures::attendre_une_requete_en_cours`** (`test_fixtures.rs:593`, Story 25-3-a-1, crochet `interrompre`), non en en copiant une ; prouver le rouge **avant**
   le correctif (journal dans `kesh-gate-logs/e533/`).
-- [ ] **T2 — `accounts.rs`** : `find_types_by_ids_in_tx` → `lock_types_by_ids_in_tx`, `ORDER BY id … LOCK IN SHARE MODE`, doc réécrite
+- [x] **T2 — `accounts.rs`** : `find_types_by_ids_in_tx` → `lock_types_by_ids_in_tx`, `ORDER BY id … LOCK IN SHARE MODE`, doc réécrite
   (« sous verrou », renvoi à P6) ; mettre à jour les deux tests existants (`opening_balances_repository.rs:260`, `:321`, dont les doc-comments `:4` et `:257`).
-- [ ] **T3 — `fiscal_years.rs`** : constante `FY_OPENING_NON_BALANCE_ACCOUNT_KEY` ; **`journal_entries.rs`** : l'étape de contrôle dans
+- [x] **T3 — `fiscal_years.rs`** : constante `FY_OPENING_NON_BALANCE_ACCOUNT_KEY` ; **`journal_entries.rs`** : l'étape de contrôle dans
   `create_opening_entry` (D1), doc de la fonction mise à jour (étapes, verrous) ; garde `rollback` comme les autres refus.
-- [ ] **T4 — `routes/opening_balances.rs`** : retirer la transaction jetée et le pré-contrôle des types (`:443-463`) ; arm de
+- [x] **T4 — `routes/opening_balances.rs`** : retirer la transaction jetée et le pré-contrôle des types (`:443-463`) ; arm de
   `map_opening_balances_error` pour la clé neuve (même `t(...)`, même repli) ; doc-comments à reprendre : `:360-363` (point 2 de la liste des
   gardes), `:443-445` (commentaire du pré-contrôle, supprimé avec lui), `:219-220` (« Toute autre erreur retombe vers le mapping global » :
   citer la clé neuve). **Ne pas toucher** `:261` (doc de `opening_balances_status`) ni `:411` (pré-check 1 UX) : toujours vraies.
-- [ ] **T5 — tests** : AC-2 et AC-5 (e) par l'API (`crates/kesh-api/tests/opening_balances_e2e.rs`) ; **AC-5 (a) à (d) au niveau du dépôt**
+- [x] **T5 — tests** : AC-2 et AC-5 (e) par l'API (`crates/kesh-api/tests/opening_balances_e2e.rs`) ; **AC-5 (a) à (d) au niveau du dépôt**
   (`opening_balances_repository.rs`, appel direct de `create_opening_entry`, sur le montage de `create_opening_entry_rejected_if_company_has_entries_in_any_fy`,
   `…_first_year_closed`, `…_not_found_for_missing_fy`).
-- [ ] **T6 — garde lexicale** (AC-8).
-- [ ] **T7 — mesures** (AC-6), journal dans `kesh-gate-logs/e533/`.
-- [ ] **T8 — mutations** (tableau ci-dessous), un journal chacune ; **greper le symptôme** après le patch : `find_types_by_ids_in_tx`,
+- [x] **T6 — garde lexicale** (AC-8).
+- [x] **T7 — mesures** (AC-6), journal dans `kesh-gate-logs/e533/`.
+- [x] **T8 — mutations** (tableau ci-dessous), un journal chacune ; **greper le symptôme** après le patch : `find_types_by_ids_in_tx`,
   `non-balance`, `Revenue.*Expense` sur tout le dépôt (code, fiches, doc-comments, tests, quatre locales i18n, manuels) — la valeur, non la
   formulation. Sites à reprendre, relus au code : `opening_balances.rs:216-217`, `:360-363` (T4) ; `opening_balances_e2e.rs:548`
   (`/// dans \`find_types_by_ids_in_tx\`, P3-ECH-LOW-1).`) ; le doc-comment de `create_opening_entry` (`journal_entries.rs:~839-856`, liste
   des verrous). `journal_entries.rs:793` (doc de `count_by_company`) et `opening_balances.rs:261`, `:411` **ne changent pas**.
-- [ ] **T9 — Dev Agent Record, Change Log, Notes de version**, `sprint-status.yaml` → `review`.
+- [x] **T9 — Dev Agent Record, Change Log, Notes de version**, `sprint-status.yaml` → `review`.
 
 ## Tests et mutations
 
@@ -397,6 +397,77 @@ doublait D3, AC-1, AC-5, AC-8, T4, les mutations et les Notes de version, est **
 - **Conclusion** : aucune prémisse démentie ; la story procède. **Constat à tracer** (AC-6 (ii)) : le plan de la requête de `validate_lines_accounts_in_tx` dépend des
   statistiques (`ALL` mesuré, donc surverrouillage de toute la table et blocage des créations de comptes) ; une issue est demandée à l'orchestrateur, aucune réécriture ici.
 
+### Commits (branche `story/53-3-ouverture-sous-verrou`, base `4d540a6ea`)
+
+`4b61e8c04` (étape 0 : V4-1 à V4-6, T0) ; `ff2c982dd` (tests rouges + clé `FY_OPENING_NON_BALANCE_ACCOUNT_KEY` seule) ; `607fb31e8` (**dernier commit de
+code** : correctif et garde lexicale) ; `98e2051af` (fusion de `origin/main` = `fbfa64a27`, qui ne touche aucun fichier de la story) ; `a4e7c2f47` (prompt de la
+revue P1) ; ce commit (Dev Agent Record, statut).
+
+### Ce qui a été écrit
+
+- `accounts::lock_types_by_ids_in_tx` (ex-`find_types_by_ids_in_tx`) : `FORCE INDEX (PRIMARY)`, `ORDER BY id`, `LOCK IN SHARE MODE`, scopée société.
+- `create_opening_entry` : étape 2-bis (lecture sous verrou, après `fiscal_years FOR UPDATE`, avant `count_by_company`), étape 4-bis (refus `Revenue`/`Expense`
+  après société vierge et statut) ; doc mise à jour (étapes, ordre des verrous : `companies` X → `fiscal_years` X → `accounts` S).
+- `fiscal_years.rs` : `FY_OPENING_NON_BALANCE_ACCOUNT_KEY` ; handler : transaction jetée et pré-contrôle retirés, arm de `map_opening_balances_error`, doc-comments
+  repris, import `accounts` retiré. Aucune clé i18n neuve, aucune migration, aucun frontend, aucune modification de manuel.
+- Tests : `opening_balances_repository.rs` (AC-3 et AC-4 en deux variantes, refus séquentiel, AC-5 a à d, renommage des deux tests de lecture) ;
+  `opening_balances_e2e.rs` (jumeau Expense d'AC-2, AC-5 e (1)(2)(3)) ; `opening_types_sous_verrou_lexical.rs` (AC-8, sondes positive et négative, motifs de M11).
+
+### Rouges au code de base (journaux `rouge-kesh-db.log`, `rouge-kesh-api.log`)
+
+Production inchangée sauf la constante : `opening_balances_repository` 6 rouges sur 19 (AC-3 Revenue et Expense : l'appel rend `Ok` ; AC-4 Revenue et Expense : panique de
+l'attente, requête de lecture des types jamais vue ; refus séquentiel : `Ok` ; AC-5 c : `InactiveOrInvalidAccounts` au lieu de `NON_BALANCE`) ; `opening_balances_e2e` 3 rouges sur
+35 (AC-5 e (1)(2)(3) : code `VALIDATION_ERROR`, message « comptes de bilan »). Les cas AC-5 a, b, d sont des gardes de non-régression, verts dès le départ.
+
+### Mutations (pilote `mutations.py`, journaux `mutations/<M>-db.log`, `-api.log` ; codes 100 = tuée)
+
+| Mutation | Résultat | Tuée par |
+|---|---|---|
+| M1 | tuée (db, api) | AC-3, AC-4, refus séquentiel, AC-2 / e2e |
+| M2 simple (lecture ordinaire avant le sentinelle) | tuée (db) | AC-3 |
+| M2 verrouillante (avant le sentinelle) | tuée (db) | **panique de l'attente** `["FROM companies WHERE id = ?", "FOR UPDATE"]`, vérifiée au journal (les deux courses) |
+| M3 (sans `Expense`) | tuée (db, api) | variantes Expense |
+| M4 (sans `LOCK IN SHARE MODE`) | tuée (db) | **panique de l'attente** `["account_type FROM accounts", "LOCK IN SHARE MODE"]` (AC-4, deux variantes), vérifiée au journal ; la garde lexicale rougit aussi (motif retiré du littéral). AC-3 seul reste vert, comme prévu : la lecture ne **attend** pas, puis ne **tient** pas le verrou — (α) et (β) de P6 i |
+| M5 (arm de mapping retiré) | tuée (api) | AC-2 |
+| M6, M6-bis | tuées (db) | AC-5 a, b |
+| M7 | tuée (db) | AC-5 d |
+| M8 | tuée (db) | AC-5 c |
+| M9 | tuée (db) | test de portée par société, AC-5 d |
+| M10 (lecture après `count_by_company`) | **vivante** (25 sur 25 verts) | **angle mort écrit** : aucun test sous 10.11 ; ne devient visible que sous MariaDB ≥ 11.6 (#669) ; protégée par le doc-comment et la place |
+| M11 (sans `FORCE INDEX`, sans `ORDER BY id`) | tuées (db) | la garde lexicale `la_requete_epingle_index_ordre_et_verrou` (la fiche annonçait « aucun test » : la garde AC-8 en ajoute un) |
+| M12 (pré-contrôle rétabli au handler) | tuée (api) | AC-5 e (1)(2)(3) |
+
+Incident de procédure : la première campagne s'est arrêtée à la première mutation sur un motif périmé (rustfmt avait reformaté l'appel) ; le pilote ouvrait le fichier avant de
+calculer la mutation et l'avait tronqué ; restauré par `git checkout` et `touch`, motifs rendus uniques par fonction, quinze motifs vérifiés avant relance. Rien n'a été commité muté.
+
+### Gates (au dernier commit de code `607fb31e8`, puis après fusion de `main`)
+
+- Avant fusion : `scripts/test-fast.sh --ci` **6580 sur 6580** passés (1 lent, 17 ignorés) ; `scripts/gate-ci.sh kesh_ci_533` **6599 passés, 0 échoué, 21 ignorés**.
+- Après fusion (`98e2051af`, migration Stripe appliquée à `kesh_533`) : `scripts/test-fast.sh --ci` **6721 sur 6721** passés (1 lent, 17 ignorés), `gate-test-fast-2.log`.
+- Frontend : `check`, `lint-i18n-ownership`, `build` : code 0 ; `test:unit` **5261 tests sur 308 fichiers** passés, `gate-front.log`.
+- `cargo fmt --check` et `clippy --workspace --all-targets -D warnings` : verts (`clippy-1.log`).
+- **E2E Playwright complet** (backend après `cd` dans le worktree, `KESH_LOCALES_DIR` absolu, ligne « 4 locales chargées » vérifiée, `LANG=fr_CH.UTF-8`, `KESH_TEST_MODE=true`
+  des deux côtés, port 3533, base `kesh_e2e_533`) : **527 passés, 20 ignorés, 7 échecs en 24,0 min**, journaux `e2e-run.log`, `e2e-backend.log`, `e2e-playwright.log`. Les sept
+  échecs, jugés fichier par fichier contre `docs/testing.md` § *Les échecs attendus*, sont exactement ceux de la KF-029 (#97) : `mode-expert.spec.ts:26` et `:41`,
+  `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77` et `:150`. Aucun autre échec, aucun échec de pollution. Aucun écran touché : pas de capture.
+  (L'E2E a tourné sur le code de `607fb31e8` fusionné avec `main` ; les commits suivants ne touchent que des comptes rendus.)
+
+### Mesures et lecture de l'AC-6
+
+Voir § T0. Lecture citée : requête neuve `type = range`, `key = PRIMARY`, `rows = 4`, sans `Using filesort` (`t0-mesures.txt`, `t0-mesures-bis.txt`) ; un compte non visé en
+`FOR UPDATE NOWAIT` réussit, un compte visé échoue en 1205, l'`INSERT` réussit (sonde (c) faite, puisque le plan de `validate` a été vu en `ALL` une fois).
+**Issue à ouvrir (AC-6 ii)** : le plan de `validate_lines_accounts_in_tx` dépend des statistiques (`ALL` mesuré sur statistiques périmées, `range` après `ANALYZE`) ; texte prêt :
+`kesh-gate-logs/e533/issue-plan-validate.md`. Issue W10 : texte au § *Décisions du Project Lead*. Les deux, à ouvrir par l'orchestrateur.
+
+### Recontrôles
+
+- Grep du symptôme : `find_types_by_ids_in_tx` ne subsiste que dans la constante de la garde lexicale et dans la prose historique de `_bmad-output` (14-4, 25-7) ; `non-balance` : un seul
+  mapping, quatre locales, aucun site périmé. Manuel (PDF aplati) : « jamais les comptes de produits ou de charges » (`user-manual.tex:1051`) reste vrai ; **aucune modification de manuel**.
+- Mots-clés de fermeture dans les commits de la branche : aucun (`refs #513` seulement).
+- Recoupements déclarés : `journal_entries.rs` avec la 53-1 (fonctions distinctes), `accounts.rs` et `fiscal_years.rs` non déclarés au fichier d'epic (ligne à ajouter par l'orchestrateur, § Dev Notes).
+- Limite : AC-3 et AC-4 prouvent la fermeture sur MariaDB 10.11 ; le comportement sous ≥ 11.6 (`ER_CHECKREAD`) n'est protégé que par la place de la lecture (M10 vivante).
+
+
 ## Change Log
 
 - 2026-11-25 — **validation terminée** (entrée unique, CLAUDE.md § *Review Iteration Rule* ; rapports `kesh-gate-logs/e533/validation-p1.md` à `-p4.md`).
@@ -412,3 +483,4 @@ doublait D3, AC-1, AC-5, AC-8, T4, les mutations et les Notes de version, est **
   **Signal de recyclage** levé en P2 et P3 (défauts nés des correctifs, tous de précision de texte) ; dérogation au splitting : § *Dérogation règle de splitting*.
 - 2026-11-25 — fiche rédigée (Sonnet 5.5). Prémisses P1-P4 lues au code ; P5 (sérialisation par la société) déduite des verrous puis **mesurée à T0** (Dev Agent Record).
 - 2026-11-25 — **développement : T0 exécuté, aucune prémisse démentie** (Dev Agent Record § *T0*) ; statut `in-progress`.
+- 2026-11-26 — **développement terminé** : correctif, tests, mutations (M10 vivante, angle mort écrit), gates et E2E verts (Dev Agent Record) ; statut `review`. Revue de code P1 : prompt versionné `53-3-ouverture-sous-verrou-code-review-prompt-p1.md`.
