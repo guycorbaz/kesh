@@ -1,6 +1,6 @@
 # Story 55-1b : la présentation des rapports groupés dans l'URL
 
-Status: ready-for-dev
+Status: in-progress
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D4. Issue : #À-VENIR (`bug`, P3, point b, comme
 la 55-1a). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration.** **Suit la 55-1a**
@@ -321,3 +321,68 @@ lien ou revenir par *Retour* remplace la présentation retenue. (refs #À-VENIR)
   lue citée au Change Log.
 - 2026-11-26 (soir) — **D16 versée** (le rapport se charge seul) : note d'en-tête et R-4 au T0, sans passe de
   remédiation (fiche au plafond) ; relue par la passe ciblée hors décompte du même jour.
+- 2026-11-27 — **T0 du développement** (base `epic/55-navigation` `5645d6890`, 55-1a développée, statut `review` ; lignes
+  relevées sur cette base). Chaque point tranché avant le code, ligne lue citée :
+  - **Base** : `+page.svelte` 1405 lignes ; `changeGrouping` `:270-287` (`if (loadingThis) { void generate({ keepDisplay:
+    false, classicQuery: inFlightClassic ?? undefined }); } else if (displayed) { void generate({ keepDisplay: true,
+    classicQuery: displayedClassic[report] }); }`) ; `resyncActiveGroupedTab` `:308-314` (`if (displayed && !loading &&
+    !displayedMatchesView(activeTab))`) ; `acceptGrouped` `:336-356` ; `generate` `:521-687`, `keepDisplay` `:614`
+    (`options.keepDisplay ?? isDisplayed(myTab)`) ; `loadActiveIfNeeded` `:719-730` ; `writeUrl` `:964-968`
+    (`lastHandledKey = search; if (page.url.search.replace(/^\?/, '') === search) return;`) ; `applyUrl` `:976-1010` ;
+    `selectTab` `:1044-1054`. `reports-grouping.ts:75-79` `readIdList` (`Number.isInteger(e) && e > 0`, sans borne
+    `Number.isSafeInteger`). `reports-url.ts` `buildReportSearch` `:115-125`. Manuel : présentation `user-manual.tex:4300-4313`
+    (« Changer la présentation d'un rapport pendant le chargement d'un autre rapport interrompt ce chargement » `:4307`,
+    « retient votre présentation » `:4309`) ; « Naviguer dans les rapports » `:4569-4577`.
+  - **R-4 (D16)** — Partout où la fiche dit « *Générer* sur un onglet groupé », lire le chargement de la 55-1a (AC-20) :
+    `commitPeriod` (`:1059-1064`, `if (loadActiveIfNeeded()) writeUrl(urlForTab(activeTab), true)`), le clic
+    (`selectTab`) et l'adresse appliquée (`applyUrl`). Ces gestes écrivent la clé des champs **avec la présentation des
+    contrôles envoyée** : l'URL égale la clé en vol, la réponse ne réécrit que si l'écho la change (§ *Ce que la page écrit*,
+    ligne *Générer*). X1 de la 46-2 se rejoue par un changement d'exercice ou une sortie des dates.
+  - **R-3** — Tranché dans le sens de la 55-1a (Change Log du T0 de la 55-1a, R-1 à R-3 : « sinon `generate()`, qui périme
+    toute demande en vol, de quelque onglet qu'elle soit (AC-13, R-3 : une adresse pendant le chargement d'un autre onglet
+    demande son rapport ») : *Retour* et un lien vers une **autre** présentation, mêmes paramètres, **demandent** le
+    rapport (`generate()`) et périment le chargement d'un autre onglet. La règle de la 46-2 (attendre la fin de l'autre
+    génération, `resyncActiveGroupedTab`) ne reste que pour le **clic** sur un onglet (AC-5, premier cas ; AC-22 de la 55-1a
+    « elle ne s'applique qu'à un rapport repris de la mémoire ») : au clic, une clé affichée qui ne diffère des champs que
+    par la présentation est reprise de la mémoire, sans requête, et `resyncActiveGroupedTab` décide. AC-12 récrit : la
+    phrase `:4307` reste vraie (un geste de présentation interrompt), et « Naviguer dans les rapports » dit déjà que
+    *Retour* et un lien abandonnent l'autre chargement (`:4575-4576`) ; la précision « un geste, non *Retour* » de l'AC-12
+    tombe.
+  - **R-2 (V6-3)** — Tranché dans le sens de la 55-1a (AC-24 : « **rechargement** : l'ancien rapport reste affiché,
+    grisé », `:614` `keepDisplay = options.keepDisplay ?? isDisplayed(myTab)`) : toute demande d'un onglet qui affiche déjà
+    un rapport le garde, grisé (`aria-busy`), quels que soient les paramètres — c'est le défaut de `generate()`, qui n'est
+    pas changé. Le « chargement complet » proposé par R-2 contredirait l'AC-24 de la 55-1a. Constat : Vitest *Retour* vers
+    d'autres paramètres pendant une redemande (rapport gardé, `aria-busy`, puis la réponse des paramètres de l'URL).
+  - **R-1 (V6-1)** — La garde « aucune navigation en cours » est retirée (défaut). Le relevé de `page.url.search` **au
+    départ** de la requête ne tient pas : le clic, le menu et la sortie des dates lancent `generate()` **avant** leur
+    `writeUrl` (`selectTab` `:1048-1053`, `commitPeriod` `:1063`), si bien que l'adresse relevée au départ est celle d'avant
+    le geste. **Garde retenue** : à la réponse acceptée d'un onglet groupé, l'URL n'est remplacée que si l'onglet est
+    l'onglet actif **et** si la dernière adresse écrite ou appliquée par la page (`lastHandledKey`, posée de façon synchrone
+    par `writeUrl` et par l'effet) désigne **le même rapport** que la requête (onglet, exercice, période ; la présentation
+    exceptée). Une navigation vers un autre onglet, vers des dates « Plusieurs » / « Hors exercice », ou vers d'autres
+    paramètres change cette adresse : rien n'est écrit. Une navigation vers le même rapport, autre présentation, périme la
+    requête (clé affichée égale) ou en lance une autre (autre clé) : la réponse périmée n'écrit rien. Tests : *Retour* vers
+    un autre onglet et vers une URL « Plusieurs » pendant une redemande (URL intacte) ; mutation « garde omise ».
+  - **Interaction relevée au T0 (corrigée dans la story)** — `changeGrouping` pendant un **rechargement** de l'onglet
+    (`refreshing`, autres paramètres en vol : sortie des dates puis contrôle changé) prend la branche `displayed` et
+    redemande `displayedClassic` (`:285`) : la période en vol est perdue. Correctif : toute demande **de cet onglet** en vol
+    (chargement ou rechargement) est redemandée avec sa requête (`inFlightClassic`) et la vue neuve. Vitest et mutation.
+  - **LOW** : V6-2 (troisième clé pendant une génération de l'onglet) → AC-10 complété d'une clause, test et mutation
+    « génération en vol non périmée » (une troisième clé demande et périme : la réponse ancienne ne s'affiche pas) ; V6-4
+    → sans objet sous D16 (la 55-1a ne laisse plus « aucune requête » quand un autre onglet génère) ; V6-5 → juste
+    (`:311` ne sort que sur `loading`) ; la péremption passe par `loadActiveIfNeeded` (`:724-726`), non par
+    `resyncActiveGroupedTab` ; V6-6 → C-55-1b-4 sous D16 : une URL **incomplète** d'un onglet groupé charge le rapport des
+    champs (55-1a, R-14) et la normalisation écrit la clé du rapport chargé, présentation des contrôles comprise ; la
+    présentation de l'adresse incomplète n'est pas lue (Vitest `?tab=balance-sheet&level=3`) ; V5-5 (a) clic, contrôles
+    différents, rien en vol : 1 requête (`resyncActiveGroupedTab`), 2 `goto` (le clic empile la clé affichée, la réponse
+    la remplace) ; (b) contrôle pendant le chargement de ce rapport : 1 requête de plus, 1 `goto` à la réponse ; V5-9 :
+    AC-10 « *Retour* deux fois » pour les deux cas, AC-7 entrée voisine sur la *Balance*, AC-1 autre vue posée par
+    `page.evaluate` sur `localStorage` avant `page.reload()` ; V5-7, V5-8 absorbés (R-1, C-55-1b-4) ; V7-1 tranché
+    (gardes Rust à la clôture), V7-2 : les specs `reports*.spec.ts` couvrent `reports-groupes.spec.ts`,
+    `reports-groupes-export.spec.ts`, `reports-balance-groupes.spec.ts`.
+  - **Issue préexistante de la fiche** (« une redemande de présentation lit le formulaire ») : **retirée**, la 55-1a l'a
+    corrigée (`:285`, `classicQuery: displayedClassic[report]`).
+  - **Modèle de clé** : la clé d'un onglet groupé (affichée, en vol, des champs) est la recherche canonique **avec** la
+    présentation : affichée = paramètres de la réponse acceptée et écho (`displayedGrouping`) ; en vol = présentation
+    envoyée ; des champs = présentation des contrôles. Lecture `groupingFromParams` (`reports-grouping.ts`), écriture
+    `buildReportSearch` (`reports-url.ts`), ordre `view`, `level`, `subtotals`, `open`, `closed`.
