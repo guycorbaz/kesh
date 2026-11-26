@@ -19,6 +19,8 @@
 		LedgerSection,
 	} from './reports.types';
 	import AccountLink from './AccountLink.svelte';
+	import EntryDocuments, { entryDocumentsButton } from './EntryDocuments.svelte';
+	import { entryDocumentsTitle } from './entry-documents';
 	import ReportPeriodHeading from './ReportPeriodHeading.svelte';
 	import type { ExerciceBornes } from './reports-url';
 
@@ -57,35 +59,48 @@
 	 * Story 15-1c-ii (AC9, C-15-1c-20) — les colonnes, **une seule fois** : les
 	 * en-têtes s'en déduisent, et chaque `colspan` aussi. « Lettrage » est la
 	 * dernière, si bien que « Débit » et « Crédit » ne bougent pas et que les
-	 * totaux du pied restent dessous.
+	 * totaux du pied restent dessous. Story 55-3b (AC-6) : « Justificatifs »,
+	 * après « Libellé », n'est présente que si une ligne du rapport en porte un
+	 * (`columns`, liste effective) — les `colspan` se dérivent de cette liste.
 	 *
-	 * ⚠️ Avant cette story, les `colspan` étaient écrits en dur (7, 8, 5) : une
+	 * ⚠️ Avant la story 15-1c-ii, les `colspan` étaient écrits en dur (7, 8, 5) : une
 	 * colonne de plus les aurait tous laissés faux, sans rien qui rougisse.
 	 */
-	const COLUMNS = [
+	const ALL_COLUMNS = [
 		{ id: 'date', right: false },
 		{ id: 'piece', right: false },
 		{ id: 'journal', right: false },
 		{ id: 'description', right: false },
+		{ id: 'documents', right: false },
 		{ id: 'counterpart', right: false },
 		{ id: 'debit', right: true },
 		{ id: 'credit', right: true },
 		{ id: 'running', right: true },
 		{ id: 'lettering', right: false }
 	] as const;
-	type ColumnId = (typeof COLUMNS)[number]['id'];
+	type ColumnId = (typeof ALL_COLUMNS)[number]['id'];
+
+	// Story 55-3b (AC-6) — condition sur le RAPPORT, non sur la section : toutes les sections ont alors le
+	// même nombre d'en-têtes.
+	const hasDocuments = $derived(dto.sections.some((s) => s.lines.some((l) => l.hasDocuments)));
+	const columns = $derived(
+		hasDocuments ? ALL_COLUMNS : ALL_COLUMNS.filter((c) => c.id !== 'documents'),
+	);
 
 	/** Le nombre de colonnes : la constante d'où se calcule tout `colspan`. */
-	const COLUMN_COUNT = COLUMNS.length;
-	const indexOf = (id: ColumnId) => COLUMNS.findIndex((c) => c.id === id);
+	const COLUMN_COUNT = $derived(columns.length);
+	const indexOf = (id: ColumnId) => columns.findIndex((c) => c.id === id);
 	/** Libellé d'une ligne de solde : tout ce qui précède le solde progressif. */
-	const BALANCE_LABEL_SPAN = indexOf('running');
+	const BALANCE_LABEL_SPAN = $derived(indexOf('running'));
 	/** Cellules vides après le solde progressif (la colonne « Lettrage »). */
-	const AFTER_BALANCE = COLUMN_COUNT - BALANCE_LABEL_SPAN - 1;
+	const AFTER_BALANCE = $derived(COLUMN_COUNT - BALANCE_LABEL_SPAN - 1);
 	/** Libellé du total des mouvements : tout ce qui précède « Débit ». */
-	const MOVEMENTS_LABEL_SPAN = indexOf('debit');
+	const MOVEMENTS_LABEL_SPAN = $derived(indexOf('debit'));
 	/** Cellules vides après « Crédit » dans le total des mouvements. */
-	const AFTER_MOVEMENTS = COLUMN_COUNT - indexOf('credit') - 1;
+	const AFTER_MOVEMENTS = $derived(COLUMN_COUNT - indexOf('credit') - 1);
+
+	// Story 55-3b (AC-6) — une instance du dialogue des justificatifs pour toute la vue.
+	let documents = $state<ReturnType<typeof EntryDocuments>>();
 
 	/** Libellé d'un en-tête — un appel littéral par clé, que lisent les gardes i18n. */
 	function columnLabel(id: ColumnId): string {
@@ -98,6 +113,8 @@
 				return i18nMsg('reports-ledger-column-journal', 'Journal');
 			case 'description':
 				return i18nMsg('reports-column-description', 'Libellé');
+			case 'documents':
+				return i18nMsg('reports-nav-ledger-column-documents', 'Justificatifs');
 			case 'counterpart':
 				return i18nMsg('reports-ledger-column-counterpart', 'Contrepartie');
 			case 'debit':
@@ -288,7 +305,7 @@
 			<table class="w-full border-collapse text-sm">
 				<thead>
 					<tr class="border-b text-left">
-						{#each COLUMNS as c (c.id)}
+						{#each columns as c (c.id)}
 							<th class="px-2 py-1" class:text-right={c.right}>{columnLabel(c.id)}</th>
 						{/each}
 					</tr>
@@ -315,6 +332,18 @@
 							<td class="px-2 py-1 font-mono">{piece(s, l)}</td>
 							<td class="px-2 py-1">{l.journal}</td>
 							<td class="px-2 py-1">{l.description}</td>
+							{#if hasDocuments}
+								<!-- Story 55-3b (AC-6) — la même icône que le Journal, le même dialogue. -->
+								<td class="px-2 py-1 text-center">
+									{#if l.hasDocuments}
+										{@render entryDocumentsButton({
+											label: entryDocumentsTitle(piece(s, l)),
+											testId: `ledger-entry-documents-${l.lineId}`,
+											onOpen: (el) => documents?.openFor(l.entryId, entryDocumentsTitle(piece(s, l)), el),
+										})}
+									{/if}
+								</td>
+							{/if}
 							<!-- Story 55-2 (AC-4, D8) — chaque contrepartie ouvre son grand livre, même période ; « , » entre elles. -->
 							<td class="px-2 py-1 font-mono text-xs" data-testid="ledger-counterpart-{l.lineId}"
 								>{#each l.counterpart as num, i (i)}{#if i > 0}{', '}{/if}<AccountLink
@@ -405,4 +434,5 @@
 			{/if}
 		</article>
 	{/each}
+	<EntryDocuments bind:this={documents} />
 </section>

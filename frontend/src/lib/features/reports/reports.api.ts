@@ -23,6 +23,7 @@ import type {
 	LedgerQuery,
 	TrialBalanceDto,
 	VatReportDto,
+	EntryDocument,
 } from './reports.types';
 
 function buildQuery(params: Record<string, string | number | undefined>): string {
@@ -644,4 +645,29 @@ export function ledgerHref(accountId: number, from: string, to: string): string 
 	// inchangée à l'octet près (`tab`, `accountId`, `from`, `to`), que l'accueil et la réévaluation
 	// emploient et que `homepage-charts.spec.ts` vérifie dans cet ordre.
 	return reportHref({ tab: 'general-ledger', accountId, from, to });
+}
+
+/**
+ * Story 55-3b (AC-2) — les justificatifs d'une écriture, lus au clic sur son icône
+ * (`GET /api/v1/journal-entries/{id}/documents`, route de la 55-3a, tout rôle authentifié).
+ */
+export async function fetchEntryDocuments(entryId: number): Promise<EntryDocument[]> {
+	return apiClient.get<EntryDocument[]>(`/api/v1/journal-entries/${entryId}/documents`);
+}
+
+/**
+ * Story 55-3b (AC-3, D12) — le PDF d'une facture, en `Blob`.
+ *
+ * ⚠️ `GET /invoices/{id}/pdf` **fige** une facture qui ne l'est pas encore : l'écran des Rapports ne l'appelle
+ * que pour un justificatif dont `pdfStatus` vaut `'frozen'` (le PDF figé, servi sans rien écrire).
+ */
+export async function fetchInvoicePdf(invoiceId: number): Promise<Blob> {
+	const response = await apiClient.getBlob(`/api/v1/invoices/${invoiceId}/pdf`);
+	return response.blob();
+}
+
+/** Story 55-3b (AC-3) — le PDF d'un avoir, en `Blob` (`GET /credit-notes/{id}/pdf`). */
+export async function fetchCreditNotePdf(creditNoteId: number): Promise<Blob> {
+	const response = await apiClient.getBlob(`/api/v1/credit-notes/${creditNoteId}/pdf`);
+	return response.blob();
 }

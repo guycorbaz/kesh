@@ -25,14 +25,21 @@
 		load: () => Promise<Blob>;
 		/** Nom du fichier : titre accessible du cadre, texte alternatif, nom téléchargé. */
 		fileName: string;
+		/**
+		 * Story 55-3b (AC-4) — facultatif : le texte d'une erreur de lecture. Une chaîne rend l'état
+		 * `document-preview-error` avec ce texte ; `undefined` (ou la propriété absente) garde le comportement
+		 * d'avant (`gone` pour `SOURCE_DOCUMENT_GONE`, texte fixe sinon). ⚠️ Lue **dans le `catch` seulement** :
+		 * une fonction neuve ne relance pas la lecture.
+		 */
+		errorMessage?: (err: unknown) => string | undefined;
 	}
 
-	let { load, fileName }: Props = $props();
+	let { load, fileName, errorMessage }: Props = $props();
 
 	type View =
 		| { kind: 'loading' }
 		| { kind: 'gone' }
-		| { kind: 'error' }
+		| { kind: 'error'; message?: string }
 		| { kind: 'ready'; url: string; type: string };
 
 	let view = $state<View>({ kind: 'loading' });
@@ -55,6 +62,12 @@
 			})
 			.catch((err: unknown) => {
 				if (cancelled) return;
+				// Lecture hors du suivi de l'effet (rappel asynchrone) : changer `errorMessage` ne relit rien.
+				const message = errorMessage?.(err);
+				if (typeof message === 'string') {
+					view = { kind: 'error', message };
+					return;
+				}
 				view =
 					isApiError(err) && err.code === 'SOURCE_DOCUMENT_GONE'
 						? { kind: 'gone' }
@@ -79,7 +92,8 @@
 		</p>
 	{:else if view.kind === 'error'}
 		<p class="text-sm text-destructive" data-testid="document-preview-error">
-			{i18nMsg('imported-supplier-invoices-preview-error', 'Le document n’a pas pu être affiché.')}
+			{view.message ??
+				i18nMsg('imported-supplier-invoices-preview-error', 'Le document n’a pas pu être affiché.')}
 		</p>
 	{:else if view.type === 'image/png' || view.type === 'image/jpeg'}
 		<img

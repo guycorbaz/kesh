@@ -4429,3 +4429,15 @@ reports-nav-heading-several = Vom { $from } bis { $to } (Geschäftsjahre { $fisc
 reports-nav-heading-outside = Vom { $from } bis { $to } (ausserhalb der Geschäftsjahre)
 # Story 55-2 (AC-6) — la ligne des comptes de TVA au grand livre, après le décompte.
 reports-nav-vat-accounts = Konten im Hauptbuch:
+# Story 55-3b (Epic 55, D9 à D12) — die Belege einer Buchung, aus dem Journal und dem Hauptbuch.
+reports-nav-documents-title = Belege der Buchung Nr. { $number }
+reports-nav-documents-kind-invoice = Rechnung
+reports-nav-documents-kind-credit-note = Gutschrift
+reports-nav-documents-kind-supplier-document = Lieferantendokument
+reports-nav-documents-list = Belege der Buchung
+reports-nav-documents-loading = Belege werden geladen…
+reports-nav-documents-none = Diese Buchung hat keinen Beleg mehr.
+reports-nav-documents-close = Schliessen
+reports-nav-documents-empty = Das erhaltene Dokument ist leer.
+reports-nav-documents-not-issued = PDF noch nicht ausgestellt: Diese Rechnung hat noch kein festgeschriebenes PDF; der nächste Download oder der nächste Versand per E-Mail schreibt es fest.
+reports-nav-ledger-column-documents = Belege

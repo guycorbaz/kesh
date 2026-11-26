@@ -225,6 +225,11 @@ export interface JournalEntryRow {
 	entryDate: string;
 	description: string;
 	lines: JournalEntryLineRow[];
+	/**
+	 * Story 55-3a (D9) — `true` quand l'écriture a au moins un justificatif (PDF de facture, d'avoir,
+	 * document de facture fournisseur) ; **absent** sinon. La liste se lit au clic (55-3b).
+	 */
+	hasDocuments?: boolean;
 }
 
 export interface JournalSection {
@@ -465,6 +470,8 @@ export interface LedgerLine {
 	rateSource?: RateSource;
 	/** Solde progressif en devise. */
 	runningBalanceCurrency?: string;
+	/** Story 55-3a (D9) — l'écriture de la ligne a au moins un justificatif ; absent sinon. */
+	hasDocuments?: boolean;
 }
 
 export interface LedgerSection {
@@ -522,4 +529,27 @@ export interface LedgerQuery {
 export interface AccountRef {
 	id: number;
 	number: string;
+}
+
+/**
+ * Story 55-3a / 55-3b (D9 à D12) — le genre d'un justificatif d'écriture :
+ * PDF d'une facture client, PDF d'un avoir, document d'une facture fournisseur.
+ */
+export type EntryDocumentKind = 'invoice' | 'creditNote' | 'supplierDocument';
+
+/**
+ * Un justificatif d'une écriture, tel que le rend `GET /api/v1/journal-entries/{id}/documents`.
+ *
+ * - `id` : facture, avoir, ou **facture fournisseur** (route de lecture du genre) ;
+ * - `number` : numéro de la pièce, `null` s'il manque ;
+ * - `fileName` : nom du fichier importé, document fournisseur seulement ;
+ * - `pdfStatus` : facture seulement, `'frozen'` ou `'notFrozen'` — ⚠️ **énumération ouverte** : l'écran ne
+ *   lit le PDF d'une facture que pour `'frozen'` (toute autre valeur : « PDF pas encore émis », D12).
+ */
+export interface EntryDocument {
+	kind: EntryDocumentKind;
+	id: number;
+	number: string | null;
+	fileName?: string;
+	pdfStatus?: string;
 }

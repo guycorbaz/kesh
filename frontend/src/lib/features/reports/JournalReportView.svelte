@@ -9,6 +9,8 @@
 		isReportEmpty,
 	} from './reports.api';
 	import AccountLink from './AccountLink.svelte';
+	import EntryDocuments, { entryDocumentsButton } from './EntryDocuments.svelte';
+	import { entryDocumentsTitle } from './entry-documents';
 	import ReportPeriodHeading from './ReportPeriodHeading.svelte';
 	import type { ExerciceBornes } from './reports-url';
 	import type { JournalEntryLineRow, JournalReportDto } from './reports.types';
@@ -22,6 +24,9 @@
 	let empty = $derived(isReportEmpty('journals', dto));
 
 	const fmt = formatReportAmount;
+
+	// Story 55-3b (AC-1) — une instance du dialogue des justificatifs pour toute la vue.
+	let documents = $state<ReturnType<typeof EntryDocuments>>();
 
 	/**
 	 * Story 37-4 (AC-7) — la partie en devise d'une ligne : « USD 31.35 × 0.8808 »,
@@ -61,8 +66,23 @@
 					{:else}
 						{#each section.entries as entry (entry.entryId)}
 							<div class="mb-3 border-b pb-2 last:border-b-0">
-								<div class="flex justify-between text-sm">
-									<span class="font-mono">#{entry.entryNumber}</span>
+								<div
+									class="flex justify-between text-sm"
+									data-testid="journal-entry-header-{entry.entryId}"
+								>
+									<span class="inline-flex items-center gap-1"
+										><span class="font-mono" data-testid="journal-entry-number-{entry.entryId}"
+											>#{entry.entryNumber}</span
+										>{#if entry.hasDocuments}
+											<!-- Story 55-3b (AC-1) — une icône, quel que soit le nombre de justificatifs. -->
+											{@render entryDocumentsButton({
+												label: entryDocumentsTitle(entry.entryNumber),
+												testId: `journal-entry-documents-${entry.entryId}`,
+												onOpen: (el) =>
+													documents?.openFor(entry.entryId, entryDocumentsTitle(entry.entryNumber), el),
+											})}
+										{/if}</span
+									>
 									<span>{formatSwissDate(entry.entryDate)}</span>
 								</div>
 								<div class="text-sm text-gray-700">{entry.description}</div>
@@ -114,4 +134,5 @@
 			{i18nMsg('reports-total-credit', 'Total crédit')} = {fmt(dto.grandTotalCredit)}
 		</p>
 	{/if}
+	<EntryDocuments bind:this={documents} />
 </section>

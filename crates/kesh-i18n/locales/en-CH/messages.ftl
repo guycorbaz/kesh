@@ -4435,3 +4435,15 @@ reports-nav-heading-several = From { $from } to { $to } (fiscal years { $fiscalY
 reports-nav-heading-outside = From { $from } to { $to } (outside fiscal years)
 # Story 55-2 (AC-6) — la ligne des comptes de TVA au grand livre, après le décompte.
 reports-nav-vat-accounts = Ledger accounts:
+# Story 55-3b (Epic 55, D9 à D12) — the supporting documents of an entry, from the Journal and the General ledger.
+reports-nav-documents-title = Supporting documents of entry no. { $number }
+reports-nav-documents-kind-invoice = Invoice
+reports-nav-documents-kind-credit-note = Credit note
+reports-nav-documents-kind-supplier-document = Supplier document
+reports-nav-documents-list = Supporting documents of the entry
+reports-nav-documents-loading = Loading supporting documents…
+reports-nav-documents-none = This entry no longer has a supporting document.
+reports-nav-documents-close = Close
+reports-nav-documents-empty = The document received is empty.
+reports-nav-documents-not-issued = PDF not yet issued: this invoice has no frozen PDF yet; its next download, or its next sending by e-mail, will freeze it.
+reports-nav-ledger-column-documents = Documents

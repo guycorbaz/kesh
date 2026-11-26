@@ -4430,3 +4430,15 @@ reports-nav-heading-several = Dal { $from } al { $to } (esercizi { $fiscalYears 
 reports-nav-heading-outside = Dal { $from } al { $to } (fuori esercizio)
 # Story 55-2 (AC-6) — la ligne des comptes de TVA au grand livre, après le décompte.
 reports-nav-vat-accounts = Conti nel libro mastro:
+# Story 55-3b (Epic 55, D9 à D12) — i giustificativi di una registrazione, dal giornale e dal libro mastro.
+reports-nav-documents-title = Giustificativi della registrazione n. { $number }
+reports-nav-documents-kind-invoice = Fattura
+reports-nav-documents-kind-credit-note = Nota di credito
+reports-nav-documents-kind-supplier-document = Documento del fornitore
+reports-nav-documents-list = Giustificativi della registrazione
+reports-nav-documents-loading = Caricamento dei giustificativi…
+reports-nav-documents-none = Questa registrazione non ha più giustificativi.
+reports-nav-documents-close = Chiudi
+reports-nav-documents-empty = Il documento ricevuto è vuoto.
+reports-nav-documents-not-issued = PDF non ancora emesso: questa fattura non ha ancora un PDF fissato; il prossimo download, o il prossimo invio per e-mail, lo fisserà.
+reports-nav-ledger-column-documents = Giustificativi

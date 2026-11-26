@@ -4510,3 +4510,15 @@ reports-nav-heading-several = Du { $from } au { $to } (exercices { $fiscalYears 
 reports-nav-heading-outside = Du { $from } au { $to } (hors exercice)
 # Story 55-2 (AC-6) — la ligne des comptes de TVA au grand livre, après le décompte.
 reports-nav-vat-accounts = Comptes au grand livre :
+# Story 55-3b (Epic 55, D9 à D12) — les justificatifs d'une écriture, depuis le Journal et le Grand livre.
+reports-nav-documents-title = Justificatifs de l'écriture n° { $number }
+reports-nav-documents-kind-invoice = Facture
+reports-nav-documents-kind-credit-note = Avoir
+reports-nav-documents-kind-supplier-document = Document fournisseur
+reports-nav-documents-list = Justificatifs de l'écriture
+reports-nav-documents-loading = Chargement des justificatifs…
+reports-nav-documents-none = Cette écriture n'a plus de justificatif.
+reports-nav-documents-close = Fermer
+reports-nav-documents-empty = Le document reçu est vide.
+reports-nav-documents-not-issued = PDF pas encore émis : cette facture n'a pas encore de PDF figé ; son prochain téléchargement, ou son prochain envoi par e-mail, le figera.
+reports-nav-ledger-column-documents = Justificatifs

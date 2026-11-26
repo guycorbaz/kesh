@@ -11,6 +11,7 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 }));
 
 import DocumentPreview from './DocumentPreview.svelte';
+import DocumentPreviewHost from './DocumentPreviewHost.test.svelte';
 
 let created: string[];
 let revoked: string[];
@@ -177,5 +178,60 @@ describe('DocumentPreview', () => {
 		await new Promise((r) => setTimeout(r, 0));
 		expect(queryByTestId('document-preview-gone')).toBeNull();
 		expect(queryByTestId('document-preview-image')).not.toBeNull();
+	});
+});
+
+describe('DocumentPreview — Story 55-3b (AC-4), la propriété facultative `errorMessage`', () => {
+	const gone = { code: 'SOURCE_DOCUMENT_GONE', status: 410, message: 'gone' };
+
+	it('présente et rendant une chaîne : l’état d’erreur porte ce texte, même pour SOURCE_DOCUMENT_GONE', async () => {
+		for (const err of [new Error('x'), gone]) {
+			const { findByTestId, queryByTestId, unmount } = render(DocumentPreview, {
+				load: () => Promise.reject(err),
+				fileName: 'f.pdf',
+				errorMessage: () => 'Texte de l’appelant',
+			});
+			expect((await findByTestId('document-preview-error')).textContent?.trim()).toBe(
+				'Texte de l’appelant',
+			);
+			expect(queryByTestId('document-preview-gone')).toBeNull();
+			unmount();
+		}
+	});
+
+	it('présente et rendant `undefined` : le comportement d’avant (gone, puis texte fixe)', async () => {
+		const a = render(DocumentPreview, {
+			load: () => Promise.reject(gone),
+			fileName: 'f.pdf',
+			errorMessage: () => undefined,
+		});
+		expect(await a.findByTestId('document-preview-gone')).toBeTruthy();
+		a.unmount();
+		const b = render(DocumentPreview, {
+			load: () => Promise.reject(new Error('x')),
+			fileName: 'f.pdf',
+			errorMessage: () => undefined,
+		});
+		expect((await b.findByTestId('document-preview-error')).textContent).toMatch(/n’a pas pu être affiché/);
+	});
+
+	it('absente : le comportement d’avant', async () => {
+		const { findByTestId } = render(DocumentPreview, {
+			load: () => Promise.reject(new Error('x')),
+			fileName: 'f.pdf',
+		});
+		expect((await findByTestId('document-preview-error')).textContent).toMatch(/n’a pas pu être affiché/);
+	});
+
+	it('une autre fonction `errorMessage` au rendu suivant ne relance pas la lecture (une lecture)', async () => {
+		const load = vi.fn(() => Promise.resolve(blob('application/pdf')));
+		const { findByTestId, rerender } = render(DocumentPreviewHost, {
+			load,
+			errorMessage: () => 'a',
+		});
+		await findByTestId('document-preview-frame');
+		await rerender({ load, errorMessage: () => 'b' });
+		await new Promise((r) => setTimeout(r, 0));
+		expect(load).toHaveBeenCalledTimes(1);
 	});
 });
