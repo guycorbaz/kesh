@@ -7,6 +7,10 @@
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { onboardingState } from '$lib/features/onboarding/onboarding.svelte';
 	import { showIncompleteBanner } from '$lib/features/onboarding/onboarding-screens';
+	import AppBrand from '$lib/shared/components/AppBrand.svelte';
+	import { companyIdentity } from '$lib/app/stores/company-identity.svelte';
+	import { watchTabTitle } from '$lib/shared/utils/tab-title';
+	import { untrack } from 'svelte';
 	import DemoBanner from '$lib/shared/components/DemoBanner.svelte';
 	import IncompleteBanner from '$lib/shared/components/IncompleteBanner.svelte';
 	// Story 31-1c (#503, AC31) — échec ou retard de la sauvegarde automatique (Admin).
@@ -43,6 +47,22 @@
 			import('$app/navigation').then(({ goto }) => goto('/journal-entries'));
 		}
 	}
+
+	// #1582 — le nom de la comptabilité ouverte : lu au montage (`+layout.ts` a déjà redirigé
+	// tout non-authentifié), vidé au démontage (le module `(app)` est démonté par `/onboarding`).
+	// `untrack` : l'effet ne dépend pas de ce que `load()` écrit.
+	$effect(() => {
+		untrack(() => {
+			void companyIdentity.load();
+		});
+		return () => companyIdentity.clear();
+	});
+	// Le titre de l'onglet porte le nom tant qu'il est connu (D5, D6).
+	$effect(() => {
+		const name = companyIdentity.name;
+		if (!name) return;
+		return watchTabTitle(name);
+	});
 
 	let isAdmin = $derived(authState.currentUser?.role === 'Admin');
 	// Story 14-4 — entrées Comptable+ (miroir RBAC local `canModify()` du plan
@@ -314,10 +334,8 @@
 		class="sticky top-0 z-30 flex h-14 items-center border-b border-border bg-surface px-4"
 		style="gap: var(--kesh-gap);"
 	>
-		<!-- Logo -->
-		<a href="/" class="flex items-center gap-2 font-semibold text-primary">
-			<span class="text-xl">Kesh</span>
-		</a>
+		<!-- Logo et nom de la comptabilité ouverte (#1582) -->
+		<AppBrand name={companyIdentity.name} />
 
 		<!-- Zone recherche -->
 		<div class="relative ml-4 flex-1 max-w-md">
