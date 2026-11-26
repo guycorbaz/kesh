@@ -1086,3 +1086,4 @@ Opus (agent de développement de la story), 2026-11-27.
   Agent Record) ; neuf specs E2E adaptées. Gates : fmt, clippy, `kesh-i18n` 42/42, `textes_coherents` 34/34, front
   vert (5439 Vitest), E2E partiel 12 specs vert. **Défauts retenus, en attente du mainteneur** : (a) à (k) du T0, R-13
   (taille L), R-21, R-24, R-25. Statut `review` (aucune revue de code : accord du mainteneur attendu).
+- **2026-11-26 — revue de code** : menée sur les deux filles (55-1a1 : P1 Opus 0/0/1/6, P2 ciblée Sonnet 0/0/0/2 ; 55-1a2 : P1 Sonnet 0/1/2/3, P2 Opus 0/0/2/3, P3 ciblée Sonnet 0/0/0/2), closes ; détail à leurs Change Logs. Note *Exports* du Dev Agent Record précisée par la P2 de la 55-1a2.

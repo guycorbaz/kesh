@@ -1,6 +1,6 @@
 # Story 55-4 : solde de la dette de l'epic
 
-Status: review
+Status: done
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md`. Release : celle de l'epic, **avant le tag**.
 Règle : `CLAUDE.md` § *Priorités des défauts*, les puces « Un LOW de revue qui touche la production peut se corriger dans
@@ -280,3 +280,9 @@ L13, L14 ; L2 et L8 sont corrigées ici (pas d'issue). Décompte des issues ouve
     ignorés**, code 0. Joués l'un après l'autre (disque : la cible neuve de gate-ci n'aurait pas tenu au-dessus du
     plancher de 40 Go avec celle de la story).
   - Journaux sous `kesh-gate-logs/s55-dev/fin/` (et non `s55-4/`, comme le reste de l'epic).
+- **2026-11-26 — revue de code, close (une passe).** Tendance : P1 complète Sonnet **0/0/0/1**, relue par
+  l'orchestrateur (correctif de la relecture des réglages TVA, `647b5b039`, lu au diff). P1-1 (LOW, hors production) :
+  la candidate L2 (« clé écrite non enregistrée ») était déjà tuée par deux tests existants ; la ligne 2 de
+  `kesh-gate-logs/s55-dev/issues-a-ouvrir.md` est donc sans objet (annotée dans la liste des revues) ; le test neuf
+  reste. Aucun reclassement.
+  Prompts versionnés à côté de la fiche (`<clé>-code-review-prompt-pN.md`, consignes communes `55-code-review-brief-commun.md`) ; rapports hors dépôt, `kesh-gate-logs/s55-revue/<clé>/revue-pN-rapport.md`. Base : `epic/55-navigation` après la fusion de la PR de l'Epic 46 (`c8fe4d0ac`, revue d'intégration P1 Opus 0/0/0/2, LOW corrigés `f16463f91`). LOW non corrigés : issues à ouvrir, `kesh-gate-logs/s55-revue/issues-a-ouvrir.md` (ligne 2 de la liste du développement sans objet). Gates de fin d'epic (gate-ci et E2E complet) au dernier commit de code de l'epic : voir le fichier d'epic.

@@ -6,7 +6,7 @@
 
 # Story 55-3a : les justificatifs d'une écriture dans la réponse du journal et du grand livre (serveur)
 
-Status: review
+Status: done
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 (Q1), D10, D12 (afficher n'est pas figer :
 sans aperçu dans l'Epic 55), D14 (fiche de la facture, Q8). Issue : #1607 (`enhancement`, **P4**, Q5 ; point c,
@@ -805,3 +805,8 @@ Claude Opus 5.5 (agent de développement de la story, sans revue de code).
     communes de l'epic : `s55-dev/<story>/`).
 - 2026-11-26 — Développement (T1 à T4) : voir *Completion Notes List* ; statut `review`. Aucune revue de code (accord du
   mainteneur attendu).
+- **2026-11-26 — revue de code, close (deux passes).** Tendance : P1 complète Opus **0/0/0/5** → P2 ciblée Haiku
+  **0/0/0/0**. Rien au-dessus de LOW dès la P1 ; le LOW P1-4 (`docs/api-external.md`, « un règlement qui la solde »)
+  corrigé dans la story (commit `b71869a66`, « un règlement de cette facture, partiel ou total »), relu par la P2
+  ciblée. Aucun reclassement.
+  Prompts versionnés à côté de la fiche (`<clé>-code-review-prompt-pN.md`, consignes communes `55-code-review-brief-commun.md`) ; rapports hors dépôt, `kesh-gate-logs/s55-revue/<clé>/revue-pN-rapport.md`. Base : `epic/55-navigation` après la fusion de la PR de l'Epic 46 (`c8fe4d0ac`, revue d'intégration P1 Opus 0/0/0/2, LOW corrigés `f16463f91`). LOW non corrigés : issues à ouvrir, `kesh-gate-logs/s55-revue/issues-a-ouvrir.md` (R19 à R21). Gates de fin d'epic (gate-ci et E2E complet) au dernier commit de code de l'epic : voir le fichier d'epic.

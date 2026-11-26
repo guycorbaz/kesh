@@ -1,6 +1,6 @@
 # Story 55-1b : la présentation des rapports groupés dans l'URL
 
-Status: review
+Status: done
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D4. Issue : #1604 (`bug`, P3, point b, comme
 la 55-1a). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration.** **Suit la 55-1a**
@@ -467,3 +467,8 @@ Opus (agent de développement de la story), 2026-11-27.
   67 Vitest neufs, 1 E2E neuf, 14 mutations tuées, 35 rouges sur 38 avant. Gates : fmt, clippy, `kesh-i18n` 42/42,
   `textes_coherents` 34/34, front vert, E2E partiel 10 specs (48 + 9 sur la spec corrigée). Statut `review` (aucune revue
   de code : accord du mainteneur attendu).
+- **2026-11-26 — revue de code, close (deux passes).** Tendance : P1 complète Opus **0/0/0/6** → P2 ciblée Haiku
+  **0/0/0/1**. Rien au-dessus de LOW dès la P1 ; deux LOW du manuel (P1-4, P1-5) corrigés dans la story (commit
+  `b71869a66`), relus par la P2 ciblée (passe Haiku, affirmations vérifiées au `grep -nF`) ; son LOW (P2-1, parenthèse
+  du manuel) reste en issue. Aucun reclassement.
+  Prompts versionnés à côté de la fiche (`<clé>-code-review-prompt-pN.md`, consignes communes `55-code-review-brief-commun.md`) ; rapports hors dépôt, `kesh-gate-logs/s55-revue/<clé>/revue-pN-rapport.md`. Base : `epic/55-navigation` après la fusion de la PR de l'Epic 46 (`c8fe4d0ac`, revue d'intégration P1 Opus 0/0/0/2, LOW corrigés `f16463f91`). LOW non corrigés : issues à ouvrir, `kesh-gate-logs/s55-revue/issues-a-ouvrir.md` (R5, R13 à R15). Gates de fin d'epic (gate-ci et E2E complet) au dernier commit de code de l'epic : voir le fichier d'epic.

@@ -1,6 +1,6 @@
 # Story 55-2 : le lien de compte partout — Journaux, Grand livre, TVA, Compte de résultat
 
-Status: review
+Status: done
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D6, D7 (Q3, acceptée par le mainteneur le
 2026-11-25), D8. Issues : #1603 (`enhancement`,
@@ -611,3 +611,7 @@ Opus (agent de développement de la story), 2026-11-27.
   une récrite ; manuel ; 39 Vitest et 5 E2E neufs, 14 mutations tuées ; guillemets du libellé TXN du manuel (consigne du
   coordinateur, commit à part). Gates de la story verts (Dev Agent Record). Défauts retenus en attente du mainteneur :
   R-7, D16 (a), D17, R-21, V4-1. Statut `review` (aucune revue de code : accord du mainteneur attendu).
+- **2026-11-26 — revue de code, close (une passe).** Tendance : P1 complète Sonnet **0/0/0/5**. Rien au-dessus de LOW ;
+  aucun correctif dans la story. Le correctif de `leavesToTablist` de la 55-1a2 (`a50712ce2`), que le grand livre
+  partage, a été relu par la P2 complète de la 55-1a2. Aucun reclassement.
+  Prompts versionnés à côté de la fiche (`<clé>-code-review-prompt-pN.md`, consignes communes `55-code-review-brief-commun.md`) ; rapports hors dépôt, `kesh-gate-logs/s55-revue/<clé>/revue-pN-rapport.md`. Base : `epic/55-navigation` après la fusion de la PR de l'Epic 46 (`c8fe4d0ac`, revue d'intégration P1 Opus 0/0/0/2, LOW corrigés `f16463f91`). LOW non corrigés : issues à ouvrir, `kesh-gate-logs/s55-revue/issues-a-ouvrir.md` (R1, R11, R16 à R18). Gates de fin d'epic (gate-ci et E2E complet) au dernier commit de code de l'epic : voir le fichier d'epic.

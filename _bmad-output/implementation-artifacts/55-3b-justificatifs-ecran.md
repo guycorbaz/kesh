@@ -1,6 +1,6 @@
 # Story 55-3b : ouvrir les justificatifs d'une écriture depuis le Journal (et le Grand livre)
 
-Status: review
+Status: done
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 à D14. Issue : #1607 (point c, comme la
 55-3a ; `enhancement`, P4, Q5). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration.** **Suit la 55-3a**
@@ -748,3 +748,6 @@ Claude Opus 5.5 (agent de développement de la story, sans revue de code).
   (`hideThumbnails`) ; erreur « vide » sans classe (gardes) — annotation du T0 ci-dessus, qui disait « classe
   `EmptyDocumentError` » ; mutations 17/17 et mutation de hauteur E2E tuées ; gates de la story verts (Dev Agent
   Record). Statut `review`.
+- **2026-11-26 — revue de code, close (une passe).** Tendance : P1 complète Sonnet **0/0/0/7**. Rien au-dessus de LOW ;
+  aucun correctif dans la story. Aucun reclassement.
+  Prompts versionnés à côté de la fiche (`<clé>-code-review-prompt-pN.md`, consignes communes `55-code-review-brief-commun.md`) ; rapports hors dépôt, `kesh-gate-logs/s55-revue/<clé>/revue-pN-rapport.md`. Base : `epic/55-navigation` après la fusion de la PR de l'Epic 46 (`c8fe4d0ac`, revue d'intégration P1 Opus 0/0/0/2, LOW corrigés `f16463f91`). LOW non corrigés : issues à ouvrir, `kesh-gate-logs/s55-revue/issues-a-ouvrir.md` (R22 à R26). Gates de fin d'epic (gate-ci et E2E complet) au dernier commit de code de l'epic : voir le fichier d'epic.

@@ -1,6 +1,6 @@
 # Story 55-1a2 : le sélecteur d'exercice et le chargement sans *Générer*
 
-Status: review
+Status: done
 
 > **Découpée de la 55-1a le 2026-11-27 sur demande du mainteneur, après coup : le code est livré, le découpage sert la
 > revue.** Fiche mère : `55-1a-etat-des-rapports-dans-l-url.md` (`split`), qui reste la référence complète — modèle,
@@ -166,3 +166,17 @@ garde un bouton. Les exports portent sur le rapport affiché. (refs #1604)
 remplacer), le corps de `loadActiveIfNeeded` et l'invariant des clés affichée et en vol, la normalisation, *Retour* et
 *Suivant* ; « Naviguer dans les rapports » et l'item « Accès direct » du manuel. Quand un geste de la 55-1a2 appelle une
 fonction de la 55-1a1, la 55-1a2 juge l'appel, la 55-1a1 la fonction.
+
+## Change Log
+- **2026-11-26 — revue de code, close (trois passes).** Tendance : P1 complète Sonnet **0/1/2/3** → P2 complète Opus
+  **0/0/2/3** → P3 ciblée Sonnet **0/0/0/2**. P1 : P1-1 (HIGH) dates puis Tab vers l'onglet actif ne chargeait rien,
+  P1-2 (MEDIUM) clic sur l'onglet actif idem — `leavesToTablist` ne retient plus qu'un AUTRE onglet (`pointerTab`,
+  `tabOfFocus`) ; P1-3 (MEDIUM) AC-26 étendu aux rapports par compte analytique en mode Exercice (`hiddenByMenu`),
+  comme le dit le manuel ; P1-5 (LOW, production, corrigé dans la story) période invalide signalée à l'arrivée sur un
+  onglet (`updatePeriodInvalid`) ; commit `a50712ce2`, quatre tests Vitest rouges sous M2 à M4. P2 : P2-1 (MEDIUM,
+  régression de la remédiation) exports d'un rapport par compte analytique retiré de l'écran restés actifs, P2-2
+  (MEDIUM, manuel) phrase des exports fausse pour le grand livre et les comptes analytiques — commit `5a3242d80`
+  (`|| hiddenByMenu`, manuel § des exports, note de la fiche mère), test rouge sous M5 (`mutations-p2/`). La P3 ciblée
+  relit ce seul correctif : rien au-dessus de LOW. Le correctif de `leavesToTablist` sert aussi le grand livre (55-2),
+  relu par la P2 complète. Aucun reclassement.
+  Prompts versionnés à côté de la fiche (`<clé>-code-review-prompt-pN.md`, consignes communes `55-code-review-brief-commun.md`) ; rapports hors dépôt, `kesh-gate-logs/s55-revue/<clé>/revue-pN-rapport.md`. Base : `epic/55-navigation` après la fusion de la PR de l'Epic 46 (`c8fe4d0ac`, revue d'intégration P1 Opus 0/0/0/2, LOW corrigés `f16463f91`). LOW non corrigés : issues à ouvrir, `kesh-gate-logs/s55-revue/issues-a-ouvrir.md` (R1, R5, R8 à R12, R27, R28). Gates de fin d'epic (gate-ci et E2E complet) au dernier commit de code de l'epic : voir le fichier d'epic.

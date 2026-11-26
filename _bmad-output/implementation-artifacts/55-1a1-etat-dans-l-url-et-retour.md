@@ -1,6 +1,6 @@
 # Story 55-1a1 : l'état des Rapports dans l'URL — Retour, Suivant, lien partagé
 
-Status: review
+Status: done
 
 > **Découpée de la 55-1a le 2026-11-27 sur demande du mainteneur, après coup : le code est livré, le découpage sert la
 > revue.** Fiche mère : `55-1a-etat-des-rapports-dans-l-url.md` (`split`), qui reste la référence complète — modèle,
@@ -157,3 +157,12 @@ les états (« Chargement… », grisé, `aria-busy`, rapport retiré) ; `Report
 manuel ; les specs E2E adaptées à D16. Quand une fonction de la 55-1a1 est appelée par un geste de la 55-1a2
 (`loadActiveIfNeeded` depuis le menu ou les dates, `writeUrl` depuis le chargement), la 55-1a1 juge la fonction, la
 55-1a2 l'appel.
+
+## Change Log
+- **2026-11-26 — revue de code, close (deux passes).** Tendance : P1 complète Opus **0/0/1/6** → P2 ciblée Sonnet
+  **0/0/0/2**. P1-1 (MEDIUM, production) : l'échec de la demande d'un autre onglet s'affichait au-dessus du rapport
+  atteint par *Retour* ou par un clic (AC-10) — remédié par `failureIfCurrent` (`+page.svelte`, quatre branches de
+  `generate()`), test Vitest « revue P1-1 — échec du Compte de résultat APRÈS le Retour au Bilan », rouge sous la
+  mutation M1 (`kesh-gate-logs/s55-revue/mutations-p1/`), commit `a50712ce2`. La P2 ciblée relit ce seul correctif :
+  rien au-dessus de LOW. Aucun reclassement.
+  Prompts versionnés à côté de la fiche (`<clé>-code-review-prompt-pN.md`, consignes communes `55-code-review-brief-commun.md`) ; rapports hors dépôt, `kesh-gate-logs/s55-revue/<clé>/revue-pN-rapport.md`. Base : `epic/55-navigation` après la fusion de la PR de l'Epic 46 (`c8fe4d0ac`, revue d'intégration P1 Opus 0/0/0/2, LOW corrigés `f16463f91`). LOW non corrigés : issues à ouvrir, `kesh-gate-logs/s55-revue/issues-a-ouvrir.md` (R1 à R7). Gates de fin d'epic (gate-ci et E2E complet) au dernier commit de code de l'epic : voir le fichier d'epic.
