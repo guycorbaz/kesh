@@ -11,7 +11,12 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 		`${key}|` + (args ? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, k) => String(args[k] ?? '')) : fallback),
 }));
 
-import { PROVIDER_COMMON_FAILED_CODES, alreadyPostedEntryId, providerFailedLabel } from './provider-labels';
+import {
+	PROVIDER_COMMON_FAILED_CODES,
+	accountNumberName,
+	alreadyPostedEntryId,
+	providerFailedLabel,
+} from './provider-labels';
 
 /**
  * Les codes de refus que le moteur commun peut poser dans `failed[]`, ÉCRITS EN DUR (jamais lus
@@ -64,6 +69,7 @@ describe('provider-labels — les refus du moteur commun', () => {
 				'OPTIMISTIC_LOCK_CONFLICT',
 				'PROVIDER_PROPOSAL_STALE',
 				'PROVIDER_TRANSACTION_ALREADY_POSTED',
+				'RATE_UNAVAILABLE',
 				'RECONCILIATION_ENTRY_NOT_LINKABLE',
 			],
 		);
@@ -145,5 +151,35 @@ describe('provider-labels — l’écriture déjà passée d’un motif « à ex
 		expect(alreadyPostedEntryId({ code: 'no_rule', details: { journalEntryId: 42 } })).toBeNull();
 		expect(alreadyPostedEntryId({ code: 'already_posted', details: { journalEntryId: '42' } })).toBeNull();
 		expect(alreadyPostedEntryId({ code: 'already_posted' })).toBeNull();
+	});
+});
+
+/**
+ * Story 39-11d2 (AC-4) — le cours mensuel retenu manque : un libellé propre aux prestataires, qui
+ * renvoie aux cours de change, le mois en forme suisse ; jamais le libellé générique, qui dit de
+ * garder la ligne comme cours saisi (sans objet pour une proposition).
+ */
+describe('provider-labels — cours mensuel manquant', () => {
+	it('la devise et le mois en MM.AAAA, la marche à suivre', () => {
+		const label = providerFailedLabel('RATE_UNAVAILABLE', { currency: 'USD', month: '2020-03-01' });
+		expect(label).toBe(
+			'provider-failed-rate-unavailable|Aucun cours mensuel USD retenu pour 03.2020 : récupérez ou saisissez ce cours dans les cours de change, puis acceptez de nouveau.',
+		);
+		expect(label).not.toContain('cours saisi');
+	});
+
+	it('détails absents ou vides : la phrase, sans valeur brute', () => {
+		for (const details of [undefined, null, {}, { month: 7 }]) {
+			const label = providerFailedLabel('RATE_UNAVAILABLE', details);
+			expect(label).toMatch(/^provider-failed-rate-unavailable\|Aucun cours mensuel {2}retenu pour  :/);
+		}
+	});
+});
+
+describe('provider-labels — nom d’un compte', () => {
+	it('« numéro — nom », ou l’identifiant faute du compte', () => {
+		const accounts = [{ id: 4, number: '6940', name: 'Frais' }] as never;
+		expect(accountNumberName(accounts, 4)).toBe('6940 — Frais');
+		expect(accountNumberName(accounts, 9)).toBe('#9');
 	});
 });

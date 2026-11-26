@@ -1,14 +1,14 @@
 /**
  * Story 40-7d (AC-2, AC-3) — client **commun** des routes des prestataires
- * (PayPal 38-11b/38-11c2, Stripe 40-7b/40-7c) : import du fichier, revue,
- * acceptation par paquets. Chaque feature l'enveloppe sous ses noms
- * (`paypal.api.ts`, `stripe.api.ts`).
+ * (PayPal 38-11b/38-11c2, Stripe 40-7b/40-7c, Wise 39-11b) : import du
+ * fichier, revue, acceptation par paquets. Chaque feature l'enveloppe sous ses
+ * noms (`paypal.api.ts`, `stripe.api.ts`, `wise.api.ts`).
  */
 import { apiClient } from '$lib/shared/utils/api-client';
 import type { ProviderAcceptResponse, ProviderProposalBase, ProviderReview } from './provider-review.types';
 
 /** Les prestataires servis par les routes `/<prestataire>-imports`, `/<prestataire>/review`, `/<prestataire>/accept`. */
-export type ReviewedProvider = 'paypal' | 'stripe';
+export type ReviewedProvider = 'paypal' | 'stripe' | 'wise';
 
 /**
  * Taille maximale d'un paquet d'acceptation : le plafond du serveur
@@ -28,6 +28,22 @@ export async function importProviderFile<R>(
 ): Promise<R> {
 	const form = new FormData();
 	form.append('file', file);
+	form.append('account', account);
+	return apiClient.postFormData<R>(`/api/v1/${provider}-imports`, form);
+}
+
+/**
+ * Story 39-11d (AC-2) — `POST /api/v1/<prestataire>-imports` avec **plusieurs**
+ * fichiers (un champ `file` chacun, dans l'ordre reçu) : l'import Wise prend
+ * les relevés de plusieurs soldes, ou le zip de Wise, d'un geste. Refus : `ApiError`.
+ */
+export async function importProviderFiles<R>(
+	provider: ReviewedProvider,
+	files: readonly File[],
+	account: string,
+): Promise<R> {
+	const form = new FormData();
+	for (const file of files) form.append('file', file);
 	form.append('account', account);
 	return apiClient.postFormData<R>(`/api/v1/${provider}-imports`, form);
 }
