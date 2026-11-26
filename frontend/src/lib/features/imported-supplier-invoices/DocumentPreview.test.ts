@@ -235,3 +235,24 @@ describe('DocumentPreview — Story 55-3b (AC-4), la propriété facultative `er
 		expect(load).toHaveBeenCalledTimes(1);
 	});
 });
+
+describe('DocumentPreview — Story 55-3b (AC-11), la propriété facultative `hideThumbnails`', () => {
+	it('absente : l’URL blob: nue, sans fragment, comme pour les cinq appelants d’avant (mutation : fragment toujours ajouté)', async () => {
+		const { findByTestId } = render(DocumentPreview, {
+			load: () => Promise.resolve(blob('application/pdf')),
+			fileName: 'f.pdf',
+		});
+		expect((await findByTestId('document-preview-frame')).getAttribute('src')).toBe('blob:doc-1');
+	});
+
+	it('présente : le fragment d’ouverture sans vignettes', async () => {
+		const { findByTestId } = render(DocumentPreview, {
+			load: () => Promise.resolve(blob('application/pdf')),
+			fileName: 'f.pdf',
+			hideThumbnails: true,
+		});
+		expect((await findByTestId('document-preview-frame')).getAttribute('src')).toBe(
+			'blob:doc-1#pagemode=none&navpanes=0',
+		);
+	});
+});

@@ -80,6 +80,7 @@
 			)}
 		</p>
 	{:else}
-		<DocumentPreview {load} {fileName} {errorMessage} />
+		<!-- AC-11 — sans le panneau des vignettes (constaté dans Chromium avec tête, T0 R-9). -->
+		<DocumentPreview {load} {fileName} {errorMessage} hideThumbnails />
 	{/if}
 </div>

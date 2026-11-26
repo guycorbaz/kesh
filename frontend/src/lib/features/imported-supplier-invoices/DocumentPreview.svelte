@@ -32,9 +32,18 @@
 		 * une fonction neuve ne relance pas la lecture.
 		 */
 		errorMessage?: (err: unknown) => string | undefined;
+		/**
+		 * Story 55-3b (AC-11) — facultatif : ouvre un PDF **sans le panneau des vignettes** du lecteur du
+		 * navigateur (fragment d'ouverture `#pagemode=none&navpanes=0`, que Chromium affichait sinon).
+		 * Absente, l'URL `blob:` reste nue, comme pour les appelants d'avant.
+		 */
+		hideThumbnails?: boolean;
 	}
 
-	let { load, fileName, errorMessage }: Props = $props();
+	let { load, fileName, errorMessage, hideThumbnails = false }: Props = $props();
+
+	/** Le fragment d'ouverture d'un PDF sans vignettes (paramètres d'ouverture des lecteurs PDF). */
+	const NO_THUMBNAILS = '#pagemode=none&navpanes=0';
 
 	type View =
 		| { kind: 'loading' }
@@ -104,7 +113,7 @@
 		/>
 	{:else if view.type === 'application/pdf'}
 		<iframe
-			src={view.url}
+			src={hideThumbnails ? view.url + NO_THUMBNAILS : view.url}
 			title={fileName}
 			class="h-[75vh] w-full bg-white"
 			data-testid="document-preview-frame"

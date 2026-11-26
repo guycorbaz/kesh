@@ -78,10 +78,10 @@ describe('EntryDocumentsViewer', () => {
 		expect(invoicePdf).toHaveBeenCalledWith(42);
 	});
 
-	it('AC-11 — le cadre reçoit l’URL blob: nue, sans fragment (garde de non-régression ; mutation : `#pagemode=none` ajouté)', async () => {
+	it('AC-11 — le PDF s’ouvre sans le panneau des vignettes : fragment `#pagemode=none&navpanes=0` (mutation : `hideThumbnails` retiré)', async () => {
 		const r = render(EntryDocumentsViewer, { documents: [facture()] });
 		const frame = (await r.findByTestId('document-preview-frame')) as HTMLIFrameElement;
-		expect(frame.getAttribute('src')).toMatch(/^blob:doc-\d+$/);
+		expect(frame.getAttribute('src')).toMatch(/^blob:doc-\d+#pagemode=none&navpanes=0$/);
 	});
 
 	it('deux justificatifs : la liste en haut, le premier affiché et marqué ; un clic sur le second ne lit que lui (mutation : sélection ignorée)', async () => {

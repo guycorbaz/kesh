@@ -466,7 +466,10 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
 // **151 → 152** (Story 55-1a) : `keepDisplay` (`routes/(app)/reports/+page.svelte`, une constante
 // booléenne de `generate()` que le nom fait relever, aucun texte) ; `conforme` **130 → 131**, relevés par
 // la garde (`kesh-gate-logs/s55-dev/55-1a/front-1/front-test-unit.log`), non additionnés.
-const CANDIDATES_ATTENDUES = 152;
+// **152 → 154** (Story 55-3b) : `entryDocumentKindLabel` et `entryDocumentItemLabel`
+// (`features/reports/entry-documents.ts`), par `i18nMsg` et un gabarit ; `conforme` **131 → 133**, relevés par
+// la garde (« expected 154 to be 152 »), non additionnés.
+const CANDIDATES_ATTENDUES = 154;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -983,7 +986,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 131 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 133 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

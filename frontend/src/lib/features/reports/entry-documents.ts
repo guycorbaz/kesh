@@ -13,15 +13,22 @@ import { pdfErrorMessage } from '$lib/shared/utils/pdf-error';
 import { fetchCreditNotePdf, fetchInvoicePdf } from './reports.api';
 import type { EntryDocument, EntryDocumentKind } from './reports.types';
 
+/** Le nom de l'erreur « document vide » (une `Error` nommée, pas de classe : garde des libellés en dur). */
+const EMPTY_DOCUMENT = 'EmptyDocumentError';
+
 /**
  * Un document reçu vide (0 octet) : `DocumentPreview` ne contrôle pas la taille, le lecteur le refuse
  * donc lui-même (AC-3) ; `entryDocumentErrorMessage` le reconnaît avant tout autre cas.
  */
-export class EmptyDocumentError extends Error {
-	constructor() {
-		super('document vide');
-		this.name = 'EmptyDocumentError';
-	}
+export function emptyDocumentError(): Error {
+	const err = new Error('document vide');
+	err.name = EMPTY_DOCUMENT;
+	return err;
+}
+
+/** Vrai pour l'erreur « document vide » d'`entryDocumentLoader`. */
+export function isEmptyDocumentError(err: unknown): boolean {
+	return err instanceof Error && err.name === EMPTY_DOCUMENT;
 }
 
 /** Vrai pour une facture dont le PDF n'est pas encore émis : elle n'est pas lue (AC-5). */
@@ -43,14 +50,14 @@ function readerOf(kind: EntryDocumentKind): (id: number) => Promise<Blob> {
 
 /**
  * La fonction `load` passée à `DocumentPreview` pour un justificatif : elle lit la pièce et **rejette** un
- * `Blob` vide par `EmptyDocumentError`. Ne s'appelle jamais pour une facture non émise (voir
+ * `Blob` vide par `emptyDocumentError()`. Ne s'appelle jamais pour une facture non émise (voir
  * `isNotIssuedInvoice`) — l'appelant ne monte alors pas `DocumentPreview`.
  */
 export function entryDocumentLoader(kind: EntryDocumentKind, id: number): () => Promise<Blob> {
 	const read = readerOf(kind);
 	return async () => {
 		const blob = await read(id);
-		if (blob.size === 0) throw new EmptyDocumentError();
+		if (blob.size === 0) throw emptyDocumentError();
 		return blob;
 	};
 }
@@ -111,7 +118,7 @@ export function entryDocumentItemLabel(doc: EntryDocument): string {
  * INVOICE_PDF_GONE` nomme le fichier à restaurer) ; sinon `undefined`, le texte de `DocumentPreview`.
  */
 export function entryDocumentErrorMessage(kind: EntryDocumentKind, err: unknown): string | undefined {
-	if (err instanceof EmptyDocumentError) {
+	if (isEmptyDocumentError(err)) {
 		return i18nMsg('reports-nav-documents-empty', 'Le document reçu est vide.');
 	}
 	if ((kind === 'invoice' || kind === 'creditNote') && isApiError(err)) return pdfErrorMessage(err);

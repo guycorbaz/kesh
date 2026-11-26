@@ -1252,7 +1252,10 @@ const ATTENDU = {
 	// `AccountLink` (−4) ; `reports-nav-vat-accounts` et les deux étiquettes de la ligne des comptes de TVA
 	// ajoutés, le Grand livre sur `ReportSelector` (ses libellés « Du », « Au » repris du composant) = **3785**,
 	// relevé par la garde (« expected 3785 to be 3788 », `kesh-gate-logs/s55-dev/55-2/front-1/front-test-unit.log`).
-	sitesTotal: 3785,
+	// Story 55-3b : les onze sites des justificatifs (titre, trois genres, document vide, liste, « PDF pas encore
+	// émis », chargement, liste vide, « Fermer », colonne du grand livre) = **3796**, relevé par la garde
+	// (« expected 3796 to be 3785 »).
+	sitesTotal: 3796,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
