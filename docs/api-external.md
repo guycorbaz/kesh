@@ -1398,12 +1398,12 @@ parent — forcément sans écriture — devient **non imputable** (compte de
 regroupement) ; l'ancien garde son
 état — il redevient imputable par un `PUT` avec `postable: true` s'il n'a plus de
 sous-compte actif. Le compte déplacé garde son type, sa postabilité, ses écritures
-et son solde : seule la hiérarchie change (les rapports ne la lisent pas). Trace
+et son solde : seule la hiérarchie change — celle que lisent les rapports par groupes (avec
+`detailLevel`, et à l'export sans paramètre), non les rapports à plat. Trace
 `account.updated`, `parentId` dans `before` et `after`. Renvoyer le parent en
 place est un no-op (ni version, ni trace).
 
-**Créer des groupes et y ranger des comptes, tout ou rien** *(depuis la release
-qui suit la v0.19.0 ; route neuve, **fermée aux clés d'API**, cf. §4)*. `POST
+**Créer des groupes et y ranger des comptes, tout ou rien** *(Epic 46 ; route neuve, **fermée aux clés d'API**, cf. §4)*. `POST
 /accounts/groups` sert l'aide à la création des groupes de l'écran du plan
 (Administrateur et Comptable) : `{ "groups": [ … ] }`, de 1 à 100 propositions et
 1000 comptes à ranger au plus, chacune `{ "kind": "create", "number", "name",

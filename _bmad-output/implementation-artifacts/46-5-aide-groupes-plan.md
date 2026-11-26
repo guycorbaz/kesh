@@ -12,6 +12,10 @@ calcul des propositions, manuel) par la règle de splitting préventif.
 > **n'est fusionnée dans `epic/46-rapports-groupes` qu'après son accord**. Sans cet accord, rien n'entre dans l'epic ;
 > si Guy refuse, la story sort de l'epic (tableau, ordre, FR-46-5 et fichiers communs du fichier d'epic à corriger).
 
+> *Annoté le 2026-11-26 : accord du mainteneur — la 46-5 entre dans la PR de l'Epic 46 (branche
+> `pr/46-rapports-groupes-v2`) ; le bandeau ci-dessus et la release visée « 0.21.0 » ne valent plus : la release est
+> celle de l'Epic 46, numéro attribué au tag (la v0.20.0 visée).*
+
 ## Story
 
 En tant que comptable qui range un plan existant,

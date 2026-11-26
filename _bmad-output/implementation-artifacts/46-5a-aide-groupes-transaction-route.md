@@ -3,7 +3,7 @@
 Status: done
 
 Fiche mère : `46-5-aide-groupes-plan.md` (décision du 2026-11-22, **contrat commun** : demande, réponse, refus). Epic
-46, D12, FR-46-5. Release visée **0.21.0** (prévision). **Aucune migration.** Développée directement sur `story/46-5` (consigne de
+46, D12, FR-46-5. Release visée **0.21.0** (prévision). *(Annoté le 2026-11-26 : la release est celle de l'Epic 46, dont la PR porte désormais la 46-5 — numéro attribué au tag, la v0.20.0 visée.)* **Aucune migration.** Développée directement sur `story/46-5` (consigne de
 la tâche ; la branche `story/46-5a` prévue n'a pas été créée) ; **aucune fusion dans `epic/46-rapports-groupes` avant l'accord de Guy** (fiche mère).
 
 ## Story
