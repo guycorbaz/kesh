@@ -403,6 +403,7 @@ pub async fn create_conversion_with_policy(
 /// après `companies` ; `None` pour la conversion de prestataire (aucune
 /// comparaison, aucun pré-verrou : l'ordre des verrous de ce flux automatique
 /// est inchangé).
+#[allow(clippy::too_many_arguments)]
 async fn create_conversion_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
