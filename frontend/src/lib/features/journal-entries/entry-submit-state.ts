@@ -3,8 +3,10 @@
  * de l'envoi (table J de la fiche) et la lecture du refus de doublon du serveur.
  *
  * Module **pur**, écrit sans dépendance au formulaire : la conversion de devises
- * l'emploiera (Story 53-1b), qui l'étendra d'un champ facultatif pour le rang de
- * l'écriture (`details.entry`). Il suit celui de la 48-12b
+ * l'emploie (Story 53-1b, table K de sa fiche, rangée **état par état** dans ce
+ * type : K1 = J1, K2a = J2a, K2b = J2b, K3 = J3, K5 = J5, K6 = J6, K7 = J7), qui
+ * l'a étendu de la lecture du rang de l'écriture (`details.entry`, `entry`) et de
+ * `unknownOutcomeRangeHref`. Il suit celui de la 48-12b
  * (`supplier-invoice-form.ts`, table A), sans le refactorer.
  *
  * Importe `isApiError` d'`api-error`, **non** d'`api-client` : des fichiers de test
@@ -13,6 +15,7 @@
 
 import { isApiError } from '$lib/shared/utils/api-error';
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+import { refusalEntry } from './fx-refusals';
 
 /**
  * Les états de l'envoi d'une écriture **à la création** (table J) :
@@ -82,6 +85,12 @@ export interface EntryDuplicateRefusal {
 	/** `AAAA-MM-JJ`. */
 	entryDate: string;
 	confirmable: boolean;
+	/**
+	 * Le rang (1 ou 2) de l'écriture refusée **dans le corps** de la conversion
+	 * (`details.entry`, lu par `refusalEntry`), `null` s'il est absent ou illisible ;
+	 * la saisie d'une écriture, qui n'en a pas, ne le lit pas.
+	 */
+	entry: 1 | 2 | null;
 }
 
 /**
@@ -105,7 +114,7 @@ export function readEntryDuplicateRefusal(err: unknown): EntryDuplicateRefusal |
 	) {
 		return null;
 	}
-	return { journalEntryId, entryNumber, entryDate, confirmable };
+	return { journalEntryId, entryNumber, entryDate, confirmable, entry: refusalEntry(d) };
 }
 
 /**
@@ -116,10 +125,15 @@ export function readEntryDuplicateRefusal(err: unknown): EntryDuplicateRefusal |
  */
 export function stateAfterRejection(
 	err: unknown,
-	isUnknown: (e: unknown) => boolean
+	isUnknown: (e: unknown) => boolean,
+	options: { needsEntry?: boolean } = {}
 ): 'J5' | 'J6' | 'J7' {
 	const dup = readEntryDuplicateRefusal(err);
-	if (dup !== null && dup.confirmable) return 'J5';
+	// `needsEntry` (la conversion seule, Story 53-1b) : un refus de doublon dont le rang
+	// de l'écriture est illisible ne peut dire laquelle des deux colonnes il vise : il
+	// n'est pas confirmable à l'aveugle, c'est une erreur ordinaire (J7, message du
+	// serveur). La saisie, qui ne passe pas l'option, est inchangée.
+	if (dup !== null && dup.confirmable) return options.needsEntry && dup.entry === null ? 'J7' : 'J5';
 	if (isUnknown(err)) return 'J6';
 	return 'J7';
 }
@@ -138,5 +152,17 @@ export function entryDuplicateText(): string {
  */
 export function unknownOutcomeHref(entryDate: string): string {
 	const params = new URLSearchParams({ dateFrom: entryDate, dateTo: entryDate });
+	return `/journal-entries?${params.toString()}`;
+}
+
+/**
+ * Le lien de vérification de K6 (Story 53-1b), pour une conversion qui porte **deux
+ * dates** : le journal, filtré sur la plage qui les couvre
+ * (`/journal-entries?dateFrom=min&dateTo=max`, la même date deux fois si elles
+ * coïncident). Les dates sont `AAAA-MM-JJ`, que l'ordre lexicographique classe.
+ */
+export function unknownOutcomeRangeHref(dateA: string, dateB: string): string {
+	const [dateFrom, dateTo] = dateA <= dateB ? [dateA, dateB] : [dateB, dateA];
+	const params = new URLSearchParams({ dateFrom, dateTo });
 	return `/journal-entries?${params.toString()}`;
 }

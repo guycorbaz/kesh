@@ -6785,7 +6785,10 @@ fn supplier_invoice_duplicate_response(
 
 /// Le texte FR (repli) du refus de doublon à la **saisie d'une écriture** — clé
 /// `error-journal-entry-probable-duplicate` (Story 53-1a, D7) ; le même texte
-/// s'affiche à l'écran, et la conversion le réemploiera (53-1b).
+/// s'affiche à l'écran de la saisie. La conversion de devises (Story 53-1b)
+/// rend le même code, mais son écran a ses propres textes
+/// (`journal-entries-conversion-probable-duplicate-debit`, `-credit`), qui
+/// nomment la colonne.
 const JOURNAL_ENTRY_PROBABLE_DUPLICATE_FR: &str = "Une écriture identique existe déjà à cette date (même journal, même libellé, mêmes comptes et montants). Si c’est la même, ne l’enregistrez pas une seconde fois ; sinon, confirmez que ce n’est pas un doublon.";
 
 /// La réponse **409** d'un refus de doublon à la saisie d'une écriture (Story

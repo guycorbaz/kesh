@@ -1,5 +1,6 @@
-// Story 53-1a (D5, M24) — `confirmNotDuplicate` ne fuit ni vers le `PUT` ni vers la
-// conversion. Les directives `@ts-expect-error` sont vérifiées par `npm run check` : si
+// Story 53-1a (D5, M24) — `confirmNotDuplicate` ne fuit ni vers le `PUT` ni vers les
+// **entrées** de la conversion (`entries[i]`) ; le **corps** de la conversion le porte
+// (Story 53-1b). Les directives `@ts-expect-error` sont vérifiées par `npm run check` : si
 // le champ entrait dans `CreateJournalEntryRequest` (interface commune), elles ne
 // signaleraient plus d'erreur, et le contrôle échouerait.
 
@@ -19,7 +20,7 @@ const entree: CreateJournalEntryRequest = {
 };
 
 describe('corps de la saisie', () => {
-	it('le corps de la saisie porte le champ ; le PUT et la conversion non', () => {
+	it('le corps de la saisie et celui de la conversion portent le champ ; le PUT et les entrées de la conversion non', () => {
 		const saisie: CreateJournalEntryBody = { ...entree, confirmNotDuplicate: true };
 
 		const put: UpdateJournalEntryRequest = {
@@ -30,6 +31,7 @@ describe('corps de la saisie', () => {
 		};
 
 		const conversion: CreateConversionRequest = {
+			confirmNotDuplicate: true,
 			entries: [
 				// @ts-expect-error — une entrée de conversion n'a pas `confirmNotDuplicate`
 				{ ...entree, confirmNotDuplicate: true },
@@ -40,5 +42,6 @@ describe('corps de la saisie', () => {
 		expect(saisie.confirmNotDuplicate).toBe(true);
 		expect(put.version).toBe(1);
 		expect(conversion.entries).toHaveLength(2);
+		expect(conversion.confirmNotDuplicate).toBe(true);
 	});
 });

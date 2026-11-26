@@ -869,7 +869,11 @@ async fn conversion_compte_a_comptes_propres(pool: MySqlPool) {
             chf(ctx.transit, "0", "947.00"),
         ],
     );
-    let (st, body) = envoyer(&ctx, ROUTE, &conversion(ecriture_1(&ctx), e2, Some(true))).await;
+    // Libellé distinct : sous la règle anti-doublon (Story 53-1b), la même
+    // première écriture que la conversion précédente serait refusée.
+    let mut e1 = ecriture_1(&ctx);
+    e1["description"] = json!("Conversion (perte) (1/2)");
+    let (st, body) = envoyer(&ctx, ROUTE, &conversion(e1, e2, Some(true))).await;
     assert_eq!(st, 201, "{body}");
     assert_eq!(body["entries"][1]["lines"][2]["accountId"], ctx.own_loss);
     assert_eq!(body["entries"][1]["lines"][2]["debit"], "47.0000");
@@ -1507,4 +1511,201 @@ async fn conversion_compte_inconnu_pas_lu_comme_chf(pool: MySqlPool) {
     );
     assert_eq!(body["error"]["details"]["entry"], 2, "{body}");
     assert_eq!(nb_ecritures(&pool, ctx.s.company_id).await, 0);
+}
+
+// ============================================================
+// Story 53-1b (#1365) — la conversion ne passe pas deux fois
+// ============================================================
+
+const DOUBLON: &str = "JOURNAL_ENTRY_PROBABLE_DUPLICATE";
+
+async fn nb_audit(pool: &MySqlPool, action: &str) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = ?")
+        .bind(action)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Conversion équilibrée sans différence : EUR 1000 × 0.947, USD 1000 × 0.947.
+fn conversion_equilibree(ctx: &Ctx, date1: &str, date2: &str) -> Value {
+    let e1 = ecriture(
+        date1,
+        "Conversion EUR → USD (1/2)",
+        vec![
+            chf(ctx.transit, "947.00", "0"),
+            fx(ctx.eur, "credit", "947.00", "EUR", "1000", "0.947"),
+        ],
+    );
+    let e2 = ecriture(
+        date2,
+        "Conversion EUR → USD (2/2)",
+        vec![
+            fx(ctx.usd, "debit", "947.00", "USD", "1000", "0.947"),
+            chf(ctx.transit, "0", "947.00"),
+        ],
+    );
+    conversion(e1, e2, None)
+}
+
+/// AC-1 — le renvoi à l'identique rend `409 JOURNAL_ENTRY_PROBABLE_DUPLICATE`,
+/// `details.entry` (rang de la première écriture identique, chronologique),
+/// l'écriture existante citée, `confirmable: true` ; rien n'est écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn conversion_renvoyee_a_l_identique_est_refusee(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let corps = conversion_equilibree(&ctx, "2026-03-05", "2026-03-06");
+    let (st, premiere) = envoyer(&ctx, ROUTE, &corps).await;
+    assert_eq!(st, 201, "{premiere}");
+
+    let (st, body) = envoyer(&ctx, ROUTE, &corps).await;
+    assert_eq!((st, code(&body)), (409, DOUBLON), "{body}");
+    let d = &body["error"]["details"];
+    assert_eq!(d["entry"], 1, "{body}");
+    assert_eq!(d["confirmable"], true, "{body}");
+    assert_eq!(d["journalEntryId"], premiere["entries"][0]["id"], "{body}");
+    assert_eq!(d["entryNumber"], premiere["entries"][0]["entryNumber"]);
+    assert_eq!(d["entryDate"], "2026-03-05");
+    assert_eq!(nb_ecritures(&pool, ctx.s.company_id).await, 2);
+    assert_eq!(
+        nb_audit(&pool, "journal_entry.duplicate_confirmed").await,
+        0
+    );
+
+    // Corps renversé : la première écriture chronologique (5 mars) est au rang 2.
+    let [e1, e2] = [corps["entries"][0].clone(), corps["entries"][1].clone()];
+    let (st, body) = envoyer(&ctx, ROUTE, &conversion(e2, e1, None)).await;
+    assert_eq!((st, code(&body)), (409, DOUBLON), "{body}");
+    assert_eq!(body["error"]["details"]["entry"], 2, "{body}");
+}
+
+/// AC-2 — une seule écriture identique suffit (Q7) ; AC-3 — la confirmation, au
+/// niveau du corps, la fait passer, une entrée d'audit par écriture levée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn conversion_une_ecriture_identique_confirmee(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (st, _) = envoyer(
+        &ctx,
+        ROUTE,
+        &conversion_equilibree(&ctx, "2026-03-05", "2026-03-06"),
+    )
+    .await;
+    assert_eq!(st, 201);
+
+    // Seule l'écriture 1 est identique : la seconde est datée du 7.
+    let corps = conversion_equilibree(&ctx, "2026-03-05", "2026-03-07");
+    let (st, body) = envoyer(&ctx, ROUTE, &corps).await;
+    assert_eq!((st, code(&body)), (409, DOUBLON), "{body}");
+    assert_eq!(body["error"]["details"]["entry"], 1, "{body}");
+    // Seule l'écriture 2 est identique : la première est datée du 4.
+    let (st, body) = envoyer(
+        &ctx,
+        ROUTE,
+        &conversion_equilibree(&ctx, "2026-03-04", "2026-03-06"),
+    )
+    .await;
+    assert_eq!((st, code(&body)), (409, DOUBLON), "{body}");
+    assert_eq!(body["error"]["details"]["entry"], 2, "{body}");
+    assert_eq!(nb_ecritures(&pool, ctx.s.company_id).await, 2);
+
+    // `confirmNotDuplicate: true` au corps : passe, une écriture levée.
+    let mut confirme = corps.clone();
+    confirme["confirmNotDuplicate"] = json!(true);
+    let (st, body) = envoyer(&ctx, ROUTE, &confirme).await;
+    assert_eq!(st, 201, "{body}");
+    assert_eq!(nb_ecritures(&pool, ctx.s.company_id).await, 4);
+    assert_eq!(
+        nb_audit(&pool, "journal_entry.duplicate_confirmed").await,
+        1
+    );
+
+    // Les deux écritures identiques : deux entrées d'audit de plus.
+    let mut confirme = conversion_equilibree(&ctx, "2026-03-05", "2026-03-06");
+    confirme["confirmNotDuplicate"] = json!(true);
+    let (st, body) = envoyer(&ctx, ROUTE, &confirme).await;
+    assert_eq!(st, 201, "{body}");
+    assert_eq!(
+        nb_audit(&pool, "journal_entry.duplicate_confirmed").await,
+        3
+    );
+}
+
+/// AC-3 — un `confirmNotDuplicate` non booléen ou `null` au corps : `400
+/// VALIDATION_ERROR` (extracteur ; la saisie rend `422`, écart écrit à l'API) ;
+/// dans `entries[i]` il est **ignoré** (il ne lève rien).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn conversion_confirmation_mal_typee_et_entree_ignoree(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let corps = conversion_equilibree(&ctx, "2026-03-05", "2026-03-06");
+    let (st, _) = envoyer(&ctx, ROUTE, &corps).await;
+    assert_eq!(st, 201);
+    for mauvais in [json!("oui"), Value::Null, json!(1)] {
+        let mut c = corps.clone();
+        c["confirmNotDuplicate"] = mauvais.clone();
+        let (st, body) = envoyer(&ctx, ROUTE, &c).await;
+        assert_eq!(
+            (st, code(&body)),
+            (400, "VALIDATION_ERROR"),
+            "{mauvais} : {body}"
+        );
+    }
+    // Le champ dans une entrée n'est pas lu : le doublon reste refusé.
+    let mut c = corps.clone();
+    c["entries"][0]["confirmNotDuplicate"] = json!(true);
+    c["entries"][1]["confirmNotDuplicate"] = json!(true);
+    let (st, body) = envoyer(&ctx, ROUTE, &c).await;
+    assert_eq!((st, code(&body)), (409, DOUBLON), "{body}");
+    assert_eq!(nb_ecritures(&pool, ctx.s.company_id).await, 2);
+}
+
+/// AC-5 — un exercice clos portant un projet archivé sur une ligne rend
+/// `FISCAL_YEAR_CLOSED` de la bonne écriture, non l'état du projet ;
+/// `NO_FISCAL_YEAR` garde son `details.entry` ; un refus propre à la conversion
+/// précède le doublon.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn conversion_la_precedence_des_refus_est_inchangee(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    // Sans exercice : l'écriture 2 est datée hors de l'exercice 2020-2030.
+    let (st, body) = envoyer(
+        &ctx,
+        ROUTE,
+        &conversion_equilibree(&ctx, "2026-03-05", "2031-03-06"),
+    )
+    .await;
+    assert_eq!((st, code(&body)), (400, "NO_FISCAL_YEAR"), "{body}");
+    assert_eq!(body["error"]["details"]["entry"], 2, "{body}");
+    assert_eq!(nb_ecritures(&pool, ctx.s.company_id).await, 0);
+
+    // Un refus de conversion précède le doublon.
+    let corps = conversion_equilibree(&ctx, "2026-03-05", "2026-03-06");
+    let (st, _) = envoyer(&ctx, ROUTE, &corps).await;
+    assert_eq!(st, 201);
+    let mut desequilibree = corps.clone();
+    desequilibree["entries"][1]["lines"][1] = chf(ctx.transit, "0", "900.00");
+    let (st, body) = envoyer(&ctx, ROUTE, &desequilibree).await;
+    assert_eq!(
+        (st, code(&body)),
+        (400, "FX_CONVERSION_TRANSIT_UNBALANCED"),
+        "{body}"
+    );
+
+    // Exercice clos + projet archivé.
+    let projet = sqlx::query(
+        "INSERT INTO projects (company_id, code, name, archived) VALUES (?, 'ARCH', 'Archivé', TRUE)",
+    )
+    .bind(ctx.s.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(ctx.s.fiscal_year_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut clos = conversion_equilibree(&ctx, "2026-03-07", "2026-03-08");
+    clos["entries"][0]["lines"][0]["projectId"] = json!(projet);
+    let (st, body) = envoyer(&ctx, ROUTE, &clos).await;
+    assert_eq!((st, code(&body)), (400, "FISCAL_YEAR_CLOSED"), "{body}");
+    assert_eq!(body["error"]["details"]["entry"], 1, "{body}");
 }
