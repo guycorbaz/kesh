@@ -34,12 +34,14 @@ décision. Le correctif proposé par la passe est la résolution par défaut.
   gardée comme **exigence technique seulement** : **jamais deux appels simultanés pour un même jeu de paramètres, ni
   d'appel pour le rapport déjà affiché** — le modèle garde un rapport par onglet (C-55-1-2) : *Retour* plus loin, un
   changement d'exercice ou une génération interrompue redemandent. Rien à confirmer au T0.
-- **R-5 (P7, V7-4) — Portée du gras.** Défaut : **les trois sélecteurs d'exercice des Rapports** en gras (celui du haut,
-  `ReportSelector` ; celui des rapports par compte analytique, PR 46 `+page.svelte:966-971` ; celui du Grand livre, 55-2
-  AC-11), par une classe commune ; le gras ne vaut que pour la valeur affichée du `<select>` (les options de la liste
-  ouverte restent normales) ; la note de version le dit. *(Précisé le 2026-11-26 par l'utilisateur : le **nom** seul en
-  gras, non les dates, AC-14 ; si les trois sélecteurs sont retenus, ils emploient le même composant que l'AC-14 —
-  celui du Grand livre est celui de la 55-2, AC-11.)*
+- **R-5 (P7, V7-4) — Portée du gras : remplacé le 2026-11-26** par D15 (AC-14 à AC-19) : un seul composant,
+  `ReportSelector`, sur tous les onglets à période, menu natif entièrement en gras ; plus de gras partiel ni de
+  `components/ui/select`. **R-7** (piloter `ui/select` sous jsdom, passe ciblée du 2026-11-26) est **retiré** avec lui.
+- **R-8 (D15, 2026-11-26) — Le sélecteur d'exercice, versé au-delà du plafond de huit passes** (une passe ciblée seulement,
+  dont les MEDIUM s'ajoutent ici en R-9 et suivants) : au T0, avant le code, relire contre D15 les sites que le sélecteur
+  touche dans le modèle — P17 amendé (*Appliquer une URL*, point 2 ; AC-8 b' ; AC-9 ; mutation « retrait du désarmement de
+  P17 »), la clé des champs comparée à la clé affichée (AC-16), `fy` déduit des dates (AC-5, AC-15) —, et confirmer avec le
+  mainteneur la décision elle-même (question au fichier d'epic) et C-55-1-8.
 - **R-6 (décision Q6 du mainteneur, 2026-11-25, versée sans passe : plafond atteint)** — § *Gates* aligné sur la
   *Dérogation* du fichier d'epic (story purement écran : specs des Rapports et de la navigation à la story, E2E complet et
   `gate-ci.sh` en fin d'epic) ; le T0 relit la phrase contre le fichier d'epic et le cite au Change Log.
@@ -67,9 +69,12 @@ afin de passer du bilan au grand livre d'un compte et d'en revenir sans perdre m
 
 ## Modules touchés (règle de splitting préventif)
 
-Quatre : `frontend/src/lib/features/reports` (`reports-url.ts` neuf, `reports.api.ts`, `ReportSelector.svelte` lu),
-`frontend/src/routes/(app)/reports` (page), `frontend/tests/e2e`, `docs/manual/fr/user-manual.tex`. `kesh-i18n` seulement
-si un texte apparaît (aucun n'est prévu). Aucun code Rust.
+Cinq depuis le 2026-11-26 (D15), **à la borne** de la règle : `frontend/src/lib/features/reports` (`reports-url.ts`,
+`fiscal-year-menu.ts`, `ReportPeriodHeading.svelte` neufs ; `reports.api.ts`, `ReportSelector.svelte` et les six vues
+modifiés), `frontend/src/routes/(app)/reports` (page), `frontend/tests/e2e`, `docs/manual/fr/user-manual.tex`, `kesh-i18n`
+(dix clés, AC-18). Aucun code Rust. ⚠️ La story grossit d'un sélecteur complet : taille déclarée au fichier d'epic
+(*Stories*) ; si le T0 juge l'ensemble trop lourd, le découpage (sélecteur à part) se propose au mainteneur avant le code,
+l'epic étant à six stories.
 
 ## Ce qui se lit au code
 
@@ -175,7 +180,7 @@ Le modèle est en même temps **simplifié** : la page n'applique jamais l'URL q
 | Clic sur un onglet | `selectTab` : onglet changé, `errorMsg` effacé, règle de la 46-2 (`resyncActiveGroupedTab`) ; **aucune requête** | **empile** : l'onglet et la clé du **rapport affiché** de cet onglet, ou `?tab=<id>` seul s'il n'en a pas ; les champs du formulaire ne changent pas | 1 |
 | Flèches, Origine, Fin sur les onglets | idem | **remplace** | 1 |
 | *Générer* | `generate()` (une génération à la fois, comme aujourd'hui) | **remplace**, avec la requête partie — écrit par le **gestionnaire** du bouton, après l'appel de `generate()`, jamais par `generate()` elle-même (qui sert aussi `changeGrouping`, `resyncActiveGroupedTab` et `applyUrl`) | 1 |
-| Exercice, date, compte, « comptes sans mouvement », compte analytique, mode modifiés | rien de neuf (P17 et l'effet du compte analytique vident comme aujourd'hui) | **aucune** : l'URL reste celle du dernier rapport demandé, jusqu'à *Générer* | 0 |
+| Exercice, date, compte, « comptes sans mouvement », compte analytique, mode modifiés | choix d'un exercice : dates aux bornes (AC-15) ; rapport affiché grisé (AC-16) ; l'effet du compte analytique vide comme aujourd'hui, P17 ne vide plus que les rapports par compte analytique | **aucune** : l'URL reste celle du dernier rapport demandé, jusqu'à *Générer* | 0 |
 | Contrôles de présentation et accordéons (Epic 46) | la 46-2 redemande, comme aujourd'hui | **aucune** dans la 55-1a (la présentation entre dans l'URL à la 55-1b) | 0 |
 | Clic sur un lien de compte (`<a href={ledgerHref(…)}>`) | — | **empile** (navigation SvelteKit, inchangée) : URL **non écrite par la page**, donc appliquée | 0 |
 
@@ -201,12 +206,16 @@ du grand livre (`:567`), **seulement si la clé lue diffère de `lastHandledKey`
 
 1. **Onglet** : `activeTab` prend la valeur lue ; `errorMsg` est effacé (comme `selectTab`, correctif M10).
 2. **Champs** — URL **complète** : chaque champ de l'onglet prend la valeur de l'URL, et **un champ absent prend son
-   défaut** (période vide, compte nul, `includeZero` faux) ; URL **incomplète** : aucun champ n'est modifié. Les champs des
+   défaut** (période vide — **depuis D15, les bornes de l'exercice** sur les onglets classiques, AC-15 —, compte nul,
+   `includeZero` faux) ; URL **incomplète** : aucun champ n'est modifié. Les champs des
    autres onglets ne bougent pas ; les champs des rapports par compte analytique ne sont **jamais** touchés (leur garde
    reste armée). Les `from`/`to` valides d'une URL incomplète restent dans l'URL. **Si l'exercice change** : ce que fait P17
    aujourd'hui — tous les rapports vidés (rapports par compte analytique compris, qui lisent le même exercice ; leur compte
    et leur mode restent) et toute génération en vol périmée (`invalidateInFlight`), clés retirées —, puis la période de
-   l'URL est posée (`lastFyId` posé avant les champs, pour que P17 ne l'efface pas après).
+   l'URL est posée (`lastFyId` posé avant les champs, pour que P17 ne l'efface pas après). *Amendé par D15 (AC-15,
+   AC-16)* : P17 ne vide plus ni les dates ni les rapports classiques — ceux des autres onglets restent affichés, périmés
+   si leur clé n'est plus celle des champs ; seuls les rapports par compte analytique sont vidés ; la péremption de la
+   génération en vol reste.
 3. **Rapport** — URL incomplète : le rapport affiché de l'onglet s'il y en a un, sinon l'invite ; aucune requête, aucune
    péremption. URL complète :
    - la **clé en vol** de l'onglet est celle-ci : rien (le rapport arrive) ;
@@ -291,8 +300,7 @@ d'aujourd'hui.
     rapport. Formulation à reprendre du précédent de la liste des factures (« la page et le filtre suivent l'adresse, si
     bien que le retour arrière du navigateur les retrouve »). `.tex` seul, PDF aplati contrôlé avant. Les manuels DE, EN et
     IT n'existent pas encore (`docs/manual/{de,en,it}/` ne porte qu'un `README.md`).
-12. **AC-12 — Textes.** Aucun texte visible n'est ajouté (prévu) ; s'il en faut un, quatre locales dans le bloc
-    `reports-nav-*`, `i18n-keys` (`sitesTotal` recompté par la garde) et `i18n-libelle-en-dur` verts.
+12. **AC-12 — Textes.** *Remplacé le 2026-11-26 par l'AC-18* (le sélecteur d'exercice ajoute des textes).
 
 ### Exigences de l'utilisateur (2026-11-25), critères explicites
 
@@ -322,20 +330,113 @@ d'aujourd'hui.
       clic sur un autre onglet et retour (0, rapport inchangé) ; E2E de l'AC-1, de l'AC-2 et de l'AC-4. *Preuve du rouge* :
       les cas « Retour », « Suivant », « rechargement » et « lien partagé » rougissent sans le correctif ; les cas du clic
       sur un onglet sont **verts avant et après** (non-régression, déclarée telle au Change Log, non comptée comme preuve).
-14. **AC-14 — Le nom de l'exercice en gras, non ses dates** (précision de l'utilisateur du 2026-11-26). Dans le sélecteur
-    d'exercice du haut des rapports (`ReportSelector.svelte`, lié à `selectedFiscalYearId`), l'exercice choisi s'affiche
-    avec **son nom seul en gras** et ses dates en graisse normale : **Exercice 2025** (01.01.2025 → 31.12.2025) — mettre
-    tout le libellé en gras ferait perdre ce qui distingue l'exercice. Classe `font-semibold` du thème sur le nom, aucune
-    couleur neuve ; les options de la liste ouverte restent en graisse normale. ⚠️ Un `<select>` natif ne peut pas mettre en
-    gras **une partie** de sa valeur affichée (`ReportSelector.svelte:46-57` : `<option>{fy.name} ({dates})</option>`, texte
-    brut) : le sélecteur passe au composant de liste de Kesh, `components/ui/select` (bits-ui, déjà employé par
-    `JournalEntryForm.svelte:819-825`), dont le déclencheur rend `<span class="font-semibold">{fy.name}</span>
-    ({dates})` ; même étiquette accessible (`aria-label` « Exercice »), même désactivation (`noFiscalYears || loading`),
-    valeurs en chaîne converties en nombre pour `selectedFiscalYearId`. Aucun E2E ne choisit cet exercice par
-    `selectOption` (`grep -rn selectOption frontend/tests/e2e` : seuls `paypal-*` sur un autre sélecteur) ; les specs qui
-    lisent sa valeur se relèvent au T0. Constat : Vitest — le nom est dans un élément `font-semibold`, les dates hors de
-    lui (mutation : classe sur tout le libellé → test rouge) ; capture (thème clair) qui montre le nom en gras et les dates
-    en graisse normale. `ReportSelector.svelte` passe de « lu » à « modifié » (tableau des fichiers communs).
+### Le sélecteur d'exercice (D15 — décision de l'utilisateur et avis UX du 2026-11-26, à confirmer par le mainteneur)
+
+*Remplace l'ancien AC-14 (le nom seul en gras par le composant `components/ui/select`), avec R-5 et R-7 : le menu reste un
+`<select>` natif, entièrement en gras, et ne montre plus les dates. Le composant `ui/select` n'est plus employé par les
+Rapports.* Règles pures dans `frontend/src/lib/features/reports/fiscal-year-menu.ts` (neuf), sans état ; le composant et la
+page ne font que les appeler (DRY : un seul endroit pour le texte d'un exercice, l'état du menu et l'en-tête).
+
+14. **AC-14 — Le libellé et le menu.**
+    - **Un seul libellé « Exercice »**, hors du menu, par un vrai `<label for="report-fiscal-year">` associé au
+      `<select id="report-fiscal-year">` ; l'`aria-label` en double de `ReportSelector.svelte:51` est **retiré**. Constat :
+      Vitest — `getByRole('combobox', { name: 'Exercice' })` trouve le menu, et le menu n'a **pas** d'attribut `aria-label`
+      (mutation : `aria-label` remis → test rouge) ; E2E — `page.getByLabel('Exercice')` ; axe à zéro violation sur le Bilan
+      (`reports.spec.ts`) et dans `reports-navigation.spec.ts`. Lu par un lecteur d'écran « Exercice, liste déroulante, 2025 »
+      (constat manuel, déclaré tel au Dev Agent Record, non compté comme test).
+    - **Le menu est en gras** : `select { font-weight: 600 }`, `option { font-weight: 400 }` (classes du thème
+      `font-semibold` sur le `<select>`, `font-normal` sur les `<option>`, aucune couleur neuve). Le menu ne montrant plus
+      les dates, le texte fermé est l'exercice seul, donc tout en gras. Constat : Vitest (classes présentes sur le `<select>`
+      et sur chaque `<option>`) ; capture du menu fermé et du menu ouvert.
+    - **Le texte d'un exercice** (`libellesExercices(fiscalYears): Map<id, string>`) :
+      - les **années** — « 2025 », ou « 2025/2026 » pour un exercice décalé — quand le nom est celui que Kesh aurait donné,
+        `name === nomParDefaut(startDate, endDate)`, réplique TypeScript de `nom_par_defaut`
+        (`crates/kesh-core/src/accounting/exercice.rs:33-38` : « Exercice AAAA » si début et fin tombent la même année,
+        « Exercice AAAA/AAAA » sinon ; commentaire qui renvoie à la fonction Rust) ;
+      - sinon le **nom saisi**, tel quel (espaces compris, aucune troncature) ;
+      - **doublon de texte** : les seules entrées concernées reçoivent leurs bornes jour-mois, « 2025 (01.03–30.06) » ;
+        si les bornes jour-mois ne les séparent pas encore, les bornes complètes, « Compta (01.01.2024–31.12.2024) ». Les
+        autres entrées ne changent pas.
+    - Société sans exercice : menu vide et désactivé, message d'aujourd'hui (`reports-error-no-fiscal-year-available`),
+      inchangé.
+15. **AC-15 — Le menu et les dates (« Du », « Au »).**
+    - Vocabulaire unique **« Du » / « Au »** (clés existantes `reports-ledger-from`, `reports-ledger-to`, quatre locales
+      déjà traduites) : les libellés « Période — début » et « Période — fin », à moitié écrits en dur
+      (`ReportSelector.svelte:63,75`), disparaissent.
+    - **Les dates sont toujours remplies** : à l'ouverture de la page, avec les bornes de l'exercice choisi par défaut
+      (`data.fiscalYears[0]`, comme `:82`) ; **choisir un exercice** remplit « Du » et « Au » avec ses bornes. *Amende P17*
+      (`+page.svelte:151-173`) : le remplissage se fait dans le **gestionnaire du choix** (`onchange` du menu), jamais dans
+      l'effet ; l'effet ne vide plus ni les dates ni les rapports classiques affichés (ils deviennent périmés, AC-16) ; il
+      garde la péremption de la génération en vol (`invalidateInFlight`) et le vidage des rapports par compte analytique
+      (leur garde d'export, `:182-195`, est inchangée). Une date changée à la main n'appelle jamais ce remplissage.
+    - **L'état du menu se déduit des dates** (`etatDuMenu(du, au, fiscalYears, precedent)`) ; un exercice contient une date
+      si `startDate ≤ date ≤ endDate` :
+      - les deux dates dans **le même exercice** E : le menu montre E, **même pour une période partielle** ; si la période
+        n'est pas exactement les bornes de E, un lien **« Exercice entier »** (`reports-nav-fy-whole`, bouton de style lien,
+        `data-testid="report-fy-whole"`) apparaît à côté des dates et remet les bornes de E ;
+      - les deux dates dans des **exercices différents** : une option **désactivée** « Plusieurs » (`reports-nav-fy-multiple` :
+        FR « Plusieurs », DE « Mehrere », IT « Diversi », EN « Multiple ») est ajoutée et sélectionnée ;
+      - **une date hors de tout exercice** : option désactivée « Hors exercice » (`reports-nav-fy-outside` : FR « Hors
+        exercice », DE « Ausserhalb », IT « Fuori esercizio », EN « Outside fiscal years ») ;
+      - **début après fin**, ou une date vide ou incomplète pendant la saisie : le menu **ne change pas** (`precedent`) —
+        c'est une erreur de saisie, jugée par l'API comme aujourd'hui (D5) ;
+      - dès qu'un exercice est choisi, l'option désactivée **disparaît** du menu.
+    - **Onglets à un seul exercice** (Bilan, Compte de résultat, Balance, Journaux, TVA, rapports par compte analytique en
+      mode *Exercice*) : l'API exige un exercice qui contienne la période (`crates/kesh-api/src/routes/reports.rs:65`,
+      `fiscal_year_id: i64`, et `REPORT_PERIOD_OUT_OF_FISCAL_YEAR`) ; la requête prend l'exercice **déduit des dates**
+      (`selectedFiscalYearId` suit le menu) ; avec « Plusieurs » ou « Hors exercice », *Générer* est **désactivé** et un
+      message dit pourquoi (`reports-nav-needs-one-fy`, « Ce rapport porte sur un seul exercice : choisissez deux dates du
+      même exercice. », `role="status"`). Le Grand livre, qui franchit la borne, génère dans tous les cas (55-2).
+      *Choix de la fiche, à confirmer avec la décision* : la décision ne dit pas ce que fait *Générer* sur ces onglets ;
+      désactiver est la seule issue sans changement d'API.
+    - **Le même composant sur tous les onglets à période** : `ReportSelector` porte le libellé, le menu, « Du », « Au »,
+      « Exercice entier », *Générer* et les exports ; les contrôles propres d'un onglet (compte et « comptes sans
+      mouvement » du Grand livre, compte analytique et mode des rapports par compte analytique) lui sont passés par un
+      *snippet* ; la page n'a plus qu'un bandeau à période (DRY). Le Grand livre l'emploie avec ses propres dates
+      (`ledgerFrom`, `ledgerTo`) et `unSeulExercice={false}` (55-2, AC-11) ; le menu des rapports par compte analytique
+      (`+page.svelte:747-760`, `data-testid="project-report-fiscal-year"`) est remplacé par celui de `ReportSelector`, avec
+      « Du » et « Au » (la requête lit déjà la période des rapports classiques, `:228-230`) ; en mode *Cumulé*, menu et dates
+      sont masqués. La balance âgée (arrêtée à ce jour) n'a pas de période : inchangée.
+    - **URL (D1, D5)** : aucun paramètre neuf. Les dates étant toujours remplies, `from` et `to` s'écrivent toujours sur les
+      onglets classiques ; ce sont eux qui déterminent l'exercice : `fy` reste écrit (l'exercice déduit) et ne se lit seul
+      que si `from` et `to` manquent (les bornes de `fy` sont alors le défaut de la période, au lieu d'une période vide,
+      *Appliquer une URL*, point 2) ; un `fy` qui contredit les dates est corrigé à la normalisation. Une URL classique dont
+      les dates tombent dans plusieurs exercices n'est pas complète : l'invite, « Plusieurs », aucune requête.
+16. **AC-16 — Rapport périmé.** Si l'exercice ou les dates — ou, au Grand livre, le compte et « comptes sans mouvement » —
+    changent après *Générer*, le rapport affiché reste à l'écran, **grisé** (`opacity-60`, `aria-disabled` non posé : ses
+    liens restent utilisables), et porte au-dessus de lui « Paramètres modifiés — cliquez sur Générer »
+    (`reports-nav-stale`, `role="status"`, `data-testid="report-stale"`). Le critère est **la clé des champs différente de
+    la clé affichée** de l'onglet (*Appliquer une URL*, point 4) : remettre les paramètres du rapport (p. ex. « Exercice
+    entier ») retire le grisé sans requête. Tant que le rapport est périmé, **Export PDF et Export CSV sont désactivés** :
+    l'export suit les champs (`+page.svelte` PR 46 `:660-690`) et exporterait autre chose que l'écran (l'issue « export
+    d'une autre période » de la section *Issues à ouvrir* se réduit d'autant, à reformuler au T0). *Générer* retire le
+    grisé à l'acceptation de la réponse.
+17. **AC-17 — L'en-tête du rapport dit la période réelle.** Les lignes « Période : … — … » des vues
+    (`BalanceSheetView.svelte:117-118`, `IncomeStatementView.svelte:37`, `TrialBalanceView.svelte:39`,
+    `JournalReportView.svelte:39`, `VatReportView.svelte:23`, `GeneralLedgerView.svelte:207-208` à `ef993ae62`, relevées de
+    nouveau sur la base PR 46 au T0) sont remplacées
+    par un composant `ReportPeriodHeading.svelte` (neuf) qui lit la période **de la réponse** (non des champs) et
+    `enTetePeriode(du, au, fiscalYears)` :
+    - exercice entier : « Exercice 2025 — du 01.01.2025 au 31.12.2025 » (`reports-nav-heading-fy`, `{ $years }`), ou, nom
+      saisi, « Compta TVA — du … au … » (`reports-nav-heading-named`) ;
+    - partie d'un exercice : « Du 01.01.2026 au 31.03.2026 (partie de l'exercice 2025/2026) » (`reports-nav-heading-part`,
+      `{ $fiscalYear }` = les années, ou le nom saisi entre guillemets « … ») ;
+    - plusieurs exercices (Grand livre) : « Du … au … (exercices 2024/2025 et 2025/2026) » (`reports-nav-heading-several`,
+      liste formée par `Intl.ListFormat` de la locale, type `conjunction`) ;
+    - hors exercice (Grand livre) : « Du … au … (hors exercice) » (`reports-nav-heading-outside`).
+    Dates au format suisse (`formatSwissDate`). Exports PDF et CSV inchangés (leur en-tête est celui du serveur).
+18. **AC-18 — Textes.** *Remplace l'ancien AC-12 (« aucun texte visible n'est ajouté »).* Dix clés neuves dans le bloc
+    `reports-nav-*` des quatre locales : `reports-nav-fy-multiple`, `-fy-outside`, `-fy-whole`, `-stale`, `-needs-one-fy`,
+    `-heading-fy`, `-heading-named`, `-heading-part`, `-heading-several`, `-heading-outside` ; textes FR ci-dessus, DE, IT et
+    EN écrits au T1 (les quatre libellés du menu sont imposés par la décision) ; aucune phrase assemblée par concaténation
+    (la liste des exercices passe par `Intl.ListFormat`) ; `i18n-keys` (`sitesTotal` recompté par la garde) et
+    `i18n-libelle-en-dur` verts ; `parity_between_locales` à la clôture (§ *Gates*).
+19. **AC-19 — Manuel.** `docs/manual/fr/user-manual.tex`, § *Rapports comptables* : un paragraphe « Choisir la période »
+    avant § *Bilan* (le menu montre l'exercice, ses années ou son nom ; « Du » et « Au » ; « Exercice entier » ; « Plusieurs »
+    et « Hors exercice », et pourquoi le Bilan, le Compte de résultat, la Balance, les Journaux et la TVA ne portent que sur
+    un exercice ; le rapport grisé « Paramètres modifiés » ; l'en-tête). Les phrases qui disent encore « période — début »
+    ou que changer d'exercice vide les dates se corrigent (grep `période\|exercice` du § au T0). `.tex` seul, PDF aplati
+    contrôlé avant.
 
 ## Tests à écrire, et la preuve du rouge
 
@@ -350,9 +451,31 @@ d'aujourd'hui.
   `goto`) ; **clés** : lien de compte puis *Retour* (appliqué), *Retour* puis *Suivant* (appliqué) ; **règle de
   l'absent** : lien de compte après un grand livre « comptes sans mouvement » (requête sans `includeZero`), URL complète
   sans `from`/`to` après un autre onglet à période ; **clés** : échec puis Retour (redemande), P17 puis Retour.
+- **Vitest `frontend/src/lib/features/reports/fiscal-year-menu.test.ts`** (neuf, D15) : `nomParDefaut` (mêmes cas que les
+  tests de `exercice.rs` : même année, décalé, 29 février) ; `libellesExercices` — années pour un nom par défaut, nom saisi
+  tel quel, nom saisi égal aux années d'un autre (« 2025 » saisi), doublon séparé par jour-mois sur les **seules** entrées
+  concernées, doublon que jour-mois ne sépare pas (bornes complètes) ; `etatDuMenu` — bornes exactes (exercice, pas de
+  lien), partie (exercice, lien), deux exercices (« Plusieurs »), une date hors (« Hors exercice »), les deux hors, début
+  après fin (précédent), date vide (précédent), exercices non contigus ; `enTetePeriode` — les quatre cas, nom saisi,
+  trois exercices (liste). Mutations, chacune tuée par un test nommé au Change Log : comparaison au nom par défaut
+  retirée (toujours les années) ; doublon ajouté à toutes les entrées ; `<` au lieu de `≤` aux bornes ; début après fin
+  qui rend « Hors exercice ».
+- **Vitest `frontend/src/lib/features/reports/ReportSelector.test.ts`** (neuf, D15) : `<label for>` et nom accessible
+  « Exercice », aucun `aria-label` ; classes de graisse ; choix d'un exercice → « Du » et « Au » aux bornes ; date changée à
+  la main → menu sur l'exercice, lien « Exercice entier » présent, clic → bornes, lien absent ; deux exercices → option
+  « Plusieurs » sélectionnée et `disabled`, puis choix d'un exercice → option retirée ; « Hors exercice » de même ;
+  `unSeulExercice` vrai → *Générer* désactivé et message, faux → *Générer* actif.
+- **Vitest de la page** (`reports-page-url.test.ts`, D15) : ouverture → dates aux bornes du premier exercice ; date changée
+  après *Générer* → rapport grisé, message, exports désactivés, 0 requête ; « Exercice entier » qui rend la clé affichée →
+  grisé retiré, 0 requête ; *Générer* → grisé retiré ; P17 amendé — changement d'exercice par le menu : rapport classique
+  gardé et grisé (mutation : vidage remis → test rouge), génération en vol périmée, rapport par compte analytique vidé ;
+  en-tête de la réponse affichée (et non des champs).
 - **E2E Playwright `frontend/tests/e2e/reports-navigation.spec.ts`** (neuf) : AC-1 (`page.goBack()`, `page.goForward()`,
   requêtes comptées par `page.on('request')`), AC-2, AC-3, AC-4 (`browser.newContext({ storageState })` réduit aux cookies,
-  et `page.reload()`), AC-5 (deux valeurs invalides), AC-10 (`window.scrollY`).
+  et `page.reload()`), AC-5 (deux valeurs invalides), AC-10 (`window.scrollY`) ; **D15** (deux exercices créés par l'API,
+  modèle `api-fixtures.ts:445`) : `getByLabel('Exercice')`, choix → dates, « Du » changé → « Exercice entier », dates à
+  cheval → « Plusieurs » et *Générer* désactivé sur le Bilan, rapport grisé après un changement de date, en-tête ; axe à
+  zéro violation sur ces états.
 - **Preuve du rouge** : l'E2E AC-1 est lancé **avant** le correctif (journal `kesh-gate-logs/s55-1a/e2e-rouge-avant.log`) et
   rougit sur « Bilan affiché après Retour » ; les Vitest neufs de la page rougissent sans le correctif (journal). Mutations,
   chacune tuée par un test nommé au Change Log : *Générer* qui empile ; clé écrite non enregistrée (l'effet réapplique l'URL du clic : un champ modifié sans *Générer* est remis à la
@@ -366,7 +489,10 @@ d'aujourd'hui.
 
 Captures (thème clair, base de démonstration, `kesh-gate-logs/s55-1a/`) : Bilan avant le lien ; grand livre après le lien ;
 Bilan après *Retour* (barre d'adresse visible) ; lien collé dans un nouveau contexte ; URL normalisée après une valeur
-invalide. Jointes au Dev Agent Record et au prompt de la revue de code.
+invalide ; **D15** : menu fermé (année civile et exercice décalé), menu ouvert, période partielle avec « Exercice entier »,
+« Plusieurs » (*Générer* désactivé et message), « Hors exercice », rapport grisé « Paramètres modifiés », doublon et nom
+saisi, chaque en-tête. Référence de rendu : la démonstration hors du dépôt,
+`kesh-gate-logs/s55-selecteur/selecteur-exercice-demo.html`. Jointes au Dev Agent Record et au prompt de la revue de code.
 
 ## Tâches
 
@@ -377,6 +503,10 @@ invalide. Jointes au Dev Agent Record et au prompt de la revue de code.
 - [ ] **T3** — Page : écriture de l'URL par les gestionnaires (`lastHandledKey` posée à chaque `goto`) ; `applyUrl` et son
       `$effect` (remplacent `onMount` `:546` et l'effet `:567`) ; clés affichée et en vol par onglet ; P17 désarmée pour la
       seule période restaurée ; l'effet du compte analytique **jamais** désarmé.
+- [ ] **T3ter** — Sélecteur d'exercice (D15, AC-14 à AC-19) : `fiscal-year-menu.ts` et ses Vitest d'abord (rouges) ;
+      `ReportSelector` (libellé, menu, « Du »/« Au », « Exercice entier », *snippet* des contrôles propres) ; P17 amendé ;
+      grisé et exports ; `ReportPeriodHeading` dans les six vues ; dix clés i18n ; le bandeau des rapports par compte
+      analytique passe à `ReportSelector`. Le Grand livre est branché par la 55-2 (AC-11).
 - [ ] **T4** — Suites existantes : Vitest `reports-page.test.ts`, `reports-page-groupes.test.ts` ; E2E `reports.spec.ts`,
       `reports-groupes*.spec.ts`, `reports-currency.spec.ts`, `reports-export-pdf.spec.ts`, `dunning-roundtrip.spec.ts`,
       `open-items.spec.ts`, `homepage-charts.spec.ts`, `invoice-write-off.spec.ts`, `opening-balances.spec.ts` ;
@@ -398,7 +528,11 @@ backend, sauf : **À la clôture de la story**, comme elle modifie le manuel (et
 *Rapports* : *Retour* et *Suivant* du navigateur ramènent au rapport précédent, avec son exercice, sa période et son
 compte ; chaque clic sur un onglet est une étape de l'historique ; l'adresse d'une vue se copie et rouvre la même vue pour
 un utilisateur connecté, sans cliquer sur *Générer* (comme les liens de l'échéancier et des rappels vers la balance âgée,
-qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène au Bilan. (refs #À-VENIR)
+qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène au Bilan. Le sélecteur d'exercice est le même
+sur tous les onglets : il montre l'exercice seul, en gras (ses années, ou son nom s'il a été renommé) ; « Du » et « Au » sont
+toujours remplis, « Exercice entier » remet les bornes, « Plusieurs » ou « Hors exercice » s'affichent quand les dates
+sortent d'un exercice ; un rapport dont les paramètres ont changé est grisé jusqu'à *Générer*, et son en-tête dit la
+période réelle. (refs #À-VENIR)
 
 ## Dev Notes
 
@@ -427,6 +561,10 @@ qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène a
   avait corrigé la prémisse fausse « *Générer* interrompt » — le bouton est désactivé pendant `loading` — par une demande
   différée, retirée en P5) : l'onglet montre son invite, comme si l'on y arrivait par un clic.
 - **C-55-1-7** — Rapports par compte analytique hors de l'URL (validation P4, V4-1), issue à ouvrir.
+- **C-55-1-8** (D15) — Sur un onglet à un seul exercice, « Plusieurs » et « Hors exercice » désactivent *Générer* : l'API
+  exige un exercice qui contienne la période ; la décision ne le dit pas, c'est la seule issue sans changement d'API.
+- **C-55-1-9** (D15) — Un menu natif entièrement en gras plutôt que `components/ui/select` : le menu ne montre plus les
+  dates, le gras partiel n'a plus d'objet ; le natif garde le clavier, le lecteur d'écran et les E2E d'aujourd'hui.
 
 ### References
 
@@ -446,7 +584,8 @@ qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène a
 
 - (LOW, `enhancement`) Les rapports par compte analytique (dépenses, rendement) ne sont pas dans l'URL : *Retour* et un
   lien n'y ramènent que l'onglet (C-55-1-7) (Epic 55, story 55-1a).
-- (LOW, `bug` P3, préexistant) L'export d'un rapport classique reprend la période des champs, et le nom de fichier celle
+- (LOW, `bug` P3, préexistant ; **réduit par D15** : exports désactivés tant que le rapport est grisé, AC-16 — à
+  reformuler ou retirer au T0) L'export d'un rapport classique reprend la période des champs, et le nom de fichier celle
   du rapport affiché (`+page.svelte` PR 46 `:660-690`) : un champ modifié sans *Générer* exporte une autre période que
   l'écran (Epic 55, story 55-1a, relevé de validation).
 - (LOW, `enhancement`) Après la connexion, Kesh mène à l'accueil et non à l'adresse demandée (`(app)/+layout.ts:10-11`,
@@ -531,3 +670,14 @@ qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène a
   (`Number('')` vaut `0` : conversion explicite), UI-11 (« seuls `paypal-*` » est faux, 139 lignes de `selectOption`, aucune
   sur `ReportSelector` : la conclusion tient), UI-12 (AC-14 absent des § *Recette visuelle* et *Tests* ; « options en
   graisse normale » sans constat), UI-13 (R-5 parle encore de « classe commune » et de « valeur affichée du `<select>` »).
+- 2026-11-26 — **Décision de l'utilisateur et avis UX versés, à confirmer par le mainteneur** (D15, le sélecteur d'exercice
+  des Rapports et du Grand livre) : AC-14 récrit et AC-15 à AC-19 ajoutés — libellé « Exercice » unique par `<label for>`,
+  `aria-label` retiré ; menu natif entièrement en gras, sans dates ; années si le nom est celui de `nom_par_defaut`, sinon le
+  nom saisi, bornes ajoutées aux seuls doublons ; dates toujours remplies, choix d'un exercice → bornes ; menu déduit des
+  dates (exercice, même partiel, et « Exercice entier » ; « Plusieurs » et « Hors exercice » désactivées) ; même
+  `ReportSelector` sur tous les onglets à période, « Du » / « Au » ; rapport périmé grisé, exports désactivés ; en-tête de la
+  période réelle ; dix clés i18n (AC-18 remplace l'AC-12) ; manuel (AC-19) ; P17 amendé ; C-55-1-8, C-55-1-9 ; modules
+  portés à cinq. **Retirés** : l'ancien AC-14 (nom seul en gras par `components/ui/select`), R-5 (portée du gras), R-7
+  (piloter `ui/select` sous jsdom), l'AC-12 « aucun texte ». Passe de validation ciblée unique (Sonnet, prompt
+  `55-1a-55-2-epic-validation-prompt-2026-11-26-selecteur.md`), hors décompte (fiche au plafond) ; ses MEDIUM vont au T0
+  (R-8 et suivants).

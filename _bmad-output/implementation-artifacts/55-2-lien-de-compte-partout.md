@@ -13,16 +13,20 @@ La validation de l'ajout (sélecteur d'exercice du Grand livre) s'est arrêtée 
 (`kesh-gate-logs/s55-kickoff/55-2-validation-p6.md`), **renvoyé au développement** par la règle de la sixième passe : le T0
 le tranche avant toute ligne de code, ligne lue et décision citées au Change Log.
 
-- **R-1 (V6-1)** — « dates libres » n'est pas un geste possible quand les dates sont les bornes d'un exercice (sélecteur
-  dérivé). Défaut proposé (a) : l'entrée est un **état d'affichage** — la choisir est sans effet et le sélecteur se
-  resynchronise (test sur la valeur relue du `<select>`) ; AC-15 et la note de version disent « « dates libres » s'affiche
-  quand la période n'est pas un exercice ». Alternative (b) : entrée désactivée tant que les dates sont des bornes.
+- **R-1 (V6-1) — caduc le 2026-11-26** : l'entrée « dates libres » est retirée par D15 (décision de l'utilisateur et avis
+  UX, fichier d'epic) ; le menu se déduit des dates et montre « Plusieurs » ou « Hors exercice », options désactivées
+  (AC-11). **R-3** (passer l'AC-11 au composant `ui/select`, passe ciblée du 2026-11-26) est **retiré** de même : le menu
+  reste natif.
+- **R-4 (D15, 2026-11-26)** — Le sélecteur du Grand livre, récrit au-delà du plafond de huit passes (une passe ciblée
+  seulement ; ses MEDIUM s'ajoutent ici en R-5 et suivants) : au T0, relire l'AC-11 à l'AC-15 contre la 55-1a (AC-14 à
+  AC-17) telle que le développement de la 55-1a l'aura livrée, ligne lue citée au Change Log.
 - **LOW à reprendre** : V6-2 (préremplissage à l'**entrée** sur l'onglet, une fois, jamais à la saisie ; test « deux dates
   vidées à la main restent vides »), V6-3 (exception notée aux lignes `:146` et `:175` de la 55-1a ; `reports.spec.ts` cité
   pour la 55-2 au tableau des fichiers communs), V6-4 (second exercice créé pour l'E2E, `api-fixtures.ts:445` ; mutation
   « écriture de `selectedFiscalYearId` » avec un exercice différent et un rapport en mémoire ; tests nommés pour AC-13 et
   AC-14), V6-5 (fichier d'epic : la phrase « Justificatif et non pièce » à remettre au point 3 de l'*Objectif*), V6-6
-  (modules de `fiscalYearMatching` et de la fonction de libellé : `features/reports` ; taille de la story déclarée).
+  (modules de `fiscalYearMatching` et de la fonction de libellé : `features/reports` ; taille de la story déclarée ;
+  caduc pour ces deux fonctions, remplacées par `fiscal-year-menu.ts` de la 55-1a, D15).
 - **R-2 (P7, V7-1, MEDIUM) — Gardes Rust des textes. Tranché le 2026-11-26** par le mainteneur (resserrement de la
   dérogation Q6, fichier d'epic § *Dérogation*) dans le sens du défaut ci-dessous : § *Gates* et T5 le portent. La story, « purement écran », modifie `messages.ftl` et le manuel,
   gardés par des tests Rust (`parity_between_locales`, `textes_coherents`) qui ne tourneraient qu'en fin d'epic. Défaut :
@@ -100,15 +104,19 @@ rapports classiques (`ReportSelector`) et *Générer* reste inutilisable : compo
 
 **Le remède** (AC-11 à AC-15, numérotés à la suite des AC de la story) :
 
-11. **AC-11 — Sélecteur, valeur dérivée.** Le bandeau du Grand livre gagne un sélecteur « Exercice »
-    (`data-testid="ledger-fiscal-year"`, libellé `reports-filter-fiscal-year`, clé existante du domaine) : les exercices de
-    `data.fiscalYears`, au **même texte d'option** que `ReportSelector.svelte:55` (fonction de libellé extraite et partagée
-    par les deux), et une entrée **« — (dates libres) »** (`reports-nav-ledger-free-dates`, quatre locales). Sa valeur est
-    **dérivée** des dates par une fonction pure (`fiscalYearMatching(from, to, fiscalYears)` : l'exercice dont elles sont les
-    bornes, sinon « dates libres ») ; ce n'est pas un état propre, et le Grand livre **n'écrit jamais**
-    `selectedFiscalYearId` (P17 ne se déclenche pas). Choisir un exercice remplit « Du » et « Au » avec ses bornes ; choisir
-    « dates libres » laisse les dates ; des dates égales aux bornes d'un exercice affichent cet exercice (c'est le même
-    rapport). Société sans exercice : seule l'entrée « dates libres ».
+11. **AC-11 — Le sélecteur de la 55-1a, valeur déduite des dates** (*récrit le 2026-11-26 par D15*). Le bandeau du Grand
+    livre devient le composant **`ReportSelector`** de la 55-1a (AC-14 à AC-17) — libellé « Exercice » par `<label for>`,
+    menu natif en gras, « Du », « Au », « Exercice entier », *Générer* et exports —, lié à `ledgerFrom` et `ledgerTo`, avec
+    `unSeulExercice={false}` ; le compte et « comptes sans mouvement » lui sont passés par le *snippet* des contrôles propres
+    (`data-testid` d'aujourd'hui gardés : `ledger-from`, `ledger-to`, `ledger-account`, `ledger-include-zero`,
+    `ledger-generate`, exports). Le menu se **déduit** des dates par `etatDuMenu` de la 55-1a (aucune fonction
+    `fiscalYearMatching` propre au Grand livre) : l'exercice qui contient les deux dates, **même pour une période
+    partielle** (et alors « Exercice entier ») ; « Plusieurs » pour deux exercices ; « Hors exercice » pour une date hors de
+    tout exercice ; début après fin : inchangé. **Différence avec les autres onglets** : le Grand livre franchit la borne,
+    donc *Générer* reste **actif** avec « Plusieurs » et « Hors exercice », sans message. Choisir un exercice remplit « Du »
+    et « Au » avec ses bornes ; le Grand livre **n'écrit jamais** `selectedFiscalYearId` (P17 ne se déclenche pas). Société
+    sans exercice : le menu est vide et désactivé, les dates restent libres et *Générer* utilisable dès qu'elles sont
+    remplies. **Retiré** : l'entrée « — (dates libres) » et sa clé `reports-nav-ledger-free-dates`.
 12. **AC-12 — Dates vides pré-remplies.** Quand l'onglet *Grand livre* s'affiche **avec ses deux dates vides** — clic ou
     clavier sur l'onglet (`selectTab`), URL incomplète `?tab=general-ledger`, rechargement, Retour —, « Du » et « Au »
     prennent les bornes de l'exercice choisi des rapports classiques (`selectedFiscalYearId`, par défaut le premier) ;
@@ -122,18 +130,23 @@ rapports classiques (`ReportSelector`) et *Générer* reste inutilisable : compo
 14. **AC-14 — URL.** Le sélecteur **se déduit** des dates de l'URL (55-1a : `from`, `to`) — aucun paramètre neuf, ordre
     canonique et `ledgerHref` inchangés.
 15. **AC-15 — Manuel et commentaires.** § *Grand livre*, l'item « Période libre, sans exercice »
-    (`user-manual.tex:4198-4205` à `1e23edb55`) : le titre et la première phrase deviennent « l'exercice comme raccourci pour
-    la période, et « dates libres » pour franchir la borne » ; la suite de l'item (ruptures, solde d'ouverture) reste. Les
-    commentaires rendus faux sont corrigés : `+page.svelte:103-106`, `:639-641` (« PAS de sélecteur d'exercice »),
-    `reports.spec.ts:385-386` (« AUCUN exercice à choisir »).
+    (`user-manual.tex:4198-4205` à `1e23edb55`) : le titre et la première phrase deviennent « l'exercice comme raccourci
+    pour la période ; des dates choisies à la main pour franchir la borne, le menu indiquant alors « Plusieurs » ou « Hors
+    exercice » », avec renvoi au paragraphe « Choisir la période » de la 55-1a (AC-19) ; la suite de l'item (ruptures, solde
+    d'ouverture) reste. Les commentaires rendus faux sont corrigés : `+page.svelte:103-106`, `:639-641` (« PAS de sélecteur
+    d'exercice »), `reports.spec.ts:385-386` (« AUCUN exercice à choisir »).
 
-**Tests** : Vitest de `fiscalYearMatching` (bornes exactes, dates libres, exercices voisins, aucun exercice) ; Vitest de la
-page (`reports-page-url.test.ts` de la 55-1a — le bandeau est dans `+page.svelte`) : choix d'un exercice → dates ;
-« dates libres » → dates gardées ; arrivée avec dates vides (clic, URL incomplète) → bornes de l'exercice choisi, *Générer*
-actif ; dates remplies gardées (garde et mutation) ; `selectedFiscalYearId` jamais écrit (mutation : écriture → P17 vide
-les rapports, test rouge) ; E2E `reports-navigation.spec.ts` : Bilan de E généré, clic sur *Grand livre* → sélecteur sur E,
-dates aux bornes, *Générer* actif, génération ; rouges sans le correctif (aucun `ledger-fiscal-year`). **Captures** :
-bandeau du Grand livre avec le sélecteur sur un exercice, et sur « dates libres ».
+**Tests** (*récrits le 2026-11-26*) : les règles du menu sont testées une fois, par `fiscal-year-menu.test.ts` et
+`ReportSelector.test.ts` de la 55-1a ; ici, Vitest de la page (`reports-page-url.test.ts` de la 55-1a — le bandeau est dans
+`+page.svelte`) : le bandeau du Grand livre est `ReportSelector` (`getByRole('combobox', { name: 'Exercice' })` dans
+`ledger-controls`) ; choix d'un exercice → dates aux bornes ; dates à cheval sur deux exercices → « Plusieurs » sélectionnée
+et désactivée, *Générer* **actif** (mutation : `unSeulExercice` vrai → test rouge) ; arrivée avec dates vides (clic, URL
+incomplète) → bornes de l'exercice choisi des rapports classiques, *Générer* actif ; dates remplies gardées (garde et
+mutation) ; `selectedFiscalYearId` jamais écrit (mutation : écriture → P17 périme la génération et vide les rapports par
+compte analytique, test rouge) ; E2E `reports-navigation.spec.ts` : Bilan de E généré, clic sur *Grand livre* → menu sur E,
+dates aux bornes, *Générer* actif, génération ; « Du » reculé dans l'exercice précédent → « Plusieurs », génération, en-tête
+« (exercices … et …) » ; rouges sans le correctif (aucun menu dans `ledger-controls`). **Captures** : bandeau du Grand livre
+sur un exercice entier, sur une partie (« Exercice entier »), et sur « Plusieurs » avec son en-tête.
 
 ## Critères d'acceptation
 
@@ -178,8 +191,8 @@ bandeau du Grand livre avec le sélecteur sur un exercice, et sur « dates libre
    violation sur les états peuplés de `reports-navigation.spec.ts`, ci-dessous ; celui de `reports.spec.ts` ne voit que le
    Bilan vide), libellés d'aujourd'hui : inchangés ; les Vitest existants des vues passent sans perte
    d'assertion (ceux qui lisaient un `<td>` de texte sont adaptés au lien, adaptation nommée au Change Log).
-9. **AC-9 — Textes.** Deux clés neuves, `reports-nav-vat-accounts` (« Comptes au grand livre : ») et
-   `reports-nav-ledger-free-dates` (« — (dates libres) », AC-11), dans un bloc
+9. **AC-9 — Textes.** Une clé neuve, `reports-nav-vat-accounts` (« Comptes au grand livre : ») — `reports-nav-ledger-free-dates`
+   est retirée avec « dates libres » (D15) ; les textes du sélecteur sont ceux de la 55-1a (AC-18) —, dans un bloc
    `reports-nav-*` des quatre locales (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`) ; les étiquettes
    réutilisent `reports-vat-column-vat-due` et `reports-vat-recoverable` (quatre locales déjà traduites, aucune phrase
    assemblée par concaténation) ; `i18n-keys` (`sitesTotal` recompté par la garde) et `i18n-libelle-en-dur` verts.
@@ -233,8 +246,8 @@ section lié et non lié ; TVA avec sa ligne de comptes ; Compte de résultat à
       AccountRef | null; recoverable: AccountRef | null }` (`AccountRef = { id, number }`), lus par la page **au premier
       affichage du décompte** (clic, URL, Retour), échec silencieux ; un compte désigné absent de la liste des comptes :
       sa paire est omise.
-- [ ] **T3bis** — Grand livre : `fiscalYearMatching`, sélecteur, préremplissage des dates vides, fonction de libellé
-      partagée avec `ReportSelector` (AC-11 à AC-15).
+- [ ] **T3bis** — Grand livre : le bandeau passe à `ReportSelector` de la 55-1a (`unSeulExercice={false}`, contrôles
+      propres par *snippet*), préremplissage des dates vides (AC-11 à AC-15).
 - [ ] **T4** — i18n, manuel, E2E, captures.
 - [ ] **T5** — Gates frontend ; E2E de la story et des Rapports ; à la clôture, `nextest -p kesh-i18n` et
       `binary(textes_coherents)` (§ *Gates*, R-2).
@@ -250,8 +263,9 @@ de la navigation au dernier commit de code ; suite complète et `scripts/gate-ci
 ## Note de version
 
 *Rapports* : le numéro de compte ouvre le grand livre de ce compte partout — Compte de résultat, Journaux, contreparties du
-Grand livre et, pour la TVA, les comptes de TVA due et d'impôt préalable. Le Grand livre a son sélecteur d'exercice, avec
-« dates libres » pour franchir la borne ; ses dates sont pré-remplies, et *Générer* utilisable, en arrivant d'un autre
+Grand livre et, pour la TVA, les comptes de TVA due et d'impôt préalable. Le Grand livre a le même sélecteur d'exercice que les
+autres rapports ; des dates choisies à la main franchissent la borne (« Plusieurs », « Hors exercice ») ; ses dates sont
+pré-remplies, et *Générer* utilisable, en arrivant d'un autre
 onglet. (refs #À-VENIR, #À-VENIR)
 
 ## Dev Notes
@@ -346,3 +360,10 @@ onglet. (refs #À-VENIR, #À-VENIR)
   passe au composant `ui/select` dès que la 55-1a l'adopte : la fonction de libellé partagée rend `{ name, dates }` (et non
   une chaîne), la valeur dérivée passe par un `Select.Root` contrôlé, et l'E2E clique le déclencheur puis
   `getByRole('option')` ; à trancher avec R-7 de la 55-1a.
+- 2026-11-26 — **Décision de l'utilisateur et avis UX versés, à confirmer par le mainteneur** (D15 du fichier d'epic, AC-14
+  à AC-19 de la 55-1a) : AC-11 récrit — le bandeau du Grand livre est `ReportSelector`, menu déduit des dates (exercice
+  même partiel, « Exercice entier », « Plusieurs », « Hors exercice »), *Générer* actif hors d'un exercice ; AC-15, tests,
+  captures, AC-9, T3bis et note de version alignés. **Retirés** : l'entrée « — (dates libres) » et sa clé
+  `reports-nav-ledger-free-dates`, la fonction `fiscalYearMatching` (remplacée par `etatDuMenu` de la 55-1a), R-1 (caduc),
+  R-3 (`ui/select`). Passe de validation ciblée unique (Sonnet, prompt
+  `55-1a-55-2-epic-validation-prompt-2026-11-26-selecteur.md`), hors décompte ; ses MEDIUM vont au T0 (R-4 et suivants).

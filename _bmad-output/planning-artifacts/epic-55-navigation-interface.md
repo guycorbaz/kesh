@@ -22,7 +22,9 @@ ajoutée le 2026-11-25, est découpée en 55-3a et 55-3b à sa validation P1 (pl
 préventif*) : la P3 de la 55-1 a remonté un HIGH après une P2 à MEDIUM, une part de ses défauts naissant des remédiations
 de la P2 (recyclage) ; le découpage sépare la présentation de l'Epic 46 (55-1b) de l'URL des rapports (55-1a), et le modèle
 est simplifié (la page n'applique jamais l'URL qu'elle écrit). Plus aucune story ne peut s'ajouter sans en sortir une. Le signal s'est **maintenu** à la P4 de la 55-1a (HIGH encore) : le
-périmètre a été réduit (rapports par compte analytique hors de l'URL), et la P5 a rendu 0 HIGH.
+périmètre a été réduit (rapports par compte analytique hors de l'URL), et la P5 a rendu 0 HIGH. Le 2026-11-26, le sélecteur
+d'exercice (D15) entre dans la 55-1a, portée de M à **L** (cinq modules, à la borne), faute de place pour une septième
+story ; le choix est posé au mainteneur (§ *Questions au mainteneur*).
 
 **Issues** (ouvertes par l'agent du mainteneur ; numéros à reporter) :
 
@@ -60,8 +62,11 @@ L'utilisateur, en tenant ses livres, navigue dans les Rapports comme dans des pa
    **depuis le Journal**, par un bouton sur l'écriture, sans passer par l'écriture ni la facture, et **sans figer** la
    facture ; le Grand livre suit (55-3a serveur, 55-3b écran). « Justificatif » et non « pièce », qui désigne déjà le
    numéro d'écriture au grand livre.
-4. Le **Grand livre a son sélecteur d'exercice**, avec « dates libres » ; ses dates sont pré-remplies et *Générer*
-   utilisable en arrivant d'un autre onglet (55-2, défaut d).
+4. Le **Grand livre a son sélecteur d'exercice** — le même que les autres rapports (D15) ; ses dates sont pré-remplies et
+   *Générer* utilisable en arrivant d'un autre onglet (55-2, défaut d).
+5. **Un seul sélecteur d'exercice** sur tous les onglets à période (D15) : l'exercice seul, en gras ; « Du » et « Au »
+   toujours remplis ; « Exercice entier », « Plusieurs », « Hors exercice » ; un rapport périmé grisé ; l'en-tête qui dit
+   la période réelle (55-1a, et 55-2 pour le Grand livre).
 
 ## Hors périmètre
 
@@ -159,6 +164,25 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
 - **D6 — Un seul composant de lien de compte** (`AccountLink.svelte`) qui rend le numéro et le lien de `ledgerHref` ;
   toutes les vues l'emploient. `ledgerHref` garde sa sortie **à l'octet près** (ordre `tab`, `accountId`, `from`, `to`)
   pour l'accueil et la réévaluation. (55-2)
+- **D15 — Le sélecteur d'exercice des Rapports et du Grand livre (décision de l'utilisateur et avis UX du 2026-11-26, à
+  confirmer par le mainteneur ; question ci-dessous).** Le libellé « Exercice » une seule fois, hors du menu, par un vrai
+  `<label for>` (l'`aria-label` en double est retiré : « Exercice, liste déroulante, 2025 ») ; un `<select>` natif dont la
+  valeur fermée est en gras (`select` 600, `option` 400), qui montre les **années** (« 2025 », « 2025/2026 ») quand le nom
+  est celui que Kesh aurait donné (`nom_par_defaut`, `crates/kesh-core/src/accounting/exercice.rs:33-38`), sinon le **nom
+  saisi**, et les **bornes** ajoutées aux seuls doublons (« 2025 (01.03–30.06) ») ; le menu ne montre plus les dates
+  (`ReportSelector.svelte:55`). Choisir un exercice remplit « Du » et « Au » ; les dates sont toujours remplies. Dates
+  changées à la main : même exercice → le menu le montre, même partiel, avec un lien « Exercice entier » ; exercices
+  différents → option désactivée « Plusieurs » (DE « Mehrere », IT « Diversi », EN « Multiple ») ; une date hors de tout
+  exercice → « Hors exercice » (« Ausserhalb », « Fuori esercizio », « Outside fiscal years ») ; début après fin → le menu
+  ne change pas ; l'option désactivée disparaît dès qu'un exercice est choisi. **Le même `ReportSelector` sur tous les
+  onglets**, Grand livre compris, vocabulaire « Du » / « Au ». Rapport **périmé** grisé, « Paramètres modifiés — cliquez
+  sur Générer ». **En-tête** de la période réelle : « Exercice 2025 — du 01.01.2025 au 31.12.2025 », « du … au … (partie de
+  l'exercice 2025/2026) », « du … au … (exercices 2024/2025 et 2025/2026) ». **Remplace** le gras partiel par
+  `components/ui/select` (ancien AC-14 de la 55-1a, ses R-5 et R-7 ; R-3 de la 55-2) et l'entrée « — dates libres » de la
+  55-2 ; `ui/select` n'est plus nécessaire. *Choix des fiches* (C-55-1-8) : sur un onglet qui ne porte que sur un exercice,
+  « Plusieurs » et « Hors exercice » désactivent *Générer*, l'API exigeant un exercice qui contienne la période ; le Grand
+  livre génère. Démonstration hors du dépôt : `kesh-gate-logs/s55-selecteur/selecteur-exercice-demo.html`. (55-1a AC-14 à
+  AC-19, 55-2 AC-11 à AC-15)
 - **D7 — TVA : les comptes désignés (Q3, acceptée par le mainteneur le 2026-11-25).** Le décompte TVA ne montre aucun compte. La 55-2 ajoute une ligne « Comptes au
   grand livre : TVA due `NNNN` · TVA récupérable `MMMM` » (réglages de facturation, lisibles par tout rôle), chaque numéro
   en lien vers son grand livre sur la période du décompte ; compte non désigné : sa mention est omise — **sans compte désigné, aucun lien**. Une ligne à part, et
@@ -201,7 +225,7 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
 | Clé | Titre | Dépend de | Taille | Fiche |
 |---|---|---|---|---|
 | 55-0 | Kickoff (ce fichier ; pas de fiche) | — | — | — |
-| 55-1a | L'état des Rapports dans l'URL : Retour, Suivant, lien partagé | base PR 46 | M | `55-1a-etat-des-rapports-dans-l-url.md` |
+| 55-1a | L'état des Rapports dans l'URL : Retour, Suivant, lien partagé ; le sélecteur d'exercice (D15) | base PR 46 | **L** (M avant D15, 2026-11-26 ; cinq modules, à la borne) | `55-1a-etat-des-rapports-dans-l-url.md` |
 | 55-1b | La présentation des rapports groupés dans l'URL (Epic 46) | 55-1a | S | `55-1b-presentation-dans-l-url.md` |
 | 55-2 | Le lien de compte partout : Journaux, Grand livre, TVA, Compte de résultat à plat ; sélecteur d'exercice du Grand livre | 55-1a | M | `55-2-lien-de-compte-partout.md` |
 | 55-3a | Les justificatifs d'une écriture dans la réponse du journal et du grand livre (serveur) | base PR 46 ; **backend** (Q1 acceptée) | **M** (XL avant que l'aperçu marqué ne sorte de l'epic, 2026-11-26) | `55-3a-justificatifs-serveur.md` |
@@ -284,8 +308,8 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 | `frontend/src/lib/features/reports/TrialBalanceView.svelte` | 55-2 | **Epic 46** (46-6b, balance groupée) | idem |
 | `frontend/src/lib/features/reports/reports.api.ts` | 55-1a (`ledgerHref` inchangé), 55-2, 55-3b (lecteurs des PDF) | **Epic 46** (paramètres de regroupement, 46-8 : `getReportExportUrl`) | `ledgerHref` : sortie inchangée (D6) |
 | `frontend/src/lib/features/reports/reports.types.ts` | 55-3b (`hasDocuments`, `EntryDocument`) | **Epic 46**, Epic 47 | champ ajouté en fin de type |
-| `frontend/src/lib/features/reports/JournalReportView.svelte`, `GeneralLedgerView.svelte`, `VatReportView.svelte`, `ReportSelector.svelte` | 55-1a (`ReportSelector` : exercice en gras, AC-14), 55-2, 55-3b | — | 55-2 puis 55-3b |
-| `frontend/src/lib/features/reports/reports-url.ts` (neuf), `AccountLink.svelte` (neuf), `EntryDocuments.svelte`, `EntryDocumentsViewer.svelte` (neufs) | 55-1a, 55-1b, 55-2, 55-3b | — | — |
+| `frontend/src/lib/features/reports/JournalReportView.svelte`, `GeneralLedgerView.svelte`, `VatReportView.svelte`, `ReportSelector.svelte` | 55-1a (`ReportSelector` : le sélecteur d'exercice de tous les onglets, D15 ; en-tête de période dans les six vues, `ReportPeriodHeading`), 55-2 (Grand livre branché sur `ReportSelector`), 55-3b | — | 55-1a, puis 55-2, puis 55-3b |
+| `frontend/src/lib/features/reports/reports-url.ts`, `fiscal-year-menu.ts`, `ReportPeriodHeading.svelte` (neufs, 55-1a), `AccountLink.svelte` (neuf), `EntryDocuments.svelte`, `EntryDocumentsViewer.svelte` (neufs) | 55-1a, 55-1b, 55-2, 55-3b | — | — |
 | `frontend/src/lib/features/imported-supplier-invoices/DocumentPreview.svelte` | 55-3b (propriété facultative `errorMessage`) | — | comportement d'aujourd'hui inchangé sans la propriété |
 | `crates/kesh-report/src/journal_report.rs`, `general_ledger.rs`, `documents.rs` (neuf) ; `crates/kesh-api/src/lib.rs`, `routes/journal_entries.rs`, `services/ecritures.rs` (service et route de lecture) ; tests neufs `crates/kesh-report/tests/documents.rs`, `crates/kesh-api/tests/journal_entry_documents_e2e.rs` | 55-3a | ni l'Epic 46 ni l'Epic 47 n'y touchent | champ additif, exports inchangés |
 | `frontend/src/routes/(app)/+layout.svelte`, en-tête, titre de l'onglet | **aucune** story de l'epic ne les touche ; la page des Rapports porte son propre `<title>` (`reports/+page.svelte:618-620` à `1e23edb55`), que l'epic ne change pas | **#1582** (`fbfa64a27`, à `main` depuis le kickoff ; commit absent du worktree, non lu) | à la reprise de `main` : si #1582 touche aussi le `<title>` ou le `<svelte:head>` de `reports/+page.svelte`, le second arrivé garde les deux intentions |
@@ -293,8 +317,8 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 | `crates/kesh-report/src/csv.rs`, `pdf.rs`, `benches/export.rs` (littéraux de test seulement) | 55-3a | **Epic 46** (PR 46 : `csv.rs` 1119, `pdf.rs` 1776 lignes touchées), **Epic 47** (`csv.rs`, `pdf.rs`, `presentation.rs`) | une ligne `has_documents: false,` par littéral, rien d'autre |
 | `docs/api-external.md` (grand livre `:310`, journal `:1164` à `1e23edb55`) | 55-3a | **Epic 46** (+74 lignes vers `:313`), **Epic 47** (vers `:308-311`) | phrase ajoutée en fin de paragraphe, lignes relevées sur la base |
 | `crates/kesh-api/tests/reports_e2e.rs` | 55-3a | Epics 46 et 47 (cités par le fichier de l'Epic 46) | bloc de tests propre |
-| `crates/kesh-i18n/locales/*/messages.ftl` | 55-2, 55-3b (55-1a si un texte apparaît) | Epic 46 (`reports-groups-*`) | bloc `reports-nav-*` propre à l'epic |
-| `frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal`) | 55-2, 55-3b | tous | recompté par la garde après chaque reprise |
+| `crates/kesh-i18n/locales/*/messages.ftl` | 55-1a (dix clés du sélecteur, D15), 55-2, 55-3b | Epic 46 (`reports-groups-*`) | bloc `reports-nav-*` propre à l'epic |
+| `frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal`) | 55-1a, 55-2, 55-3b | tous | recompté par la garde après chaque reprise |
 | `frontend/tests/e2e/reports.spec.ts`, `homepage-charts.spec.ts`, `open-items.spec.ts`, `dunning-roundtrip.spec.ts` | 55-1a (comportement de génération, D3) | Epic 46 (`reports-groupes*.spec.ts`) | E2E neufs : `reports-navigation.spec.ts` (55-1a, 55-1b, 55-2), `reports-entry-documents.spec.ts` (55-3b) |
 | `docs/manual/fr/user-manual.tex` § *Rapports comptables* (`:4101`-`:4476` à `1e23edb55`) | 55-1a, 55-1b, 55-2, 55-3b (et § 11.6.1 *Le PDF émis est figé*, `:1635` : une phrase, l'affichage depuis les rapports ne fige pas et une facture pas encore émise y est signalée « PDF pas encore émis », 55-3b) | Epic 46 (§ *Bilan*, *Compte de résultat*, *Balance*) | `.tex` seul, PDF à la release |
 | `_bmad-output/implementation-artifacts/sprint-status.yaml` | toutes | tous | bloc propre à l'Epic 55 |
@@ -366,6 +390,11 @@ Versées aux décisions D12 à D14, à l'en-tête (*Migration*, *Backend*), aux 
 5. Les questions tranchées sont retirées ; reste la numérotation.
 
 ## Questions au mainteneur
+
+- **Sélecteur d'exercice, version de l'utilisateur et de l'UX : d'accord ?** (D15 ; 55-1a AC-14 à AC-19, 55-2 AC-11 ;
+  démonstration et captures : `kesh-gate-logs/s55-selecteur/selecteur-exercice-demo.html`). Avec, à confirmer en même
+  temps : *Générer* désactivé sur « Plusieurs » et « Hors exercice » hors du Grand livre (C-55-1-8), et la 55-1a portée de
+  M à L (cinq modules, à la borne) plutôt qu'une septième story.
 
 - **Numérotation** — à confirmer par l'utilisateur : le **56** pour l'epic à part des liens de compte (Q9) ; un numéro
   pour l'epic « PDF marqués » (esquisse hors du dépôt, `kesh-gate-logs/s55-decisions-2/epic-pdf-marques-esquisse.md`).
