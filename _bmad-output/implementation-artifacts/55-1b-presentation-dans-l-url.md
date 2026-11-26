@@ -1,6 +1,6 @@
 # Story 55-1b : la présentation des rapports groupés dans l'URL
 
-Status: in-progress
+Status: review
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D4. Issue : #À-VENIR (`bug`, P3, point b, comme
 la 55-1a). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration.** **Suit la 55-1a**
@@ -226,11 +226,11 @@ Captures (`kesh-gate-logs/s55-1b/`) : bilan groupé avant le lien ; après *Reto
 
 ## Tâches
 
-- [ ] **T0** — Base `epic/55-navigation` avec la 55-1a.
-- [ ] **T1** — Tests rouges.
-- [ ] **T2** — `groupingFromParams` et borne de `readIdList` (`reports-grouping.ts`) ; présentation dans `reports-url.ts` ;
+- [x] **T0** — Base `epic/55-navigation` avec la 55-1a.
+- [x] **T1** — Tests rouges.
+- [x] **T2** — `groupingFromParams` et borne de `readIdList` (`reports-grouping.ts`) ; présentation dans `reports-url.ts` ;
       écriture à la réponse ; lecture.
-- [ ] **T3** — Manuel, E2E, captures ; gates.
+- [x] **T3** — Manuel, E2E, captures ; gates.
 
 ## Gates
 
@@ -270,16 +270,90 @@ lien ou revenir par *Retour* remplace la présentation retenue. (refs #À-VENIR)
 
 ### Agent Model Used
 
+Opus (agent de développement de la story), 2026-11-27.
+
 ### Completion Notes List
+
+- **Modèle livré** (sur celui de la 55-1a, étendu sans réécriture) : la clé d'un onglet groupé — affichée, en vol, des
+  champs — porte la présentation (`classicKey(tab, q, presentation)`, `buildReportSearch` gagne `presentation`) ; la
+  clé affichée prend celle de la réponse (`displayedGrouping`, écho compris). Lecture : `groupingFromParams`
+  (`reports-grouping.ts`, neuve, règles du module : `isDetailLevel`, `readIdList`, `sanitizeGroupingView`, aucune
+  copie) appelée par `parseReportUrl` (`presentation: GroupingParams | 'flat' | null`). Écriture : `view`, `level`,
+  `subtotals`, `open`, `closed` (croissants, sans doublon, `%2C`) ou `view=flat` seul ; `reportPart` retire la
+  présentation pour comparer deux clés « même rapport ». `readIdList` borné par `Number.isSafeInteger`.
+- **Page** : `applyPresentation` (adresse complète d'un onglet groupé : `view=flat` garde les autres choix, présentation
+  valide prise tout entière, sinon la vue des contrôles ; `setGroupingView`, donc la mémoire) ; `writeUrlAtResponse`
+  (réponse acceptée d'un onglet groupé actif, garde R-1 par `reportPart(lastHandledKey)`) ; `urlForTab` rend la clé
+  affichée tant que la présentation n'est pas celle de la demande en vol des champs (C-55-1b-2) ; `loadActiveIfNeeded({
+  byClick })` : au clic, présentation seule différente → règle de la 46-2 (AC-5) ; *Retour* et lien demandent (R-3).
+  Corrections relevées au développement : `changeGrouping` pendant un **rechargement** de l'onglet garde la période en
+  vol (T0) ; `resyncActiveGroupedTab` ne redemande plus pendant une demande de l'onglet (`inFlightTab !== activeTab`) —
+  sans quoi une adresse égale à la clé en vol (AC-10) relançait la même requête (V6-5) ; `canExport` compare les clés
+  sans la présentation (l'export reprend la présentation affichée, 46-2 AC-6, S3 du Vitest de la 46-2).
+- **Tests existants adaptés, et pourquoi** : `reports-page-url.test.ts` (55-1a) — les adresses attendues des onglets
+  groupés portent la présentation (`PRES`) ; « adresse complète collée » : une normalisation (présentation ajoutée)
+  au lieu de 0 `goto` ; X1 : l'adresse finale porte `level=1` (écrite par la réponse, AC-5). `reports-url.test.ts` :
+  `presentation: null` dans les deux `toEqual` de lecture. E2E `reports-navigation.spec.ts` AC-5 (55-1a) : l'adresse
+  normalisée porte la présentation (relevé par le premier passage E2E, seul échec, aucun code de production touché).
+- **Preuve du rouge** : le bloc 55-1b de `reports-page-url.test.ts` joué sur `+page.svelte`, `reports-url.ts` et
+  `reports-grouping.ts` de la 55-1a (`5645d6890`) : **35 rouges sur 38** (`kesh-gate-logs/s55-dev/55-1b/rouge-vitest/avant.log`) ;
+  les trois verts sont attendus (sans rapport, rien ne se passait déjà ; R-1 : la 55-1a n'écrivait rien à la réponse).
+  **Mutations** : **14 sur 14 tuées**, chacune par une assertion nommée, copie non mutée verte d'abord
+  (`…/55-1b/mutations/run.py`, `resultat.log`) — mémoire appliquée malgré l'URL, `view=flat` aux défauts, écho non
+  reporté, geste qui écrit l'URL, redemande immédiate au clic, péremption omise (clé affichée), clé en vol sans
+  présentation, garde R-1 omise, période affichée redemandée pendant un rechargement, borne `isSafeInteger` retirée,
+  troisième clé non demandée (V6-2), export bloqué par la présentation, `resyncActiveGroupedTab` pendant une demande de
+  l'onglet, `anyValid` vrai pour des listes ignorées.
+- **Tests neufs** (exécutés, de `5645d6890` à la tête) : `reports-grouping.test.ts` 20, `reports-url.test.ts` 9,
+  `reports-page-url.test.ts` 38 — **67 Vitest** (5439 → 5506 au gate front, recompté) ; `reports-navigation.spec.ts` 1
+  E2E (AC-1, AC-2 au rechargement, AC-4).
+- **Gates** (au dernier commit de code `c3f28d2f9`, specs E2E et manuel retouchés ensuite, aucun code de production) :
+  `clippy.sh 55-1b/final` fmt rc=0, clippy rc=0 ; `nextest -p kesh-i18n` **42/42** ; `nextest -p kesh-api -E
+  'binary(textes_coherents)'` **34/34** (`55-1b/textes`, rejoué après la dernière retouche du manuel : `55-1b/textes-2`) ;
+  front (`55-1b/front`) : lint-i18n-ownership vert, Vitest **5506 passés (314 fichiers)**, build vert, check **3 erreurs**
+  de type dans la spec E2E neuve (`selectOption` rend `string[]`) corrigées (`07ff47e62`), front rejoué
+  (`55-1b/front-2`) : check **0 erreur**, lint-i18n-ownership vert, Vitest **5506 passés (314 fichiers)**, build vert. **E2E partiel (10 specs)**, `e2e.sh 55-1b/e2e` : `reports.spec.ts`,
+  `reports-navigation.spec.ts`, `reports-groupes.spec.ts`, `reports-groupes-export.spec.ts`,
+  `reports-balance-groupes.spec.ts`, `reports-currency.spec.ts`, `reports-export-pdf.spec.ts` (les specs des Rapports,
+  dont les specs groupées de l'Epic 46, V7-2), `homepage-charts.spec.ts`, `open-items.spec.ts`,
+  `dunning-roundtrip.spec.ts` : **48 passés, 1 rouge** (`reports-navigation.spec.ts` AC-5 de la 55-1a : l'attendu de la
+  spec ignorait la présentation, comportement voulu) ; spec corrigée, `e2e.sh 55-1b/e2e-nav` : **9 sur 9**. **E2E complet
+  et gate-ci en fin d'epic** (dérogation du fichier d'epic). Aucun `messages.ftl` touché : `sitesTotal` inchangé.
+- **Manuel** : `user-manual.tex` seul — paragraphe de la présentation (l'adresse porte la présentation affichée, prime
+  sur celle du navigateur, ouvrir un lien ou *Retour* la remplace, l'adresse change à la réponse ; *Retour* et un lien
+  interrompent aussi un autre chargement, R-3) ; « Naviguer dans les rapports » (la présentation s'ajoute). PDF compilé
+  hors du dépôt (`/tmp`, `\og … \fg{}` de la ligne 3562 remplacés dans la copie seulement) et aplati : les trois
+  passages lus.
+- **Captures** (thème clair, `kesh-gate-logs/s55-dev/55-1b/captures/55-1b-*.png`, montage E2E) : bilan groupé avant le
+  lien, après *Retour* deux fois, lien collé dans un nouveau contexte. Regardées : les trois montrent le Bilan au
+  « Niveau 1 », sous-totaux « en pied », le groupe 19 ouvert à la main (190 visible, fermé par le niveau), la ligne
+  « Total Actifs du test » en pied ; la barre d'adresse n'y figure pas (l'adresse est vérifiée par l'E2E).
+- **Défauts retenus, en attente du mainteneur** : aucun choix neuf hors de ceux de la 55-1a ; R-1 (garde par
+  `lastHandledKey` au lieu de `page.url` relevée au départ) et R-2 (rechargement grisé, AC-24 de la 55-1a) sont tranchés
+  dans le sens de la 55-1a, à confirmer avec elle.
 
 ### Issues à ouvrir
 
 (Points de revue non corrigés : sévérité, site, texte proposé ; source de la story de solde 55-4.)
 
-- (LOW, `bug` P3, préexistant) Une redemande de présentation (46-2, `changeGrouping`) lit le formulaire : un champ
-  modifié sans *Générer* passe dans la redemande (Epic 55, story 55-1b, relevé de validation).
+- *(Retirée au T0 : la 55-1a a corrigé `changeGrouping`, qui redemande `displayedClassic`.)* (LOW, `bug` P3,
+  préexistant) Une redemande de présentation (46-2, `changeGrouping`) lit le formulaire.
+- (LOW, `bug` P3, préexistant) `resyncActiveGroupedTab` ne sort que sur `loading` : un clic sur un onglet groupé dont
+  la présentation diffère de l'affichée, pendant le **rechargement** grisé d'un autre onglet (`refreshing`), redemande
+  tout de suite et périme ce rechargement, au lieu d'attendre sa fin comme le dit la règle de la 46-2
+  (`+page.svelte`, `resyncActiveGroupedTab`) (Epic 55, story 55-1b).
+- (LOW, `technical-debt`) L'écriture de l'URL à la réponse est asynchrone : un `goto` de la réponse émis pendant une
+  navigation SvelteKit encore en cours (lien de compte cliqué dans la même microtâche) la périmerait (V5-8 b) ; fenêtre
+  de microtâches, aucun `load` ne lisant l'URL ; non testé (Epic 55, story 55-1b).
 
 ### File List
+
+- `frontend/src/lib/features/reports/reports-grouping.ts`, `reports-grouping.test.ts`
+- `frontend/src/lib/features/reports/reports-url.ts`, `reports-url.test.ts`
+- `frontend/src/routes/(app)/reports/+page.svelte`, `reports-page-url.test.ts`
+- `frontend/tests/e2e/reports-navigation.spec.ts`
+- `docs/manual/fr/user-manual.tex`
+- `_bmad-output/implementation-artifacts/55-1b-presentation-dans-l-url.md`, `sprint-status.yaml`
 
 ## Change Log
 
@@ -386,3 +460,10 @@ lien ou revenir par *Retour* remplace la présentation retenue. (refs #À-VENIR)
     présentation : affichée = paramètres de la réponse acceptée et écho (`displayedGrouping`) ; en vol = présentation
     envoyée ; des champs = présentation des contrôles. Lecture `groupingFromParams` (`reports-grouping.ts`), écriture
     `buildReportSearch` (`reports-url.ts`), ordre `view`, `level`, `subtotals`, `open`, `closed`.
+- 2026-11-27 — **Développement** (T1 à T3) : `groupingFromParams` et borne de `readIdList` ; présentation dans
+  `reports-url.ts` (lecture, écriture, `reportPart`) ; page : clés avec présentation, application d'une adresse, écriture
+  à la réponse (garde R-1), clic et règle de la 46-2 ; trois corrections d'interaction (`changeGrouping` pendant un
+  rechargement, `resyncActiveGroupedTab` pendant une demande de l'onglet, `canExport` sans la présentation) ; manuel.
+  67 Vitest neufs, 1 E2E neuf, 14 mutations tuées, 35 rouges sur 38 avant. Gates : fmt, clippy, `kesh-i18n` 42/42,
+  `textes_coherents` 34/34, front vert, E2E partiel 10 specs (48 + 9 sur la spec corrigée). Statut `review` (aucune revue
+  de code : accord du mainteneur attendu).
