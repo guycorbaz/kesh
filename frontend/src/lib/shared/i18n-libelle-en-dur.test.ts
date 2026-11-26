@@ -467,7 +467,9 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
 // (`kesh-gate-logs/s39-pr/compteurs-1.log`).
 // **161 → 162** (revue P2 de la PR de l'Epic 39, M-1) : `partlyPostedLabel` (`wise/wise-labels.ts`, par `i18nMsg`) ;
 // `conforme` **139 → 140**, relevés par la garde (« expected 162 to be 161 »).
-const CANDIDATES_ATTENDUES = 162;
+// **162 → 163** (correctif du frais d'un paiement groupé Wise) : `cardGroupFeeAccountMissingLabel`
+// (`wise/wise-labels.ts`, par `i18nMsg`) ; `conforme` **140 → 141**, relevés par la garde (« expected 163 to be 162 »).
+const CANDIDATES_ATTENDUES = 163;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -984,7 +986,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 22, conforme: 140 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 22, conforme: 141 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

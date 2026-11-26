@@ -1255,7 +1255,8 @@ const ATTENDU = {
 	// la garde (`kesh-gate-logs/s39-pr/compteurs-1.log`).
 	// **3855** (revue P2 de la PR de l'Epic 39, M-1) : + `wise-review-card-group-partly-posted`, relevé par la garde
 	// (« expected 3855 to be 3854 »).
-	sitesTotal: 3855,
+	// **3856** (correctif du frais d'un paiement groupé Wise, revue P1) : + `wise-review-card-group-fee-account-missing`.
+	sitesTotal: 3856,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

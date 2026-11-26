@@ -312,7 +312,9 @@ depuis votre banque, versement Stripe), le reste par vos règles ; ce qui ne se 
   un frais isolé), la perte ou le gain ne portant que le change. Un solde à frais sans compte de frais met le groupe « à
   examiner » (`fee_account_missing`, le motif commun) et son acceptation est refusée (`PROVIDER_PROPOSAL_STALE`, même
   raison, `details.bankAccountIds`), rien n'est écrit. Vérifié sans changement : un même compte de frais peut servir à
-  PayPal, Stripe et Wise (aucune unicité, CHECK ni garde ne l'interdit ; test ajouté).
+  PayPal, Stripe et Wise s'il est en CHF (aucune unicité, CHECK ni garde ne l'interdit ; un compte de frais en devise
+  ne sert que les soldes de sa devise ; test ajouté). Revue P1 ciblée (Sonnet) : 0/0/1/4, MEDIUM `sitesTotal` 3855 → 3856
+  et LOW-1 (partage en CHF) corrigés ; LOW-2 à LOW-4 (texte statique, frais arrondi à zéro, couverture) laissés.
 
 ## Dev Agent Record
 
