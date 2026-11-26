@@ -37,17 +37,27 @@ async function login(page: Page): Promise<void> {
 	await expect(page).toHaveURL('/');
 }
 
-/** L'exercice civil précédent, créé une fois (le preset n'a que l'exercice de l'année). */
-async function exercicePrecedent(page: Page): Promise<void> {
+/** Les bornes de l'exercice par défaut de la société (le plus récent ; le preset le fait large). */
+async function bornesParDefaut(page: Page): Promise<{ startDate: string; endDate: string }> {
 	const ctx = await authedApiContext(page);
 	try {
-		const liste = await ctx.get('/api/v1/fiscal-years');
-		const fys: Array<{ startDate: string }> = await liste.json();
-		if (fys.some((f) => f.startDate === `${PRECEDENTE}-01-01`)) return;
-		const res = await ctx.post('/api/v1/fiscal-years', {
-			data: { name: `Exercice ${PRECEDENTE}`, startDate: `${PRECEDENTE}-01-01`, endDate: `${PRECEDENTE}-12-31` },
-		});
-		expect(res.ok(), `exercice précédent : ${res.status()}`).toBeTruthy();
+		const fys: Array<{ startDate: string; endDate: string }> = await (await ctx.get('/api/v1/fiscal-years')).json();
+		return fys.sort((x, y) => y.startDate.localeCompare(x.startDate))[0];
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}
+
+/** Deux exercices civils, l'année précédente et celle du jour, sur une société sans exercice. */
+async function deuxExercices(page: Page): Promise<void> {
+	const ctx = await authedApiContext(page);
+	try {
+		for (const a of [PRECEDENTE, ANNEE]) {
+			const res = await ctx.post('/api/v1/fiscal-years', {
+				data: { name: `Exercice ${a}`, startDate: `${a}-01-01`, endDate: `${a}-12-31` },
+			});
+			expect(res.ok(), `exercice ${a} : ${res.status()}`).toBeTruthy();
+		}
 	} finally {
 		await disposeContextSafe(ctx);
 	}
@@ -74,13 +84,14 @@ const ongletActif = (page: Page, id: string) =>
 test('AC-1 — Retour après un lien de compte : le Bilan, sans requête ; Suivant : le grand livre, sans requête', async ({ page }) => {
 	await login(page);
 	await createJournalEntryViaApi(page, 'E2E 55-1a — lien de compte', '500.00');
+	const fy = await bornesParDefaut(page);
 	const n = compter(page);
 	await page.goto('/reports');
 	const lien = page.getByRole('tabpanel').getByRole('link').first();
 	await expect(lien).toBeVisible({ timeout: 10000 });
 	// D16 : aucun bouton Générer sur le Bilan (ceux qui restent : grand livre, comptes analytiques).
 	await expect(page.locator('[data-testid="ledger-generate"], [data-testid="project-report-generate"]')).toHaveCount(0);
-	await expect(page).toHaveURL(new RegExp(`tab=balance-sheet&fy=\\d+&from=${ANNEE}-01-01&to=${ANNEE}-12-31`));
+	await expect(page).toHaveURL(new RegExp(`tab=balance-sheet&fy=\\d+&from=${fy.startDate}&to=${fy.endDate}`));
 	await capture(page, '1-bilan-avant-le-lien');
 	await lien.click();
 	await expect(page).toHaveURL(/tab=general-ledger&accountId=\d+&from=/);
@@ -162,9 +173,10 @@ test('AC-4 — lien partagé dans un nouveau contexte (cookies de la session) et
 
 test('AC-5 — valeurs invalides : ignorées, adresse normalisée sans entrée, aucune erreur', async ({ page }) => {
 	await login(page);
+	const fy = await bornesParDefaut(page);
 	await page.goto('/reports?tab=xyz&fy=abc');
 	await ongletActif(page, 'balance-sheet');
-	await expect(page).toHaveURL(new RegExp(`tab=balance-sheet&fy=\\d+&from=${ANNEE}-01-01&to=${ANNEE}-12-31$`));
+	await expect(page).toHaveURL(new RegExp(`tab=balance-sheet&fy=\\d+&from=${fy.startDate}&to=${fy.endDate}$`));
 	await page.goto(`/reports?tab=general-ledger&from=${ANNEE}-02-30&to=${ANNEE}-12-31&accountId=-3`);
 	await ongletActif(page, 'general-ledger');
 	await expect(page).toHaveURL(new RegExp(`tab=general-ledger&to=${ANNEE}-12-31$`));
@@ -188,9 +200,33 @@ test('AC-10 — un clic d’onglet garde le défilement ; axe à zéro violation
 	expect(axe.violations).toEqual([]);
 });
 
-test('D15 — le sélecteur : libellé, exercice choisi → dates, « Exercice entier », « Plusieurs », « Hors exercice »', async ({ page }) => {
+test('AC-24 — rechargement : le rapport reste, grisé, aria-busy', async ({ page }) => {
 	await login(page);
-	await exercicePrecedent(page);
+	await page.goto('/reports');
+	await expect(page.getByTestId('report-period-heading')).toBeVisible({ timeout: 10000 });
+	let liberer!: () => void;
+	const attente = new Promise<void>((res) => (liberer = res));
+	await page.route(/\/api\/v1\/reports\/balance-sheet\?/, async (route) => {
+		await attente;
+		await route.continue();
+	});
+	await page.getByTestId('report-to').fill(`${ANNEE}-09-30`);
+	await page.getByTestId('report-to').press('Enter');
+	await expect(page.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'true');
+	await expect(page.getByTestId('report-content')).toHaveClass(/opacity-60/);
+	await capture(page, '11-rechargement-grise');
+	liberer();
+	await expect(page.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false');
+	await expect(page.getByTestId('report-period-heading')).toContainText(`au 30.09.${ANNEE}`);
+	await page.unroute(/\/api\/v1\/reports\/balance-sheet\?/);
+});
+
+test('D15 — le sélecteur : libellé, exercice choisi → dates, « Exercice entier », « Plusieurs », « Hors exercice »', async ({ page }) => {
+	// Deux exercices civils : le preset ne porte qu'un exercice très large. Reseed d'une société sans
+	// exercice — d'où la place de ce test, le DERNIER du fichier.
+	await seedTestState('with-company-no-fy');
+	await login(page);
+	await deuxExercices(page);
 	const n = compter(page);
 	await page.goto('/reports');
 	// Le libellé « Exercice » (AC-14) est vérifié par le Vitest et par axe : l'E2E vise le data-testid
@@ -240,25 +276,4 @@ test('D15 — le sélecteur : libellé, exercice choisi → dates, « Exercice e
 	await menu.selectOption({ label: String(ANNEE) });
 	await expect(menu.locator('option[value="__outside"]')).toHaveCount(0);
 	await expect(page.getByTestId('report-content')).toBeVisible();
-});
-
-test('AC-24 — rechargement : le rapport reste, grisé, aria-busy', async ({ page }) => {
-	await login(page);
-	await page.goto('/reports');
-	await expect(page.getByTestId('report-period-heading')).toBeVisible({ timeout: 10000 });
-	let liberer!: () => void;
-	const attente = new Promise<void>((res) => (liberer = res));
-	await page.route(/\/api\/v1\/reports\/balance-sheet\?/, async (route) => {
-		await attente;
-		await route.continue();
-	});
-	await page.getByTestId('report-to').fill(`${ANNEE}-09-30`);
-	await page.getByTestId('report-to').press('Enter');
-	await expect(page.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'true');
-	await expect(page.getByTestId('report-content')).toHaveClass(/opacity-60/);
-	await capture(page, '11-rechargement-grise');
-	liberer();
-	await expect(page.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false');
-	await expect(page.getByTestId('report-period-heading')).toContainText(`au 30.09.${ANNEE}`);
-	await page.unroute(/\/api\/v1\/reports\/balance-sheet\?/);
 });

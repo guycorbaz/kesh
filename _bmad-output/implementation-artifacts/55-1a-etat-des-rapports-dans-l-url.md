@@ -1,6 +1,6 @@
 # Story 55-1a : l'état des Rapports dans l'URL — Retour, Suivant, lien partagé
 
-Status: in-progress
+Status: review
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D1 à D3 (réponse de l'utilisateur du 2026-11-25, AC-13), D5 (D4 : 55-1b). Issue : #À-VENIR (`bug`, P3, point b).
 Release : la prochaine planifiée après la 0.20.0 (numéro fixé par le mainteneur). **Frontend seulement, aucune migration.**
@@ -648,23 +648,23 @@ saisi, chaque en-tête. Référence de rendu : la démonstration hors du dépôt
 
 ## Tâches
 
-- [ ] **T0** — Reprendre la PR 46 dans `epic/55-navigation` (`git merge`, conflits résolus en gardant les deux côtés) ;
+- [x] **T0** — Reprendre la PR 46 dans `epic/55-navigation` (`git merge`, conflits résolus en gardant les deux côtés) ;
       relever les lignes de la page et du manuel à cette base ; vérifier qu'aucun filtre de devise n'existe.
-- [ ] **T1** — E2E AC-1 rouge (journal).
-- [ ] **T2** — `reports-url.ts` et ses Vitest ; `ledgerHref` réécrite dessus.
-- [ ] **T3** — Page : écriture de l'URL par les gestionnaires (`lastHandledKey` posée à chaque `goto`) ; `applyUrl` et son
+- [x] **T1** — E2E AC-1 rouge (journal).
+- [x] **T2** — `reports-url.ts` et ses Vitest ; `ledgerHref` réécrite dessus.
+- [x] **T3** — Page : écriture de l'URL par les gestionnaires (`lastHandledKey` posée à chaque `goto`) ; `applyUrl` et son
       `$effect` (remplacent `onMount` `:546` et l'effet `:567`) ; clés affichée et en vol par onglet ; P17 désarmée pour la
       seule période restaurée ; l'effet du compte analytique **jamais** désarmé.
-- [ ] **T3ter** — Sélecteur d'exercice (D15, AC-14 à AC-19) : `fiscal-year-menu.ts` et ses Vitest d'abord (rouges) ;
+- [x] **T3ter** — Sélecteur d'exercice (D15, AC-14 à AC-19) : `fiscal-year-menu.ts` et ses Vitest d'abord (rouges) ;
       `ReportSelector` (libellé, menu, « Du »/« Au », « Exercice entier », *snippet* des contrôles propres) ; P17 amendé ;
       grisé et exports ; `ReportPeriodHeading` dans les six vues ; dix clés i18n ; le bandeau des rapports par compte
       analytique passe à `ReportSelector`. Le Grand livre est branché par la 55-2 (AC-11).
-- [ ] **T4** — Suites existantes : Vitest `reports-page.test.ts`, `reports-page-groupes.test.ts` ; E2E `reports.spec.ts`,
+- [x] **T4** — Suites existantes : Vitest `reports-page.test.ts`, `reports-page-groupes.test.ts` ; E2E `reports.spec.ts`,
       `reports-groupes*.spec.ts`, `reports-currency.spec.ts`, `reports-export-pdf.spec.ts`, `dunning-roundtrip.spec.ts`,
       `open-items.spec.ts`, `homepage-charts.spec.ts`, `invoice-write-off.spec.ts`, `opening-balances.spec.ts` ;
       adaptations nommées (AC-6).
-- [ ] **T5** — Manuel, captures.
-- [ ] **T6** — Gates (ci-dessous).
+- [x] **T5** — Manuel, captures.
+- [x] **T6** — Gates (ci-dessous).
 
 ## Gates
 
@@ -735,7 +735,93 @@ se recharge ; seul le Grand livre de tous les comptes garde un bouton. Les expor
 
 ### Agent Model Used
 
+Opus (agent de développement de la story), 2026-11-27.
+
 ### Completion Notes List
+
+- **Modèle livré** (`reports-url.ts`, `+page.svelte`) : l'URL décrit le rapport chargé de l'onglet ; la page écrit
+  l'URL par `writeUrl` (clic : empile ; flèches, chargement, normalisation : remplace ; aucun `goto` si l'adresse est
+  déjà celle-là) et l'applique (`applyUrl`, `$effect` sur `page.url`) quand la recherche n'est pas la dernière écrite ou
+  appliquée (`lastHandledKey`). Clés affichée et en vol par onglet ; un seul chemin de chargement,
+  `loadActiveIfNeeded`. `onMount` de la 21-7, effet du lien du grand livre (24-1) et P17 retirés.
+- **D16** : chargement à l'ouverture, à l'arrivée sur un onglet classique ou la balance âgée, au choix d'un exercice,
+  à la sortie du groupe « Période » (`<fieldset>`, `focusout` + drapeau `pointerdown` des onglets, R-19), à Entrée ;
+  la dernière demande l'emporte par numéro de demande (`invalidateInFlight`, R-16 tranché : pas d'annulation, aucun
+  changement d'`api-client.ts`) ; premier chargement « Chargement… », rechargement grisé `aria-busy` ; *Générer* retiré
+  des onglets classiques et de la balance âgée ; gardé au Grand livre (55-2 pour le chargement filtré) et aux rapports
+  par compte analytique.
+- **D15** : `ReportSelector` sans état (`menu` déduit des dates par la page, `etatDuMenu`), `<label for>`, menu natif
+  `font-semibold`, options `font-normal`, années ou nom saisi (`libellesExercices`, réplique de `nom_par_defaut`),
+  « Plusieurs » / « Hors exercice » désactivées, « Exercice entier », message `reports-nav-needs-one-fy` ; les rapports
+  par compte analytique passent au même composant (snippets `controls` et `actions`) ; l'en-tête de période des six
+  vues est `ReportPeriodHeading` (période de la réponse, prop `fiscalYears` facultative).
+- **Exports** (AC-25) : requête de la réponse affichée (classiques, grand livre, comptes analytiques) ; désactivés
+  pendant la demande de l'onglet et tant que les champs diffèrent du rapport affiché.
+- **`ledgerHref`** réécrite sur `reportHref` : sortie identique (Vitest, trois cas, contre l'ancienne construction).
+- **i18n** : dix clés `reports-nav-*` (FR, DE, IT, EN) ; `reports-loading` et `reports-error-no-entries-in-period`
+  récrites (et leurs replis dans les cinq vues et la page) ; `reports-instruction-select-and-generate` et
+  `reports-aged-instruction-generate` retirées (plus aucun site) ; `reports-ledger-instruction` **inchangée** (sa
+  réécriture suppose le Grand livre filtré chargé seul : 55-2). Gardes recomptées : `sitesTotal` 3789 → **3788**,
+  `CANDIDATES_ATTENDUES` 151 → 152 et `conforme` 130 → 131 (`keepDisplay`, une constante booléenne), relevés par les
+  gardes.
+- **Vitest existants adaptés, et pourquoi** (D16 rend « sans modification » impossible : il n'y a plus de bouton
+  *Générer* à cliquer) : `reports-page.test.ts` passe **sans modification** ; `reports-page-groupes.test.ts` (30
+  tests, tous verts) — `generer()` devient l'attente du chargement automatique ; le texte « Génération du rapport en
+  cours… » devient « Chargement… » (3 sites) ; S4 et le cas `describe.each` de la balance âgée : le clic sur l'onglet
+  charge (bouton retiré), la réponse suspendue est posée **avant** le clic ; X1 : idem pour le compte de résultat ;
+  « changement d'exercice pendant une redemande » : l'assertion sur *Générer* devient « le bilan de 2027 est
+  demandé » ; « chargement périmé par un autre onglet » : le retour sur le Bilan le charge désormais (AC-22), le cas
+  « aucune demande sans rapport affiché » est gardé avec un chargement en échec.
+- **E2E adaptés** (inventaire `grep -rln "reports-generate\|ledger-generate\|name: 'Générer'"` élargi à
+  `/générer/i` et `aged-report-generate`) : `reports.spec.ts` (bilan, axe peuplé, TVA, balance âgée, balance du grand
+  livre, test sans exercice : le menu désactivé remplace *Générer* désactivé), `reports-groupes.spec.ts` (`generer()`
+  ouvre la page et attend la requête ; compte de résultat chargé par son onglet), `reports-groupes-export.spec.ts`,
+  `reports-balance-groupes.spec.ts`, `reports-currency.spec.ts` (quatre clics retirés), `reports-export-pdf.spec.ts`,
+  `opening-balances.spec.ts`, `invoice-write-off.spec.ts`, `dunning-roundtrip.spec.ts` ; `homepage-charts.spec.ts` et
+  `open-items.spec.ts` **sans modification**. La garde KF-043 (#326) refuse `getByLabel('Exercice')` : l'E2E vise
+  `data-testid="report-fiscal-year"`, le nom accessible « Exercice » est constaté par le Vitest et par axe.
+- **Preuve du rouge** : E2E AC-1 sur le code d'avant (spec temporaire non versionnée) rouge sur « Bilan
+  `aria-selected` après Retour » (`kesh-gate-logs/s55-dev/55-1a/e2e-rouge-avant.log`) ; `reports-page-url.test.ts` sur la
+  page et le sélecteur d'avant : 33 rouges sur 34 (`…/55-1a/rouge-vitest/avant.log`) — les cas du clic sur un onglet y
+  rougissent aussi, l'ancienne page ne chargeant rien sans *Générer*. **Mutations** : 20 sur 20 tuées, chacune par une
+  assertion nommée, copie non mutée verte d'abord (`…/55-1a/mutations/run.py`, `resultat.log`, `resultat-2.log`) —
+  numéro de demande ignoré, `aria-label` remis, `relatedTarget` non consulté, clé affichée non comparée, `aria-busy`
+  jamais posé, clic qui remplace, chargement qui empile, `errorMsg` non effacé, validation de `fy` retirée, nom par
+  défaut non comparé, doublon partout, `<` au lieu de `≤`, début après fin « Hors exercice », péremption R-17 omise,
+  drapeau R-19 ignoré, rapport non retiré (AC-26), export analytique sur les champs, P17 remis, URL écrite dans
+  `generate()`, exports actifs quand les champs diffèrent. *Non faites* (sans objet sous le modèle livré) :
+  « clé écrite non enregistrée » (réappliquer sa propre adresse redonne le même état sous D16) et « retrait du
+  désarmement de P17 » (P17 retiré).
+- **Constat manuel non fait** : la lecture par un lecteur d'écran (« Exercice, liste déroulante, 2025 ») n'a pas été
+  faite ; le nom accessible est constaté par Vitest et axe.
+- **Gates** (au dernier commit de code `946347e16`, aucun Rust modifié) : `clippy.sh 55-1a/final` fmt rc=0, clippy
+  rc=0 ; `nextest -p kesh-i18n` 42/42 ; `nextest -p kesh-api -E 'binary(textes_coherents)'` 34/34 ;
+  `front.sh 55-1a/front-2` check 0 erreur, lint-i18n-ownership vert, Vitest **5439 passés (314 fichiers)**, build vert ;
+  **E2E partiel (12 specs)**, `e2e.sh 55-1a/e2e` : `reports.spec.ts`, `reports-navigation.spec.ts`,
+  `reports-groupes.spec.ts`, `reports-groupes-export.spec.ts`, `reports-balance-groupes.spec.ts`,
+  `reports-currency.spec.ts`, `reports-export-pdf.spec.ts` (les specs des Rapports), `homepage-charts.spec.ts`,
+  `open-items.spec.ts`, `dunning-roundtrip.spec.ts` (navigation et liens entrants), `invoice-write-off.spec.ts`,
+  `opening-balances.spec.ts` (modifiées) : 50 passés, 3 rouges, tous dans `reports-navigation.spec.ts` et dus à la
+  spec (le preset `with-company` porte un exercice 2020–2030, non l'année civile ; un second exercice n'y peut être
+  créé) ; spec corrigée (bornes lues à l'API ; test D15 en dernier, sur `with-company-no-fy` et deux exercices créés),
+  sans changement de code de production, puis `e2e.sh 55-1a/e2e-nav` : **8 sur 8**. Soit 45 tests des onze autres
+  specs et 8 de la neuve, verts. Journaux `kesh-gate-logs/s55-dev/55-1a/e2e/`, `e2e-nav/`. **E2E complet et gate-ci en
+  fin d'epic** (dérogation du fichier d'epic).
+- **Captures** (thème clair, `kesh-gate-logs/s55-dev/55-1a/captures/55-1a-*.png`, montage E2E) : bilan avant le lien,
+  grand livre après le lien, bilan après *Retour* (capture de page : la barre d'adresse n'y figure pas, l'adresse est
+  vérifiée par l'E2E), lien collé dans un nouveau contexte, adresse normalisée, sélecteur fermé (« 2026 » en gras),
+  sélecteur « ouvert » (un `<select>` natif ouvert ne se capture pas sans tête : déplié en liste par `size=3`, options en
+  graisse normale), période partielle avec « Exercice entier » et en-tête « (partie de l'exercice 2025) »,
+  « Plusieurs » (rapport retiré, message, exports désactivés), « Hors exercice », rechargement grisé. Regardées : elles
+  montrent ce que dit leur nom ; l'en-tête d'un exercice au nom saisi (« Exercice CI 2020-2030 — du … au … ») y paraît
+  aussi.
+- **Tests neufs** (exécutés, depuis `617508645`) : `reports-url.test.ts` et `fiscal-year-menu.test.ts` 46,
+  `ReportSelector.test.ts` 15, `reports-page-url.test.ts` 34 — **95** Vitest ; `reports-navigation.spec.ts` 8 E2E.
+- **Manuel** : `user-manual.tex` seul — « Choisir la période » (§ *Rapports comptables*), phrases de l'Epic 46
+  récrites (`Générer` retiré, reprise d'une erreur, audit), item « Accès direct » (Retour), « Naviguer dans les
+  rapports » (§ *Visualisation et exports*). PDF compilé hors du dépôt et aplati : les trois passages lus. ⚠️ La
+  compilation du `.tex` de la base **échoue** déjà (`\og`/`\fg{}` non définis, ligne 3562, commit `1bd88a987` de
+  l'Epic 38) : contrôle fait en remplaçant ces deux macros dans la copie temporaire seulement (issue ci-dessous).
 
 ### Issues à ouvrir
 
@@ -747,10 +833,34 @@ se recharge ; seul le Grand livre de tous les comptes garde un bouton. Les expor
   reformuler ou retirer au T0) L'export d'un rapport classique reprend la période des champs, et le nom de fichier celle
   du rapport affiché (`+page.svelte` PR 46 `:660-690`) : un champ modifié sans *Générer* exporte une autre période que
   l'écran (Epic 55, story 55-1a, relevé de validation).
+- (MEDIUM, `bug` P3, préexistant, hors story) Le manuel utilisateur ne se compile plus : `\og … \fg{}` (macros de
+  babel-french, absentes du préambule) à `docs/manual/fr/user-manual.tex:3562`, venues de `1bd88a987` (#1560,
+  prestataires) ; `make user` échoue « Undefined control sequence ». Remplacer par « … » (Epic 55, story 55-1a, relevé au
+  contrôle du PDF).
+- (LOW, `enhancement`) R-25 : aucun bouton « Réessayer » après un chargement en erreur (relance par le menu, les dates
+  ou l'onglet), choix en attente du mainteneur (Epic 55, story 55-1a).
+- (LOW, `technical-debt`) Mutation « clé écrite non enregistrée » sans test qui la tue : sous D16, réappliquer
+  l'adresse que la page vient d'écrire redonne le même état ; un test le rendrait observable (requête comptée)
+  (Epic 55, story 55-1a).
 - (LOW, `enhancement`) Après la connexion, Kesh mène à l'accueil et non à l'adresse demandée (`(app)/+layout.ts:10-11`,
   `login/+page.svelte:74`) : un lien de rapport partagé à un utilisateur non connecté ne rouvre pas la vue.
 
 ### File List
+
+- `frontend/src/lib/features/reports/reports-url.ts` (neuf), `reports-url.test.ts` (neuf)
+- `frontend/src/lib/features/reports/fiscal-year-menu.ts` (neuf), `fiscal-year-menu.test.ts` (neuf)
+- `frontend/src/lib/features/reports/ReportPeriodHeading.svelte` (neuf)
+- `frontend/src/lib/features/reports/ReportSelector.svelte`, `ReportSelector.test.ts` (neuf)
+- `frontend/src/lib/features/reports/reports.api.ts` (`ledgerHref`)
+- `frontend/src/lib/features/reports/{BalanceSheet,IncomeStatement,TrialBalance,JournalReport,VatReport,GeneralLedger}View.svelte`
+- `frontend/src/routes/(app)/reports/+page.svelte`, `page-url.test-helper.svelte.ts` (neuf), `reports-page-url.test.ts`
+  (neuf), `reports-page-groupes.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`, `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts` (compteurs)
+- `frontend/tests/e2e/reports-navigation.spec.ts` (neuf) ; `reports.spec.ts`, `reports-groupes.spec.ts`,
+  `reports-groupes-export.spec.ts`, `reports-balance-groupes.spec.ts`, `reports-currency.spec.ts`,
+  `reports-export-pdf.spec.ts`, `opening-balances.spec.ts`, `invoice-write-off.spec.ts`, `dunning-roundtrip.spec.ts`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `docs/manual/fr/user-manual.tex`
 
 ## Change Log
 
@@ -958,3 +1068,9 @@ se recharge ; seul le Grand livre de tous les comptes garde un bouton. Les expor
     ni message ; son onglet garde son rapport affiché, ou rien. Aucune annulation réseau (`api-client.ts` inchangé).
     *Constat* : Vitest à réponses différées — deux demandes de suite, la première répond après la seconde : seule la
     seconde s'affiche ; mutation : test de numéro retiré → rouge. »
+- 2026-11-27 — **Développement** (T1 à T6) : `reports-url.ts`, `fiscal-year-menu.ts`, `ReportPeriodHeading.svelte`
+  neufs ; `ReportSelector`, la page, les six vues, `ledgerHref` ; dix clés ×4, deux récrites, deux retirées ; manuel.
+  95 Vitest neufs, 8 E2E neufs, 20 mutations tuées ; Vitest de la 46-2 adaptés à D16 (adaptations nommées au Dev
+  Agent Record) ; neuf specs E2E adaptées. Gates : fmt, clippy, `kesh-i18n` 42/42, `textes_coherents` 34/34, front
+  vert (5439 Vitest), E2E partiel 12 specs vert. **Défauts retenus, en attente du mainteneur** : (a) à (k) du T0, R-13
+  (taille L), R-21, R-24, R-25. Statut `review` (aucune revue de code : accord du mainteneur attendu).
