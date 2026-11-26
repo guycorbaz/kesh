@@ -85,6 +85,7 @@ use crate::errors::{DbError, FxAccountField, FxAccountReason, map_db_error};
 use crate::repositories::accounts::{
     self, CompanyLock, ConversionLineAccount, FxAccountCheck, FxAccountLock,
 };
+use crate::repositories::duplicate_policy::DuplicatePolicy;
 use crate::repositories::{fiscal_years, journal_entries};
 
 /// Refus de forme propre à la conversion (400 `Validation`), avec la ligne
@@ -230,6 +231,28 @@ pub async fn create_conversion(
     entries: [NewJournalEntry; 2],
     complete_difference: bool,
     max_lines: usize,
+) -> Result<[JournalEntryWithLines; 2], ConversionError> {
+    create_conversion_with_policy(
+        pool,
+        company_id,
+        acteur,
+        entries,
+        complete_difference,
+        max_lines,
+        DuplicatePolicy::Refuse,
+    )
+    .await
+}
+
+/// SQUELETTE (53-1b, tests rouges d'abord) : ne compare encore rien.
+pub async fn create_conversion_with_policy(
+    pool: &MySqlPool,
+    company_id: i64,
+    acteur: Acteur,
+    entries: [NewJournalEntry; 2],
+    complete_difference: bool,
+    max_lines: usize,
+    _policy: DuplicatePolicy,
 ) -> Result<[JournalEntryWithLines; 2], ConversionError> {
     let mut tx = pool
         .begin()
