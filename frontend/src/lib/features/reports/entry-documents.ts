@@ -26,9 +26,9 @@ export function emptyDocumentError(): Error {
 	return err;
 }
 
-/** Vrai pour l'erreur « document vide » d'`entryDocumentLoader`. */
+/** Vrai pour l'erreur « document vide » d'`entryDocumentLoader` (classée par son nom, garde des erreurs en texte). */
 export function isEmptyDocumentError(err: unknown): boolean {
-	return err instanceof Error && err.name === EMPTY_DOCUMENT;
+	return typeof err === 'object' && err !== null && (err as { name?: unknown }).name === EMPTY_DOCUMENT;
 }
 
 /** Vrai pour une facture dont le PDF n'est pas encore émis : elle n'est pas lue (AC-5). */
