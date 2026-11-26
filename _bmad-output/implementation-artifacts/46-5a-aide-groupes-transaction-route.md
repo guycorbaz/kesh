@@ -232,7 +232,7 @@ jamais un gate ciblé seul.
   (`403 API_KEY_OPERATION_FORBIDDEN` pour toute clé d'API) ; refus propres `400 ACCOUNT_GROUP_INVALID`.
 - **Changed (API)** — *(garde du mainteneur du 2026-11-26)* Un compte du plan désigné par un compte bancaire — son
   compte du plan, ou le compte de frais d'un compte PayPal, Wise ou Stripe, même partagé — ne devient plus parent :
-  `PUT /accounts/{id}` avec `parentId` et `POST /accounts/groups` (groupe réutilisé, rattaché ou parent d'un groupe
+  `POST /accounts` et `PUT /accounts/{id}` avec `parentId`, et `POST /accounts/groups` (groupe réutilisé, rattaché ou parent d'un groupe
   créé) le refusent en `409 ACCOUNT_PARENT_BANK_LINKED` (`details { parentAccountId, parentNumber, bankAccountId,
   bankName }`, plus `groupStep` pour l'aide), message qui nomme le compte et le compte bancaire. Ces comptes reçoivent
   des écritures automatiques ; devenus groupes, ils passeraient non imputables. Rangés **comme membres**, ils restent
@@ -393,4 +393,8 @@ Journaux hors dépôt, `kesh-gate-logs/s46-5a/` : `clippy-t3.log`, `fmt-t3.log` 
   clé `error-account-parent-bank-linked` (quatre locales). Le motif des lots (`failed[]`) ne s'applique pas : la route
   est tout ou rien (§ *Choix*). Écran : `bankLinkedAccounts`, codes `numberBankLinked` et `parentBankLinked`, parent
   désigné non offert (46-5b). Journal : `kesh-gate-logs/s46-pr2/`.
+- 2026-11-26 — **Garde étendue à `POST /accounts`** (accord du mainteneur, commit séparé) : `create_in_tx` refuse un
+  parent désigné par un compte bancaire (`refuse_bank_linked_parent_in_tx`), après les désignations de change et
+  avant le parent en devise mouvementé ; la règle des parents mouvementés de la création ne change pas (#1431).
+  Test `creation_d_un_sous_compte_sous_un_compte_lie_refusee` ; mutation (appel retiré) → rouge.
 

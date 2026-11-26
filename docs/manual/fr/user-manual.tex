@@ -457,7 +457,7 @@ Le plan comptable est la colonne vertébrale de votre comptabilité. Kesh fourni
     \item \textbf{Numéro} : par exemple 1020.1 pour un sous-compte de la banque.
     \item \textbf{Nom} : par exemple « UBS compte courant ».
     \item \textbf{Type} : Actif, Passif, Produit ou Charge.
-    \item \textbf{Compte parent (optionnel)} : compte de niveau supérieur (1020 dans l'exemple). Il se change ensuite par \emph{Modifier le compte} (\S\ref{sec:modification-compte}).
+    \item \textbf{Compte parent (optionnel)} : compte de niveau supérieur (1020 dans l'exemple). Le compte d'un compte bancaire (son compte du plan, ou le compte de frais d'un compte PayPal, Wise ou Stripe) ne reçoit pas de sous-compte : il reçoit des écritures automatiques et ne doit pas devenir un compte de regroupement --- si 1020 est le compte de votre compte bancaire, rangez plutôt 1020 et ses voisins sous un groupe (\S\ref{sec:creer-groupes}). Il se change ensuite par \emph{Modifier le compte} (\S\ref{sec:modification-compte}).
     \item \textbf{Rôle} : fonction du compte dans l'application (\emph{Créances clients}, \emph{TVA due}, \emph{Capital}, \emph{Résultat de l'exercice}\ldots) ou \emph{Aucun}. Voir la section \emph{Rôles des comptes} ci-dessous.
     \item \textbf{Postable} : décocher pour un compte de regroupement (compte titre) sur lequel on ne saisit pas d'écriture.
 \end{itemize}
@@ -545,8 +545,8 @@ trois zones. \textbf{Rien n'est créé ni déplacé avant votre confirmation.}
     prestataires (un compte bancaire clos compte encore, un compte bancaire archivé non). Ces comptes
     reçoivent des écritures automatiques ; devenus groupes, ils ne seraient plus imputables. La page
     le signale par une erreur qui nomme le compte bancaire, et ne les offre pas comme parent ; Kesh
-    le refuse aussi à la confirmation, et à \emph{Modifier le compte} quand on y range un compte
-    dessous. Ranger ces comptes \emph{dans} un groupe reste possible : ils restent imputables.
+    le refuse aussi à la confirmation, et quand on y range un compte dessous, à la création d'un
+    compte comme à \emph{Modifier le compte}. Ranger ces comptes \emph{dans} un groupe reste possible : ils restent imputables.
     Un groupe ne réunit que des comptes \textbf{d'un même type} : des types mêlés sont refusés ;
     décochez les comptes d'un type pour lever le refus. Kesh signale aussi, sans bloquer, des devises
     mêlées (le groupe s'affiche en CHF), les comptes de même préfixe non cochés et deux banques

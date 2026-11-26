@@ -1033,3 +1033,39 @@ async fn compte_de_frais_partage_ne_devient_pas_groupe(pool: MySqlPool) {
     ranger(&pool, &s, membre_frais, frais).await.unwrap();
     assert!(!lire(&pool, frais).await.postable);
 }
+
+/// `POST /accounts` (création d'un sous-compte) : un compte désigné par un compte
+/// bancaire ne reçoit pas de sous-compte — même refus ; la règle des parents
+/// mouvementés de la création, elle, ne change pas (#1431 : un parent
+/// mouvementé non lié reste accepté à la création).
+#[sqlx::test(migrations = "./test-schema")]
+async fn creation_d_un_sous_compte_sous_un_compte_lie_refusee(pool: MySqlPool) {
+    let s = seed_accounting_company(&pool).await.unwrap();
+    let lie_id = compte(&pool, &s, "102", None).await;
+    let banque = banque_liee(&pool, &s, "Banque Test", lie_id).await;
+    let avant = etat(&pool, &s).await;
+    let err = accounts::create(
+        &pool,
+        s.admin_user_id,
+        NewAccount::new(
+            s.company_id,
+            "1021",
+            "Sous-compte",
+            AccountType::Asset,
+            Some(lie_id),
+        ),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        lie(&err),
+        (lie_id, "102".into(), banque, "Banque Test".into())
+    );
+    assert_eq!(etat(&pool, &s).await, avant, "rien n'est écrit");
+
+    // Un parent mouvementé, non lié, reste accepté à la création (#1431 inchangée).
+    let mouvemente = compte(&pool, &s, "10", None).await;
+    ligne(&pool, &s, mouvemente).await;
+    let enfant = compte(&pool, &s, "109", Some(mouvemente)).await;
+    assert_eq!(lire(&pool, enfant).await.parent_id, Some(mouvemente));
+}

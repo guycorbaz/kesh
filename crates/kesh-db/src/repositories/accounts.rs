@@ -180,6 +180,8 @@ fn effective_postable(role: Option<AccountRole>, requested: bool, has_children: 
 /// dans la transaction : `MULTI_CURRENCY_DISABLED` (devise donnée, société
 /// mono-devise) → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` (le parent est un compte
 /// de différence de change : il ne reçoit pas de sous-compte) →
+/// `ACCOUNT_PARENT_BANK_LINKED` (le parent est désigné par un compte bancaire,
+/// Epic 46) → `ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES` →
 /// `ACCOUNT_IN_FOREIGN_CURRENCY` (rôle posé avec une devise) →
 /// `FX_ACCOUNT_INVALID` des comptes propres (`unexpected` sans devise, puis
 /// gain, puis perte) → refus existants (rôle singleton).
@@ -227,17 +229,22 @@ pub async fn create_in_tx(
     // Le parent, verrouillé avant d'être passé non imputable plus bas : un
     // compte de différence de change ne reçoit pas de sous-compte.
     if let Some(parent_id) = new.parent_id {
-        let parent: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
+        let parent: Option<String> = sqlx::query_scalar(
+            "SELECT number FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
         )
         .bind(parent_id)
         .bind(new.company_id)
         .fetch_optional(&mut **tx)
         .await
         .map_err(map_db_error)?;
-        if parent.is_some() {
+        if let Some(parent_number) = parent {
             let hits = fx_designations_of_in_tx(tx, new.company_id, &state, parent_id).await?;
             refuse_designated(hits, |_| true)?;
+            // Garde de la 46-5 (Epic 46, décision du mainteneur du 2026-11-26),
+            // étendue à la création : un compte désigné par un compte bancaire
+            // ne reçoit pas de sous-compte. La règle des parents mouvementés,
+            // elle, ne change pas ici (création plus large que le `PUT`, #1431).
+            refuse_bank_linked_parent_in_tx(tx, new.company_id, parent_id, &parent_number).await?;
             refuse_foreign_parent_with_entries_in_tx(tx, parent_id).await?;
         }
     }
