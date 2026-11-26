@@ -1,6 +1,6 @@
 # Story 55-1a : l'état des Rapports dans l'URL — Retour, Suivant, lien partagé
 
-Status: ready-for-dev
+Status: in-progress
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D1 à D3 (réponse de l'utilisateur du 2026-11-25, AC-13), D5 (D4 : 55-1b). Issue : #À-VENIR (`bug`, P3, point b).
 Release : la prochaine planifiée après la 0.20.0 (numéro fixé par le mainteneur). **Frontend seulement, aucune migration.**
@@ -852,3 +852,109 @@ se recharge ; seul le Grand livre de tous les comptes garde un bouton. Les expor
   passes** : une passe ciblée hors décompte, sans remédiation, ses points au T0 (R-16 et suivants).
 - 2026-11-26 (soir) — Passe ciblée D16 et D17 (Opus), hors décompte : 0/1/9/5 pour cette fiche ; **aucune remédiation**
   (fiche au plafond) : R-16 à R-26 au T0, le HIGH R-16 à trancher avant toute ligne de code.
+- 2026-11-27 — **T0 du développement** (base `epic/55-navigation` `617508645`, PR 46 déjà fusionnée : la reprise de
+  T0 est faite ; lignes relevées sur cette base). Chaque point tranché avant le code, ligne lue citée :
+  - **Base** : `+page.svelte` 1124 lignes ; P17 `:327-348` (`if (selectedFiscalYearId !== lastFyId) { periodStart = ''; …
+    invalidateInFlight();`) ; effet du compte analytique `:357-369` ; `projectQuery` `:396-406` ; `generate` `:423-549` ;
+    `onMount` `:758-763` ; effet du grand livre `:779-798` ; `selectTab` `:820-831` (`void goto(\`?tab=${next}\`, {
+    replaceState: true, …`) ; `invalidateInFlight` `:179-185`, seul site qui incrémente `genSeq`. `ReportSelector.svelte`
+    `:50,69,81` (`disabled={noFiscalYears || loading}`), `:51` (`aria-label`), `:55` (option avec dates), `:63,75`
+    (« — début », « — fin »). `ledgerHref` `reports.api.ts:641-649`. Manuel : § *Rapports comptables* `:4171`, § *Bilan*
+    `:4173`, phrases de l'Epic 46 `:4271-4277`, § *Grand livre* `:4350`, item « Accès direct » `:4386`, § *Visualisation et
+    exports* `:4534`. **Aucun filtre de devise** : `grep -n "currency\|devise"` sur la page ne rend que `:54`
+    (`// fx-filtre-comptes : exempté — rapports`), rien à porter dans l'URL.
+  - **R-16 (HIGH)** — *tranché par le responsable de l'epic* : pas d'annulation réseau, `api-client.ts` non touché
+    (`:350` `signal: controller.signal` écrase tout signal ; `:629` `get<T>(url, call?)` sans `signal`). **La dernière
+    demande l'emporte par numéro de demande** : chaque chargement passe par `invalidateInFlight()` (`:179`), toute réponse
+    dont le numéro n'est plus `genSeq` est jetée (`mySeq !== genSeq`) ; aucune `AbortError`. **AC-21 récrit** (ci-dessous) et
+    ses tests : deux demandes de suite, la première répond après la seconde → seule la seconde s'affiche ; mutation :
+    comparaison `mySeq === genSeq` retirée → la première réponse s'affiche, test rouge. D16 (« annulées ») se lit
+    « périmées » ; la requête va à son terme côté serveur (une trace d'audit, R-24).
+  - **R-1, R-2, R-3, R-17 (DE-2)** — Un seul chemin de chargement, `loadActiveIfNeeded()`, pour une URL appliquée, un clic
+    d'onglet, le menu, la sortie des dates et Entrée : clé des champs nulle → rien ; égale à la clé **en vol** de
+    l'onglet → rien ; égale à la clé **affichée** → aucune requête, et une demande **de cet onglet** en vol avec une autre
+    clé est périmée (R-1 côté URL, R-17 côté champs, AC-8 c) ; sinon `generate()`, qui périme toute demande en vol, de
+    quelque onglet qu'elle soit (AC-13, R-3 : une adresse pendant le chargement d'un autre onglet demande son rapport, la
+    branche « aucune requête, l'invite » du point 3 et C-55-1-6 sont retirées). R-2 n'a plus d'objet : une adresse n'attend
+    jamais la fin d'une autre génération.
+  - **R-14, R-22 (DE-7)** — D16 prime partout : `/reports`, `/reports?fy=3`, `?tab=xyz` → onglet *Bilan*, et le rapport des
+    champs se charge (exercice par défaut, ses bornes) ; une URL incomplète d'un onglet classique (`?tab=balance-sheet`,
+    `?tab=balance-sheet&fy=abc`) ne modifie aucun champ puis **charge le rapport des champs**, comme un clic sur l'onglet ;
+    l'URL est alors remplacée par la clé du rapport chargé (normalisation) — l'invite « cliquez sur Générer » n'existe
+    plus. Lien du menu *Rapports* : même règle (Bilan des champs, 0 requête s'il est affiché). Balance âgée : chargée à
+    l'arrivée, par clic comme par adresse ; son bouton *Générer* est retiré (« seul le Grand livre de tous les comptes
+    garde un bouton », note de version ; les rapports par compte analytique gardent le leur, R-15). *Où l'URL s'écrit* :
+    `selectTab` (clic : empile ; flèches : remplace), le menu, la sortie des dates, Entrée, « Exercice entier », *Générer*
+    du Grand livre — par une seule fonction, `writeUrl`, jamais par `generate()`. AC-2, AC-3, AC-7, AC-8 a/b, AC-9, AC-10,
+    AC-11, AC-13 se lisent avec D16 (le clic charge, la sortie des dates remplace *Générer*).
+  - **R-8, R-11 (SE-3), SE-4** — P17 (`:327-348`) est **retiré** : le choix d'un exercice se fait dans le gestionnaire du
+    menu (`selectFiscalYear` : bornes posées, chargement), jamais dans un effet. `selectedFiscalYearId` n'est plus
+    `$bindable` de `ReportSelector` : la page le tient, **déduit des dates** (`etatDuMenu`), et le garde à sa dernière
+    valeur en « Plusieurs » / « Hors exercice » (le « précédent »). Quand il change (menu, URL, date saisie), les deux
+    rapports par compte analytique sont vidés et une demande **par compte analytique** en vol est périmée
+    (`fiscalYearChanged`) ; les rapports classiques ne sont jamais vidés. La clause « période restaurée non effacée »
+    (AC-9, mutation, T3) tombe : sans P17, il n'y a plus rien à désarmer (SE-4) ; reste vrai et testé : une demande lancée
+    par une URL d'un autre exercice n'est pas périmée par le changement d'exercice. Le préremplissage de la 55-2 (AC-12)
+    lira `selectedFiscalYearId`, toujours un exercice existant.
+  - **R-9 (SE-1)** — Modèle d'URL aligné sur l'AC-15 (`reports-url.ts`, `resolveClassicPeriod`) : sur un onglet classique,
+    `from` et `to` valides **sont posés** et décident l'exercice ; `fy` seul (dates absentes) donne ses bornes, une date
+    absente prend la borne de `fy` ; un `fy` qui contredit les dates est **réécrit** à la normalisation ; dates dans deux
+    exercices ou hors exercice → URL non complète : dates posées, menu « Plusieurs » / « Hors exercice », aucune requête,
+    `fy` non écrit (`?tab=…&from=…&to=…`). « Complète » (classique) = un seul exercice déduit et `from ≤ to`. `from > to` est
+    jugé **par l'écran** (AC-20, message `reports-nav-period-invalid`), plus par l'API ; « hors exercice » est un état du
+    menu ; D5 ne garde à l'API que le compte inconnu. Une date vidée à la main : rien n'est chargé, rien n'est dit
+    (DE-18, les dates sont « toujours remplies »). Un Vitest de `reports-url.test.ts` par cas.
+  - **R-10 (SE-2)** — Rapports par compte analytique : pas de clé (hors URL, C-55-1-7) ; ils gardent *Générer* ; leur
+    export prend la **requête de la réponse affichée** (instantané pris à l'acceptation), non les champs (AC-25 étendu) ;
+    vidés au changement d'exercice (ci-dessus), non au changement de date seul. Grand livre : son export prend aussi la
+    requête affichée. Vitest et mutation pour l'export analytique.
+  - **R-12 (SE-5), R-15, R-26 (DE-11)** — **Une seule liste des choix de la fiche**, posée au mainteneur, défaut retenu
+    **en attente de confirmation** : (a) Grand livre filtré chargé seul → **la 55-2** (dans la 55-1a, le Grand livre garde
+    ses contrôles et *Générer* ; seule une adresse complète le charge, comme aujourd'hui ; `reports-ledger-instruction`
+    reste telle quelle, sa réécriture va avec la 55-2) ; (b) balance âgée chargée à l'arrivée, bouton retiré ; (c) rapports
+    par compte analytique avec *Générer* ; (d) « Plusieurs » / « Hors exercice » sur un onglet à un exercice : rapport
+    **masqué** (gardé en mémoire : *Retour* vers sa clé le remontre sans requête, DE-19), message `reports-nav-needs-one-fy` ;
+    (e) exports du rapport affiché, **désactivés pendant un rechargement et tant que les champs diffèrent du rapport
+    affiché** (DE-5) ; (f) message de période invalide `reports-nav-period-invalid` ; (g) `relatedTarget` nul = sortie,
+    sauf pointeur posé sur la liste des onglets (R-19) ; (h) une demande neuve périme celle de tout onglet ; (i) flèches qui
+    chargent (R-24) ; (j) date vide : silence ; (k) en-tête « (hors exercice) », bornes complètes d'un doublon que jour-mois
+    ne sépare pas, « Exercice entier » en bouton de style lien `data-testid="report-fy-whole"`, majuscule « Du » en tête de
+    l'en-tête partiel, guillemets « … » autour d'un nom saisi dans l'en-tête partiel seulement (comme la fiche).
+  - **R-13 (SE-6)** — Modules : `features/reports`, `routes/(app)/reports`, `tests/e2e`, manuel, `kesh-i18n`, et le compteur
+    `shared/i18n-keys.test.ts` (une ligne recomptée) : six au sens strict. *Défaut retenu, en attente du mainteneur* : la
+    55-1a en **L** (choix écrit au fichier d'epic), le compteur étant un recompte mécanique.
+  - **R-18 (DE-3)** — `ReportSelector` ne désactive plus menu ni dates pendant un chargement (seul « aucun exercice » les
+    désactive) : focus gardé ; Vitest (focus dans « Au » après Entrée pendant un premier chargement) et mutation.
+  - **R-19 (DE-4)** — La sortie se décide par `relatedTarget` **et** un drapeau posé au `pointerdown` de la liste des
+    onglets (levé au `pointerup` de la fenêtre) : sous Safari, le bouton d'onglet ne prend pas le focus (`relatedTarget`
+    nul), le drapeau dit que le clic va à un onglet ; l'onglet quitté ne se charge pas. Vitest `relatedTarget: null` après
+    `pointerdown` sur un onglet.
+  - **R-20 (DE-5)** — voir (e) ; constat avec `focusout` puis `click` sur *Export CSV* : aucun export de l'ancienne période.
+  - **R-21 (DE-6)** — *Défaut retenu, en attente du mainteneur* : le Grand livre garde ses dates propres ; des dates tapées
+    sur un onglet classique **ne lui passent pas** (exception à D16, écrite ici et à poser avec la 55-2, AC-12).
+  - **R-23 (DE-8)** — Phrases du manuel que D16 rend fausses : `user-manual.tex:4274-4277` (« \emph{Générer} la
+    redemande », « il faut le relancer avec \emph{Générer} », « Chaque demande est inscrite au journal d'audit ») ; récrites
+    à l'AC-11/AC-19 (reprise d'une erreur, volume d'audit). Rien d'autre : aucune autre phrase « Générer » dans
+    `:4171-4560` (`grep`).
+  - **R-24 (DE-9)** — Chaque chargement écrit une trace d'audit (`crates/kesh-api/src/services/rapports.rs:2`), même périmé ;
+    dit au manuel. Flèches qui chargent : *défaut de la fiche* (AC-22), en attente du mainteneur.
+  - **R-25 (DE-10)** — *Défaut retenu, en attente du mainteneur* : aucun bouton neuf (l'AC-18 compte dix clés) ; un
+    chargement en erreur se relance en rechoisissant l'exercice, en quittant de nouveau les dates ou par l'onglet (la clé
+    affichée n'étant pas posée, le chargement repart) ; dit au manuel.
+  - **R-4** (tranché), **R-5, R-7** (retirés) : rien. **R-6** — § *Gates* relu contre le fichier d'epic § *Dérogation*
+    (« les stories purement écran — 55-1a … — jouent à chaque story … `npm run check`, `lint-i18n-ownership`, `test:unit`,
+    `build`, et les specs E2E des Rapports et de la navigation » ; « resserrement du 2026-11-26 … `cargo nextest run -p
+    kesh-i18n` et … `binary(textes_coherents)` ») : conforme.
+  - **C-55-1-9** — menu natif (`<select>`), *tranché par le responsable de l'epic*.
+  - **LOW** : V8-1 (la règle de la 46-2 peut redemander un rapport groupé repris de la mémoire) gardée, `resyncActiveGroupedTab`
+    après tout affichage sans requête ; V8-3 (assertion décisive : onglet et rapport égaux à ceux de l'URL) ; V6-6 (aucun
+    `goto` si la recherche écrite égale `page.url.search` sans le `?`) ; DE-15 (`<legend>` « Période » masquée, libellés « Du »
+    et « Au », `fieldset` sans `display: contents`) ; DE-16 (motif de la mutation : voir R-16) ; DE-17 (replis français des
+    cinq vues et de `reports-loading` récrits avec les catalogues) ; DE-19 (voir d) ; SE-7 (`fiscalYears` passé aux vues par
+    une prop facultative ; libellés de l'en-tête = ceux du menu) ; SE-8 (`formatJourMois` testé). Les autres LOW (V7-5 à
+    V7-10, V6-3 à V6-8) sont absorbés par le modèle ci-dessus ou sans objet sous D16.
+  - **AC-21 récrit** : « *La dernière demande l'emporte.* Une demande neuve **périme** la précédente encore en vol, de
+    quelque onglet qu'elle soit (`invalidateInFlight()`, numéro de demande) ; la réponse périmée est ignorée, sans erreur
+    ni message ; son onglet garde son rapport affiché, ou rien. Aucune annulation réseau (`api-client.ts` inchangé).
+    *Constat* : Vitest à réponses différées — deux demandes de suite, la première répond après la seconde : seule la
+    seconde s'affiche ; mutation : test de numéro retiré → rouge. »
