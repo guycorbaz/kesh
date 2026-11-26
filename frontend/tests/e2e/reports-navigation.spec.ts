@@ -177,7 +177,10 @@ test('AC-5 — valeurs invalides : ignorées, adresse normalisée sans entrée, 
 	const fy = await bornesParDefaut(page);
 	await page.goto('/reports?tab=xyz&fy=abc');
 	await ongletActif(page, 'balance-sheet');
-	await expect(page).toHaveURL(new RegExp(`tab=balance-sheet&fy=\\d+&from=${fy.startDate}&to=${fy.endDate}$`));
+	// Story 55-1b — la normalisation écrit aussi la présentation des contrôles (vue par défaut).
+	await expect(page).toHaveURL(
+		new RegExp(`tab=balance-sheet&fy=\\d+&from=${fy.startDate}&to=${fy.endDate}&view=grouped&level=all&subtotals=header$`),
+	);
 	await page.goto(`/reports?tab=general-ledger&from=${ANNEE}-02-30&to=${ANNEE}-12-31&accountId=-3`);
 	await ongletActif(page, 'general-ledger');
 	await expect(page).toHaveURL(new RegExp(`tab=general-ledger&to=${ANNEE}-12-31$`));
