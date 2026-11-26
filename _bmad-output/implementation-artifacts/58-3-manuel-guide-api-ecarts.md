@@ -303,8 +303,8 @@ refs #767, refs #814, refs #1061, refs #1067, refs #1074, refs #1076, refs #1087
 
 ## Questions (pour l'orchestrateur et le Project Lead)
 
-- **Q1** — Le commit de `post_restore.rs` (et de `config.rs`, doc-comment) impose le gate Rust complet (exception `kesh-db`). **Faut-il rejouer l'E2E complet ?** Proposition : non, la story ne change aucun chemin d'exécution ; à défaut de réponse, il est rejoué une fois à la clôture.
-- **Q2** — Les deux phrases fausses du CHANGELOG (section 0.17.7, `:132-133`) : réécrites à l'intégration (D3), ou corrigées par une ligne d'erratum dans l'entrée de la release ? Le kickoff prévoit « une ligne au plus ».
+- **Q1** — Le commit de `post_restore.rs` (et de `config.rs`, doc-comment) impose le gate Rust complet (exception `kesh-db`). **Faut-il rejouer l'E2E complet ?** Proposition : non, la story ne change aucun chemin d'exécution ; à défaut de réponse, il est rejoué une fois à la clôture. **Tranché par le Project Lead le 2026-11-26 : oui, l'E2E complet se rejoue une fois, au dernier commit de code, à la clôture.**
+- **Q2** — Les deux phrases fausses du CHANGELOG (section 0.17.7, `:132-133`) : réécrites à l'intégration (D3), ou corrigées par une ligne d'erratum dans l'entrée de la release ? Le kickoff prévoit « une ligne au plus ». **Tranché par le Project Lead le 2026-11-26 : l'entrée publiée de la 0.17.7 ne se réécrit pas ; la correction va en erratum dans les notes de version de la release qui porte la 58-3.**
 
 ## Dev Notes
 
