@@ -1,6 +1,12 @@
+
+- (LOW, `documentation`) La section *Reporté à l'epic « PDF marqués »* ne range pas tout ce qui a été retiré le 2026-11-26
+  (ancien T3 de l'aperçu, ancien gate `package(kesh-qrbill) | package(kesh-i18n)`, ancien T0 de la marque, phrase de
+  l'ancienne note de version, à recopier depuis `cf0c2dcbd^`) : à reprendre à la fiche de l'epic « PDF marqués »
+  (Pv2p7-4, Epic 55, story 55-3a).
+
 # Story 55-3a : les justificatifs d'une écriture dans la réponse du journal et du grand livre (serveur)
 
-Status: in-progress
+Status: review
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 (Q1), D10, D12 (afficher n'est pas figer :
 sans aperçu dans l'Epic 55), D14 (fiche de la facture, Q8). Issue : #1607 (`enhancement`, **P4**, Q5 ; point c,
@@ -290,27 +296,27 @@ déjà (aucun bandeau). Issue `enhancement` à ouvrir (section *Issues à ouvrir
 
 ## Tâches
 
-- [ ] **T0** — Q1 acceptée par le mainteneur le 2026-11-25 ; aperçu et marque sortis de l'epic le 2026-11-26 (section
+- [x] **T0** — Q1 acceptée par le mainteneur le 2026-11-25 ; aperçu et marque sortis de l'epic le 2026-11-26 (section
       reportée) ; réponses de l'utilisateur relues (D10, D12) ; base `epic/55-navigation` (PR 46 reprise) ; relever le sens
       d'un avoir `cancelled` et de son écriture ; vérifier les lignes SQL directes de l'AC-4 contre les contraintes.
-- [ ] **T1** — Tests rouges d'abord (AC-3 à AC-6) ; journal.
-- [ ] **T2** — `documents.rs` (constructeur commun, deux fonctions) ; `has_documents` du journal et du grand livre, appels
+- [x] **T1** — Tests rouges d'abord (AC-3 à AC-6) ; journal.
+- [x] **T2** — `documents.rs` (constructeur commun, deux fonctions) ; `has_documents` du journal et du grand livre, appels
       hors boucle ; les deux littéraux de **production** (`journal_report.rs:232`, `general_ledger.rs:901`) le lisent dans
       l'ensemble (`contains(&entry_id)`) ; les littéraux de **test et de banc** reçoivent `has_documents: false` et rien
       d'autre (règle
       de fichier commun pour `csv.rs`, `pdf.rs`, `benches/export.rs`, réécrits par les Epics 46 et 47).
-- [ ] **T2bis** — Un service `services::ecritures::justificatifs` (`crates/kesh-api/src/services/ecritures.rs`, placé après
+- [x] **T2bis** — Un service `services::ecritures::justificatifs` (`crates/kesh-api/src/services/ecritures.rs`, placé après
       `detail`, avec sa constante `EXIGENCE_*` comme `EXIGENCE_DETAIL` `:46`) : `find_by_id` borné à la société (le `404`),
       puis `documents_of_entry(lecture.pool(), …)` — la couche de services est le seul lieu des lectures des livres
       (`services/mod.rs`, R1 à R4) ; la route `GET /api/v1/journal-entries/{id}/documents` l'appelle, sur le modèle du détail
       (`routes/journal_entries.rs:494-499`, `ecritures::detail(&ContexteAcces::depuis_api(..), &state.lecture(), id)`) ;
       tests d'intégration `crates/kesh-api/tests/journal_entry_documents_e2e.rs` (neuf).
-- [ ] **T2ter** — `pdf_status` dans `documents_of_entry` (AC-10), lu dans la même requête ; aucune route de PDF neuve
+- [x] **T2ter** — `pdf_status` dans `documents_of_entry` (AC-10), lu dans la même requête ; aucune route de PDF neuve
       (AC-9). *(La route d'aperçu et la marque — anciens T2ter et T2quater : section reportée.)*
-- [ ] **T3** — `docs/api-external.md` (AC-7 ; `pdfStatus` : ses deux valeurs, énumération ouverte, valeur à la lecture
+- [x] **T3** — `docs/api-external.md` (AC-7 ; `pdfStatus` : ses deux valeurs, énumération ouverte, valeur à la lecture
       de la liste, et la course de *Afficher sans figer, dans l'Epic 55*) ; lignes relevées sur la base PR 46. *(La
       documentation de la route d'aperçu et de son code d'erreur : section reportée.)*
-- [ ] **T4** — Gates.
+- [x] **T4** — Gates.
 
 ## Gates
 
@@ -558,7 +564,68 @@ de code.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (agent de développement de la story, sans revue de code).
+
 ### Completion Notes List
+
+- **Livré** : `crates/kesh-report/src/documents.rs` — **une** union des cinq rattachements (`union_des_rattachements`,
+  filtre de société sur chaque table, règles des factures, avoirs et documents fournisseur), lue par
+  `entries_with_documents` (une requête par rapport, `SELECT DISTINCT` sur la période, aucune liste `IN`) et
+  `documents_of_entry` (dédoublonnage et tri par `BTreeMap<(genre, id)>`, `pdf_status` lu dans la même requête) ;
+  `has_documents` (`skip_serializing_if = Not::not`) dans `JournalEntryRow` et `LedgerLine`, alimenté par **un** appel
+  hors boucle dans chaque `generate` ; service `ecritures::justificatifs` (`EXIGENCE_JUSTIFICATIFS` : Consultation,
+  portée MCP `None`) et route `GET /api/v1/journal-entries/{id}/documents` (`authenticated_routes`, à côté du détail) ;
+  `docs/api-external.md` (table des routes `:234`, paragraphe *Les justificatifs des écritures* après `:312`, section de
+  la route avant *Comptabilité multi-devises*). Inventaire des handlers de `services_motif.rs` : `routes/journal_entries.rs`
+  8/9 → 9/10. Littéraux de test et de banc : `has_documents: false,` (sept lignes). Aucune migration, aucun fichier de
+  `kesh-db`, ni manuel, ni `messages.ftl`, ni frontend.
+- **AC-5** (`grep -nE "entries_with_documents\(" crates/kesh-report/src/*.rs | grep -vE ':[0-9]+:\s*//'`) : une
+  définition (`documents.rs:249`) et deux appels (`general_ledger.rs:833`, `journal_report.rs:197`).
+- **AC-9** : `grep -n "pdf/preview" crates/kesh-api/src/lib.rs` ne rend rien ; `git diff --stat 2d078aadd HEAD --
+  crates/kesh-qrbill crates/kesh-i18n crates/kesh-api/src/errors.rs crates/kesh-api/src/routes/issued_invoice_pdf.rs
+  crates/kesh-api/src/routes/invoice_pdf.rs crates/kesh-api/src/routes/invoice_pdf_service.rs crates/kesh-db` vide.
+- **AC-6** : clés JSON comparées (sans justificatif : celles d'avant ; avec : `hasDocuments` en plus), CSV égaux, texte
+  PDF égal (`texte_pdf::lignes`, après avoir vérifié qu'il contient l'écriture `JUSTIF-55`) — garde de non-régression ;
+  `rapports_mono_devise.rs` non modifié et vert (gate complet) ; `mcp_contrat` vert.
+- **AC-8** : la 55-3b porte déjà les deux contrats TypeScript à l'identique (`55-3b-justificatifs-ecran.md:98-101`).
+- **Tests ajoutés** (recomptés `#[test]`/`#[sqlx::test]`, de `2d078aadd` à la tête) : 11 — `kesh-report/tests/documents.rs`
+  5 (AC-3 matrice de 22 écritures et comparaison au journal et au grand livre ; AC-4 filtres, 18 négatifs ; AC-5 période
+  et règlement supprimé ; dédoublonnage ; AC-6), `kesh-report/src/documents.rs` 3 (gardes de construction),
+  `kesh-api/tests/journal_entry_documents_e2e.rs` 2 (`notFrozen` → `frozen` après `GET /pdf`, la liste ne fige rien,
+  avoir réel, journal comparé ; droits : Consultation, clé `read`, autre société et inconnue `404 NOT_FOUND`, `401`),
+  `kesh-api/tests/reports_e2e.rs` 1 (`hasDocuments` par la route, deux sections du grand livre).
+- **Mutations** (`kesh-gate-logs/s55-dev/55-3a/mutations/`, copie et cible cargo propres, une invocation de `heavy.sh`
+  chacune, témoin non muté vert 5/5) : **15 sur 15 tuées**, chacune par une assertion nommée — m1 à m8 (filtres
+  `i.company_id` vente et règlement, `s.`, `cn.`, `si.`, `isi.company_id`, `isi.status`, `cn.status`) par
+  `ac4_les_filtres_ecartent_ce_que_le_schema_admet` (message qui nomme le filtre) ; m9, m10 (règle de la facture, annulée
+  non figée admise) par `ac3_…` (« cas « annulée non figée » ») ; m11 (`je.company_id`) par `ac4_…`
+  (`avec_justificatifs(&pool, b).await.is_empty()`) ; m12 (borne de période) par `ac5_…` ; m13 (`pdf_status` toujours
+  `frozen`, AC-10) par `ac3_une_facture_ne_sort_qu_une_fois` ; m14, m15 (booléen non lu au journal, au grand livre) par
+  `ac6_…`. Premier passage de m11 refusé par le script (quatre occurrences du motif, trois attendues : erreur du script,
+  non une « tuée ») ; rejoué après correction du décompte.
+- **Gates** (dernier commit de code `174fa5385`, docs `27fa832f5`), tous par `heavy.sh` :
+  `clippy.sh 55-3a/final` — fmt rc=0, clippy rc=0 ; `nextest.sh 55-3a/complet --workspace --profile ci` (base remise à
+  zéro dans le même appel) — **6813 passés, 17 ignorés, 0 échec** (`55-3a/complet.log`) ; `front.sh 55-3a/front` — check,
+  lint-i18n-ownership, Vitest **5545 tests (316 fichiers)**, build : tous rc=0 ; `e2e.sh 55-3a/e2e-complet` (suite
+  complète, `fr_CH.UTF-8`) — **537 passés, 7 échecs, 20 ignorés** (47,4 min) : les sept de la KF-029 (#97), jugés fichier
+  par fichier contre `docs/testing.md:485-491` (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150`) ; `opening-balances.spec.ts:156` passé. `-p kesh-i18n` et
+  `binary(textes_coherents)` : ni `messages.ftl` ni manuel touchés, joués dans le nextest complet (verts). Pas de
+  `gate-ci.sh` (fin d'epic). Gate ciblé intermédiaire : `package(kesh-report) | binary(journal_entry_documents_e2e) |
+  binary(reports_e2e) | binary(services_motif) | binary(mcp_contrat)` 409/409.
+- **Recette visuelle** : aucune (rien de visible ne change, fiche).
+- **Défaut retenu, en attente de confirmation du mainteneur** : portée MCP `None` pour la liste (aucun outil ne la sert).
+
+### File List
+
+- `crates/kesh-report/src/documents.rs` (neuf)
+- `crates/kesh-report/src/lib.rs`, `journal_report.rs`, `general_ledger.rs`
+- `crates/kesh-report/src/csv.rs`, `pdf.rs`, `benches/export.rs` (littéraux de test seulement)
+- `crates/kesh-report/tests/documents.rs` (neuf)
+- `crates/kesh-api/src/services/ecritures.rs`, `routes/journal_entries.rs`, `lib.rs`
+- `crates/kesh-api/tests/journal_entry_documents_e2e.rs` (neuf), `reports_e2e.rs`, `services_motif.rs`
+- `docs/api-external.md`
+- `_bmad-output/implementation-artifacts/55-3a-justificatifs-serveur.md`, `sprint-status.yaml`
 
 ### Issues à ouvrir
 
@@ -736,3 +803,5 @@ de code.
     **Pv2p6-2** : même lecture que Pv2p7-2.
   - Journal des mutations : `kesh-gate-logs/s55-dev/55-3a/mutations/` (la fiche disait `kesh-gate-logs/s55-3a/` ; consignes
     communes de l'epic : `s55-dev/<story>/`).
+- 2026-11-26 — Développement (T1 à T4) : voir *Completion Notes List* ; statut `review`. Aucune revue de code (accord du
+  mainteneur attendu).
