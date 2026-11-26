@@ -1861,6 +1861,11 @@ pub enum DbError {
         bank_account_id: i64,
         /// Nom affiché de ce compte bancaire (nom, et description s'il en a une).
         bank_name: String,
+        /// Numéro du sous-compte archivé dont la réactivation est refusée
+        /// (`PUT /accounts/{id}/reactivate`, revue d'intégration de la PR de
+        /// l'Epic 46, H1) ; `None` pour un changement de parent. Ne sert qu'au
+        /// message : les `details` sont ceux du changement de parent.
+        reactivated_number: Option<String>,
     },
 
     /// Une proposition de la route groupée du plan est refusée pour un motif

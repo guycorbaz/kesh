@@ -270,6 +270,7 @@ accounts-parent-archived = Das übergeordnete Konto { $number } ist archiviert. 
 error-account-parent-cycle = Das Konto { $number } ist dieses Konto selbst oder eines seiner Unterkonten: Ein Konto kann nicht unter sich selbst eingeordnet werden.
 error-account-parent-has-entries = Das Konto { $number } enthält Buchungen: Würde dieses Konto darunter eingeordnet, würde es mit einem Saldo nicht bebuchbar, den keine Erfassung mehr korrigieren könnte. Wählen Sie ein Gruppenkonto ohne Buchungen.
 error-account-parent-bank-linked = Das Konto { $number } ist dem Bankkonto «{ $bank }» zugeordnet: Es erhält automatische Buchungen und kann kein Gruppenkonto werden. Wählen Sie ein anderes Gruppenkonto.
+error-account-reactivate-parent-bank-linked = Das Konto { $child } kann nicht reaktiviert werden: Sein übergeordnetes Konto { $number } ist dem Bankkonto «{ $bank }» zugeordnet und erhält automatische Buchungen; es kann nicht wieder ein Gruppenkonto werden. Das Konto { $child } bleibt archiviert.
 error-account-group-invalid-mixed-types = Vorschlag { $position }: Die einzuordnenden Konten sind von unterschiedlichem Typ; eine Gruppe fasst nur Konten desselben Typs zusammen.
 error-account-group-invalid-group-type-mismatch = Vorschlag { $position }: Das Gruppenkonto ist von einem anderen Typ als die darunter einzuordnenden Konten.
 error-account-group-invalid-number-taken = Vorschlag { $position }: Diese Nummer ist bereits von einem Konto belegt (archivierte eingeschlossen) oder wird zweimal verlangt; wählen Sie eine andere Nummer.

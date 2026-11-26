@@ -614,3 +614,74 @@ async fn compte_d_un_compte_bancaire_refuse_en_groupe(pool: MySqlPool) {
     let relu = accounts::find_by_id(&pool, lie).await.unwrap().unwrap();
     assert!(relu.postable, "rien n'est écrit");
 }
+
+/// Revue d'intégration de la PR de l'Epic 46 (H1) : `PUT /accounts/{id}/reactivate`
+/// d'un sous-compte archivé dont le parent, repassé imputable, est désigné par un
+/// compte bancaire — `409 ACCOUNT_PARENT_BANK_LINKED`, les `details` du
+/// changement de parent (sans `groupStep`), un message propre à la réactivation
+/// qui nomme le sous-compte, le parent et le compte bancaire ; rien n'est écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reactivation_sous_un_compte_bancaire_refusee(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let groupe = compte(&pool, &c, c.company_id, "102", None).await;
+    let enfant = compte(&pool, &c, c.company_id, "1021", Some(groupe)).await;
+    let v = accounts::find_by_id(&pool, enfant)
+        .await
+        .unwrap()
+        .unwrap()
+        .version;
+    accounts::archive(&pool, enfant, v, c.admin_id)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET postable = TRUE WHERE id = ?")
+        .bind(groupe)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let banque = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, description, iban, journal_account_id) \
+         VALUES (?, 'Banque Test', 'Courant', 'CH9300762011623852957', ?)",
+    )
+    .bind(c.company_id)
+    .bind(groupe)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let archive = accounts::find_by_id(&pool, enfant).await.unwrap().unwrap();
+
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/accounts/{enfant}/reactivate")))
+        .bearer_auth(&c.jwt)
+        .json(&json!({ "version": archive.version }))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    let json: Value = resp.json().await.unwrap_or(Value::Null);
+    assert_eq!(status, 409, "{json}");
+    let e = &json["error"];
+    assert_eq!(e["code"], "ACCOUNT_PARENT_BANK_LINKED");
+    assert_eq!(
+        e["details"],
+        json!({
+            "parentAccountId": groupe,
+            "parentNumber": "102",
+            "bankAccountId": banque,
+            "bankName": "Banque Test — Courant",
+        })
+    );
+    let message = e["message"].as_str().unwrap();
+    assert!(
+        message.contains("1021")
+            && message.contains("102")
+            && message.contains("Banque Test — Courant")
+            && message.contains("reste archivé"),
+        "{message}"
+    );
+    let relu = accounts::find_by_id(&pool, enfant).await.unwrap().unwrap();
+    assert!(!relu.active, "le sous-compte reste archivé");
+    assert_eq!(relu.version, archive.version, "rien n'est écrit");
+}

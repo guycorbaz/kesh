@@ -231,8 +231,53 @@ sauvegarde d'avant mise à jour (§ *Migration breaking policy*).
 
 ## Décomptes
 
-Issues ouvertes et bugs : **à mesurer au kickoff** (au tag v0.19.0 et ce jour, commandes de § *Priorités des
-défauts*) ; objectif au tag de la release de l'epic : moins qu'au tag v0.19.0 (objectif, non barrière).
+*(Écrit le 2026-11-26, à la revue d'intégration de la PR #1600 (M-2), recompté depuis la source à la tête
+`ecf6cf835` de `pr/46-rapports-groupes-v2` ; il remplace « à mesurer au kickoff », jamais mesuré.)*
+
+- **Stories** (clés `46-*` de `sprint-status.yaml`, lues par `yaml.safe_load`) : **onze `done`** — 46-0 (kickoff,
+  passée `done` ce jour), 46-1, 46-2, 46-3, 46-4, 46-5a, 46-5b, 46-6a, 46-6b, 46-7, 46-8 — et **une `split`** (46-5) ;
+  aucune ouverte. Au registre entier, par la règle de `CLAUDE.md` (hors `epic-*` et `*-retrospective`) : **467
+  `done`** après ce commit (466 avant, la 46-0 comprise désormais).
+- **Migrations** : aucune ajoutée par l'epic (`git diff --stat origin/main...HEAD -- crates/kesh-db/migrations`
+  vide) ; `ls crates/kesh-db/migrations/*.sql | wc -l` rend **98**, tous venus de `main`.
+- **Issues de dette ouvertes par l'epic** : dix, #1636 à #1645, toutes P4 (§ *Dette en suivi*) ; plafond de la
+  story de solde (46-7) : deux issues.
+- **Issues ouvertes et bugs** (commandes de § *Priorités des défauts*) : **non mesurés par l'epic** — son
+  développement s'est fait sans accès à `gh`. À mesurer par le mainteneur : au tag v0.19.0 : `____` issues, dont
+  `____` bugs ; à la fusion de la PR #1600 (date : `____`) : `____` issues, dont `____` bugs. Objectif au tag de la
+  release de l'epic : moins qu'au tag v0.19.0 (objectif, non barrière).
+- **Gates à la tête de la PR** : `kesh-gate-logs/publication-epics/PR-46-corps.md` (chiffres de la dernière tête,
+  journaux `kesh-gate-logs/s46-pr3/`).
+
+## Dérogation
+
+*(Écrit le 2026-11-26, revue d'intégration de la PR #1600, L-2 : ce que les gates et les stories de l'epic ont fait
+autrement que `CLAUDE.md`, et ce qui le compense.)*
+
+1. **E2E complet hors du dernier commit de code des stories** (`CLAUDE.md` § *Pendant une boucle de revue*,
+   décision D7). Règle des gates de l'epic, posée la nuit du 2026-11-22 par le responsable de l'epic : par story,
+   fmt, clippy, nextest (complet, ou du rayon pour une story sans `kesh-db`), frontend complet et **E2E partiel** —
+   les seules specs ajoutées ou touchées ; **`scripts/gate-ci.sh` et l'E2E complet une fois, à la fin, sur la
+   branche de la PR**. Concernées : 46-2 (1 spec), 46-3 (aucune spec), 46-5a (aucune spec), 46-5b (1 spec), 46-6a (aucune spec), 46-6b (1 spec),
+   46-7 (3 specs), 46-8 (4 specs). La 46-1 et la 46-4 ont joué l'E2E complet et `gate-ci.sh` à leur dernier commit de
+   code. Compensation : `gate-ci.sh` et l'E2E complet (`fr_CH.UTF-8`, seuls les sept échecs de la KF-029 admis) à
+   chaque tête poussée de la PR, après chaque reprise de `main` et chaque correctif de revue d'intégration.
+2. **`gate-ci.sh` sous enveloppe.** La commande de la CI n'est pas changée, mais elle tourne sur une copie
+   `git archive` de la tête, avec une cible cargo persistante par branche (`kesh-targets/gate-ci-pr46`), une
+   pré-construction `cargo test --workspace --no-run -j 6` et la base sur le serveur MariaDB de la place ; à la 46-4
+   (passages 2 à 4), l'enveloppe a ajouté `--no-fail-fast`, qui ne change rien à un passage vert.
+3. **Plafonds mémoire et bases.** Les travaux lourds passent par la file de la station (`heavy.sh` : places,
+   plancher de mémoire disponible, un serveur MariaDB de test par place), non par `scripts/mem-guard.sh` ; la base se
+   remet à zéro par `DROP`/`CREATE`, migrations et seed sur une base propre à la branche, sans redémarrer de
+   conteneur (`docs/agents-orchestration.md` § 2).
+4. **Taille.** Huit fiches de développement (46-6 et 46-5 découpées), au-delà de la borne de six : **annoncé au
+   kickoff** pour un epic de fonctionnalité nouvelle, ce que `CLAUDE.md` permet — non une dérogation, rappelé ici.
+5. **Ordre de l'epic** (non une règle de `CLAUDE.md`) : la 46-3 a commencé avant la fusion de la 48-11, avec un
+   remplaçant provisoire de `format_two_decimals` (amendement du 2026-11-22, § *Dépendances*).
+6. **Correctifs après la clôture des stories.** Les gardes du lien bancaire (décision du mainteneur du
+   2026-11-26) et la réactivation (H1 de la revue d'intégration) sont écrites sur la branche de la PR, hors de toute
+   story ; chacune passe une revue ciblée jusqu'à ne rien rendre au-dessus de LOW, puis `gate-ci.sh` et l'E2E
+   complet à la nouvelle tête.
 
 ## Questions ouvertes
 
@@ -278,7 +323,7 @@ La page pour Guy (`data-not-committed/epic-46-revue-pour-guy.html`) porte ces r�
 ## Avant le développement
 
 1. ~~Revue du responsable de l'epic et approbation de Guy~~ : faites (2026-11-19).
-2. Décomptes d'issues mesurés (46-0) ; **fiches écrites (2026-11-20), validation en boucle à mener**.
+2. Décomptes d'issues mesurés (46-0) *(non faits au kickoff ; source recomptée le 2026-11-26, issues et bugs laissés au mainteneur, § Décomptes)* ; **fiches écrites (2026-11-20), validation en boucle à mener**.
 3. ~~Fusion des trois correctifs~~ : faite (`main` `d29aa557`, reprise le 2026-11-20). Reste : la **48-11** dans `main`
    avant la 46-3 ; la maquette de la 46-5 avant sa décision.
 
