@@ -404,7 +404,7 @@ export function wiseProposalActionLabel(
 		case 'card_group':
 			return i18nMsg(
 				'wise-action-card-group',
-				'Une écriture : { $amount } CHF au compte { $account } (règle { $rule }), chaque solde crédité de sa part, la différence de change sur son compte',
+				'Une écriture : { $amount } CHF au compte { $account } (règle { $rule }), chaque solde crédité de sa part, le frais au compte de frais, la différence de change sur son compte',
 				{
 					amount: p.merchantAmount,
 					account: accountNumberName(accounts, p.counterpartyAccountId),
@@ -461,6 +461,18 @@ function partlyReconciledLabel(): string {
 	);
 }
 
+/**
+ * La phrase d'un paiement groupé dont un solde porte un frais sans compte de frais (motif commun
+ * `fee_account_missing` porté par le groupe, `details.cardId` ; ou refus `PROVIDER_PROPOSAL_STALE` de
+ * cette raison) : le frais n'allant jamais à la perte de change, aucun compte n'est deviné.
+ */
+function cardGroupFeeAccountMissingLabel(): string {
+	return i18nMsg(
+		'wise-review-card-group-fee-account-missing',
+		'Ce paiement par carte porte un frais, et le compte Wise n’a pas de compte de frais : réglez le compte de frais du compte bancaire, puis rechargez la revue.',
+	);
+}
+
 /** La phrase d'un paiement groupé dont une ligne, en attente, est déjà comptabilisée. */
 function partlyPostedLabel(): string {
 	return i18nMsg(
@@ -506,6 +518,11 @@ export function wiseToReviewLabel(f: ProviderFinding): string {
 			return partlyReconciledLabel();
 		case 'card_group_partly_posted':
 			return partlyPostedLabel();
+		// Le motif commun d'un frais isolé sans compte de frais, porté par un paiement groupé (`cardId`).
+		case 'fee_account_missing':
+			return f.details?.cardId === undefined
+				? (providerToReviewLabel(f.code) ?? f.code)
+				: cardGroupFeeAccountMissingLabel();
 		default:
 			return providerToReviewLabel(f.code) ?? f.code;
 	}
@@ -552,8 +569,8 @@ export function wiseGapLabel(f: ProviderFinding): string {
 
 /**
  * Libellé d'un refus de `POST /wise/accept` : un groupe périmé par son blocage
- * (`PROVIDER_PROPOSAL_STALE`, `details.reason` `card_group_statements_missing`
- * ou `card_group_partly_reconciled`) dit la phrase de son motif ; tout autre
+ * (`PROVIDER_PROPOSAL_STALE`, `details.reason` `card_group_statements_missing`,
+ * `card_group_partly_reconciled` ou `fee_account_missing`) dit la phrase de son motif ; tout autre
  * refus est délégué à `providerFailedLabel` (puis `failedProposalLabel`).
  */
 export function wiseFailedLabel(code: string, details?: unknown): string {
@@ -561,6 +578,7 @@ export function wiseFailedLabel(code: string, details?: unknown): string {
 	if (code === 'PROVIDER_PROPOSAL_STALE') {
 		if (d.reason === 'card_group_statements_missing') return statementsMissingLabel(stringList(d.missingCurrencies));
 		if (d.reason === 'card_group_partly_reconciled') return partlyReconciledLabel();
+		if (d.reason === 'fee_account_missing') return cardGroupFeeAccountMissingLabel();
 	}
 	return providerFailedLabel(code, details);
 }

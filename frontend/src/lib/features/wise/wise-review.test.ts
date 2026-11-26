@@ -109,6 +109,13 @@ describe('wise-review — sous-lignes d’un paiement groupé', () => {
 			wiseFindingLines({ code: 'card_group_statements_missing', transaction: tx(7), details: { lines } }).map((t) => t.id),
 		).toEqual([3, 4]);
 		expect(wiseFindingLines({ code: 'no_rule', transaction: tx(7), details: { lines } })).toEqual([]);
+		// Le motif commun d'un frais sans compte de frais, porté par un groupe : ses lignes aussi.
+		expect(
+			wiseFindingLines({ code: 'fee_account_missing', transaction: tx(7), details: { cardId: 'CARD-1', lines } }).map(
+				(t) => t.id,
+			),
+		).toEqual([3, 4]);
+		expect(wiseFindingLines({ code: 'fee_account_missing', transaction: tx(7) })).toEqual([]);
 		expect(wiseFindingLines({ code: 'card_group_no_rule', transaction: tx(7), details: {} })).toEqual([]);
 		expect(
 			wiseFindingLines({ code: 'card_group_unsupported', transaction: tx(7), details: { lines: [null, 'x', tx(5)] } }).map(

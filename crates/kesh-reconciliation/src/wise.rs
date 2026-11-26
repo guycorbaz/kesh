@@ -537,6 +537,18 @@ pub fn shares_by_account(lines: &[&BankTransaction]) -> BTreeMap<i64, Decimal> {
     shares
 }
 
+/// Les frais d'un paiement groupé, par solde : par compte bancaire, la somme
+/// des montants **absolus** de ses lignes de frais (`FEE-CARD-…`), dans sa
+/// devise. Un solde sans frais n'y figure pas. Le frais va au compte de frais
+/// du solde, jamais à la perte de change (correctif de la PR de l'Epic 39).
+pub fn fees_by_account(lines: &[&BankTransaction]) -> BTreeMap<i64, Decimal> {
+    let mut fees: BTreeMap<i64, Decimal> = BTreeMap::new();
+    for t in lines.iter().filter(|t| is_card_fee(t)) {
+        *fees.entry(t.bank_account_id).or_default() += t.amount.abs();
+    }
+    fees
+}
+
 /// Les comptes admis comme contrepartie d'une règle **en CHF** seulement : la
 /// charge d'un paiement groupé est au montant du marchand, en CHF.
 pub fn chf_rule_accounts(all: &HashMap<i64, Option<String>>) -> HashMap<i64, Option<String>> {
@@ -755,6 +767,10 @@ mod tests {
         let shares = shares_by_account(&g.lines);
         assert_eq!(shares[&1], Decimal::from_str("86.60").unwrap());
         assert_eq!(shares[&3], Decimal::from_str("13.89").unwrap());
+        // Le frais, seul, par solde : le solde CHF n'en porte pas.
+        let fees = fees_by_account(&g.lines);
+        assert_eq!(fees.len(), 1, "{fees:?}");
+        assert_eq!(fees[&3], Decimal::from_str("0.04").unwrap());
     }
 
     #[test]

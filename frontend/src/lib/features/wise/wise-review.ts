@@ -76,11 +76,11 @@ function isSummary(v: unknown): v is ProviderReviewTransaction {
 
 /**
  * Les sous-lignes d'une ligne « à examiner » d'un paiement groupé (motifs
- * `card_group_*`, `details.lines`) : ses lignes hors la principale — la
- * transaction du motif, qui garde la ligne du tableau ; aucune pour un autre motif.
+ * `card_group_*`, et `fee_account_missing` porté par un groupe, `details.lines`) : ses lignes hors la
+ * principale — la transaction du motif, qui garde la ligne du tableau ; aucune pour un autre motif.
  */
 export function wiseFindingLines(f: ProviderFinding): ProviderReviewTransaction[] {
-	if (!f.code.startsWith('card_group_')) return [];
+	if (!f.code.startsWith('card_group_') && f.code !== 'fee_account_missing') return [];
 	const lines = f.details?.lines;
 	if (!Array.isArray(lines)) return [];
 	return lines.filter(isSummary).filter((t) => t.id !== f.transaction?.id);

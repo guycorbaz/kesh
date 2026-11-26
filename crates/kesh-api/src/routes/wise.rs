@@ -20,6 +20,9 @@
 //!    la ligne principale), sinon « à examiner » (`card_group_no_rule`,
 //!    `card_group_unsupported`, `card_group_statements_missing`,
 //!    `card_group_partly_reconciled` : [`card_group_blocker`] ;
+//!    `fee_account_missing`, le motif commun d'un frais sans compte de frais,
+//!    quand un solde du paiement porte un frais `FEE-CARD` sans compte de
+//!    frais réglé : [`fee_accounts_missing`] ;
 //!    `card_group_partly_posted` : une ligne déjà comptabilisée, règle commune
 //!    « écrite une seule fois », la ligne elle-même sous `already_posted`).
 //! 2. **Autre côté déjà passé** (AC-4) — pour un versement Stripe et un
@@ -72,9 +75,9 @@ use kesh_db::repositories::{
     reconciliation_rules,
 };
 use kesh_reconciliation::provider_review::{
-    ENTRY_DESCRIPTION_MAX_CHARS, EntryKind, EntrySummary, Proposal, ProviderKind, REVIEW_NO_RULE,
-    Review, ReviewFinding, ReviewProposal, TransactionSummary, matching_rule, names_another,
-    payment_date,
+    ENTRY_DESCRIPTION_MAX_CHARS, EntryKind, EntrySummary, Proposal, ProviderKind,
+    REVIEW_FEE_ACCOUNT_MISSING, REVIEW_NO_RULE, Review, ReviewFinding, ReviewProposal,
+    TransactionSummary, matching_rule, names_another, payment_date,
 };
 use kesh_reconciliation::rule_matches;
 use kesh_reconciliation::wise::{
@@ -292,6 +295,19 @@ async fn build_wise_review(
                     review.push_to_review(ReviewFinding {
                         details: Some(details),
                         ..ReviewFinding::on(code, principal)
+                    });
+                    continue;
+                }
+                let missing = fee_accounts_missing(g, |id| {
+                    balances
+                        .get(&id)
+                        .and_then(|b| b.account.provider_settings.fee_account_id)
+                });
+                if !missing.is_empty() {
+                    details["bankAccountIds"] = serde_json::json!(missing);
+                    review.push_to_review(ReviewFinding {
+                        details: Some(details),
+                        ..ReviewFinding::on(REVIEW_FEE_ACCOUNT_MISSING, principal)
                     });
                     continue;
                 }
@@ -641,6 +657,22 @@ async fn card_group_blocker<'b>(
     )))
 }
 
+/// Les soldes d'un paiement groupé qui portent un frais (`FEE-CARD-…`) sans
+/// compte de frais réglé (`fee_account_of`, le réglage du compte bancaire),
+/// triés. Non vide : la revue met le groupe « à examiner » et l'acceptation
+/// le refuse, sous le motif du moteur commun pour un frais isolé sans compte
+/// de frais ([`REVIEW_FEE_ACCOUNT_MISSING`], `details.bankAccountIds`) ; aucun
+/// compte n'est deviné, le frais n'allant jamais à la perte de change.
+fn fee_accounts_missing(
+    group: &wise::CardGroup<'_>,
+    fee_account_of: impl Fn(i64) -> Option<i64>,
+) -> Vec<i64> {
+    wise::fees_by_account(&group.lines)
+        .into_keys()
+        .filter(|account| fee_account_of(*account).is_none())
+        .collect()
+}
+
 /// Ajoute à l'objet `into` les champs de l'objet `extra`.
 fn merge(into: &mut serde_json::Value, extra: serde_json::Value) {
     if let (Some(into), serde_json::Value::Object(extra)) = (into.as_object_mut(), extra) {
@@ -806,9 +838,15 @@ fn entry_line(
 /// contrepartie, qui correspond toujours à la ligne principale (sinon
 /// `rule_no_longer_matches`). Contrepartie : celle d'une règle, en CHF
 /// (`COUNTERPARTY_CURRENCY_MISMATCH`), jamais le compte du plan d'un solde.
+/// Frais (`FEE-CARD-…`) : au compte de frais de son solde, contrôlé comme
+/// celui d'un frais isolé ; un solde à frais sans compte de frais refuse le
+/// groupe (`PROVIDER_PROPOSAL_STALE`, `reason` `fee_account_missing`,
+/// `bankAccountIds`), aucun compte n'est deviné.
 /// Écriture : la charge au montant du marchand, chaque solde crédité de sa
-/// part (cours mensuel retenu pour un solde en devise), la différence sur le
-/// compte de perte ou de gain de change de la société.
+/// part, frais compris (cours mensuel retenu pour un solde en devise), chaque
+/// frais au débit de son compte de frais, au même cours, et la différence —
+/// le change seul — sur le compte de perte ou de gain de change de la
+/// société.
 async fn accept_card_group(
     tx: &mut sqlx::Transaction<'_, MySql>,
     ctx: &AcceptContext<'_>,
@@ -873,6 +911,24 @@ async fn accept_card_group(
         merge(&mut details, extra);
         return Err(failed(primary, PROVIDER_PROPOSAL_STALE, details));
     }
+    // Un frais sans compte de frais : le même motif que la revue, rejugé sur
+    // les réglages relus sous les verrous.
+    let fee_account_of = |id: i64| {
+        ctx.balances
+            .get(&id)
+            .and_then(|b| b.account.provider_settings.fee_account_id)
+    };
+    let missing = fee_accounts_missing(group, fee_account_of);
+    if !missing.is_empty() {
+        return Err(failed(
+            primary,
+            PROVIDER_PROPOSAL_STALE,
+            serde_json::json!({
+                "reason": REVIEW_FEE_ACCOUNT_MISSING,
+                "bankAccountIds": missing,
+            }),
+        ));
+    }
 
     // La règle, rejugée sur la ligne principale.
     let rule: Option<ReconciliationRule> =
@@ -932,7 +988,32 @@ async fn accept_card_group(
         )));
     }
 
-    // Les lignes : la charge, la part de chaque solde, la différence.
+    // Le compte de frais de chaque solde qui porte un frais : le contrôle d'un
+    // frais isolé (`accept_fee` : compte de charge actif, imputable, jamais le
+    // compte du plan du solde) ; sa devise, comme pour un frais isolé, ne
+    // porte le montant en devise que si c'est celle du solde.
+    let fees = wise::fees_by_account(&group.lines);
+    let mut fee_accounts: HashMap<i64, (i64, Option<String>)> = HashMap::new();
+    for account in fees.keys() {
+        let (Some(fee_account_id), Some((ledger, _))) =
+            (fee_account_of(*account), ledgers.get(account))
+        else {
+            return Err(stale(primary, "card_group_changed"));
+        };
+        let fee_currency = check_counterparty(
+            tx,
+            ctx,
+            primary,
+            fee_account_id,
+            *ledger,
+            CounterpartyRule::Expense,
+        )
+        .await?;
+        fee_accounts.insert(*account, (fee_account_id, fee_currency));
+    }
+
+    // Les lignes : la charge, la part de chaque solde, le frais au compte de
+    // frais, la différence (le change seul) à la perte ou au gain de change.
     let date = payment_date(principal);
     let mut entry_lines = vec![entry_line(
         counterparty_account_id,
@@ -940,37 +1021,67 @@ async fn accept_card_group(
         Decimal::ZERO,
         None,
     )];
+    let mut fee_lines = Vec::new();
     let mut credited = Decimal::ZERO;
+    let mut fees_chf = Decimal::ZERO;
     for (account, share) in wise::shares_by_account(&group.lines) {
         let Some((ledger, currency)) = ledgers.get(&account) else {
             return Err(stale(primary, "card_group_changed"));
         };
-        let (chf, foreign) = if currency == BASE_CURRENCY {
-            (share, None)
+        let fee = fees.get(&account).copied();
+        let rate = if currency == BASE_CURRENCY {
+            None
         } else {
-            let rate = month_rate(tx, ctx.company_id, primary, currency, date).await?;
-            let chf = kesh_core::accounting::fx::fx_chf(&share, &rate.rate).map_err(|e| {
+            Some(month_rate(tx, ctx.company_id, primary, currency, date).await?)
+        };
+        // Un montant du solde, en CHF (au cours mensuel retenu pour une
+        // devise) et en devise.
+        let in_chf = |amount: Decimal| -> Result<(Decimal, Option<ForeignAmount>), Refusal> {
+            let Some(rate) = &rate else {
+                return Ok((amount, None));
+            };
+            let chf = kesh_core::accounting::fx::fx_chf(&amount, &rate.rate).map_err(|e| {
                 failed(
                     primary,
                     "FX_RATE_INVALID",
                     serde_json::json!({ "currency": currency, "message": format!("{e:?}") }),
                 )
             })?;
-            (
+            Ok((
                 chf,
                 Some(ForeignAmount {
                     declared_currency: None,
-                    amount: share,
+                    amount,
                     rate: rate.rate,
                     source: Some(rate.source),
                     rate_derived: false,
                 }),
-            )
+            ))
         };
+        let (chf, foreign) = in_chf(share)?;
         credited += chf;
         entry_lines.push(entry_line(*ledger, Decimal::ZERO, chf, foreign));
+        if let Some(fee) = fee
+            && let Some((fee_account_id, fee_currency)) = fee_accounts.get(&account)
+        {
+            let (fee_chf, fee_foreign) = in_chf(fee)?;
+            let fee_foreign =
+                fee_foreign.filter(|_| fee_currency.as_deref() == Some(currency.as_str()));
+            // Un frais nul en CHF (arrondi) n'a pas de ligne : il reste dans
+            // la différence.
+            if !fee_chf.is_zero() {
+                fees_chf += fee_chf;
+                fee_lines.push(entry_line(
+                    *fee_account_id,
+                    fee_chf,
+                    Decimal::ZERO,
+                    fee_foreign,
+                ));
+            }
+        }
     }
-    let difference = credited - merchant_chf;
+    entry_lines.extend(fee_lines);
+    let difference = credited - merchant_chf - fees_chf;
     if !difference.is_zero() {
         let (gain, loss) = reads::fx_difference_accounts(&mut **tx, ctx.company_id)
             .await

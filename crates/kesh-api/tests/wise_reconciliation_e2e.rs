@@ -932,8 +932,9 @@ fn groupe(ids: &[i64], regle: i64, contrepartie: i64) -> Value {
 }
 
 /// Une écriture : la charge au montant du marchand (97.95), chaque solde
-/// crédité de sa part (CHF 86.60 ; USD 13.89 au cours du mois, 12.50 CHF), la
-/// différence (1.15) en perte de change ; les trois transactions rapprochées.
+/// crédité de sa part (CHF 86.60 ; USD 13.89 au cours du mois, 12.50 CHF), le
+/// frais (0.04 USD, 0.04 CHF) au compte de frais du solde, la différence (le
+/// change seul, 1.11) en perte de change ; les trois transactions rapprochées.
 /// Annuler une ligne contre-passe l'écriture et remet les trois en attente ;
 /// la proposition reparaît (rien de perdu).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -967,7 +968,8 @@ async fn partielle_en_une_ecriture_puis_annulation(pool: MySqlPool) {
                 Some(dec!(13.89)),
                 Some(dec!(0.90))
             ),
-            (ctx.perte, dec!(1.15), dec!(0), None, None),
+            (ctx.frais, dec!(0.04), dec!(0), None, None),
+            (ctx.perte, dec!(1.11), dec!(0), None, None),
         ]
     );
     assert_eq!(
@@ -1425,7 +1427,8 @@ async fn totale_apres_la_derniere_ligne_chf(pool: MySqlPool) {
                 Some(dec!(13.89)),
                 Some(dec!(0.90))
             ),
-            (ctx.perte, dec!(1.15), dec!(0), None, None),
+            (ctx.frais, dec!(0.04), dec!(0), None, None),
+            (ctx.perte, dec!(1.11), dec!(0), None, None),
         ]
     );
 }
@@ -1598,7 +1601,7 @@ async fn partielle_usd_d_abord_puis_ligne_chf(pool: MySqlPool) {
     assert_eq!(ctx.mouvement(ctx.charge).await.0, dec!(97.95));
     assert_eq!(ctx.mouvement(ctx.chf).await.0, dec!(-86.60));
     assert_eq!(ctx.mouvement(ctx.usd).await, (dec!(-12.50), dec!(-13.89)));
-    assert_eq!(ctx.mouvement(ctx.perte).await.0, dec!(1.15));
+    assert_eq!(ctx.mouvement(ctx.perte).await.0, dec!(1.11));
 }
 
 /// Revue P3, L1 : le frais `FEE-CARD` importé seul d'abord (l'export qui finit
@@ -1848,8 +1851,9 @@ async fn annulation_bloquee_par_une_ligne_liee_non_rapprochee(pool: MySqlPool) {
 }
 
 /// Revue L1 : le cours du mois fait gagner du change — 13.89 USD à 0.80 =
-/// 11.11 CHF pour un marchand à 11.35 : la différence (0.24) est **créditée**
-/// au compte de gain, et l'écriture est équilibrée.
+/// 11.11 CHF pour un marchand à 11.35 et un frais de 0.04 USD (0.03 CHF, au
+/// compte de frais) : la différence (0.27) est **créditée** au compte de gain,
+/// et l'écriture est équilibrée.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn partielle_gain_de_change(pool: MySqlPool) {
     let (ctx, regle, ids) = monter_partielle(&pool).await;
@@ -1882,8 +1886,199 @@ async fn partielle_gain_de_change(pool: MySqlPool) {
                 Some(dec!(13.89)),
                 Some(dec!(0.80))
             ),
-            (gain, dec!(0), dec!(0.24), None, None),
+            (ctx.frais, dec!(0.03), dec!(0), None, None),
+            (gain, dec!(0), dec!(0.27), None, None),
         ]
+    );
+}
+
+// ============================================================
+// Correctif de la PR de l'Epic 39 — le frais d'un paiement groupé va au
+// compte de frais du solde, jamais à la perte de change
+// ============================================================
+
+/// Somme des débits et des crédits CHF d'une écriture.
+async fn totaux(ctx: &Ctx, ecriture: i64) -> (Decimal, Decimal) {
+    sqlx::query_as("SELECT SUM(debit), SUM(credit) FROM journal_entry_lines WHERE entry_id = ?")
+        .bind(ecriture)
+        .fetch_one(&ctx.pool)
+        .await
+        .unwrap()
+}
+
+/// Le compte de frais d'un solde en devise du compte Wise, tenu dans cette
+/// devise : la ligne de frais porte le montant en devise et le cours retenu
+/// (comme un frais isolé, `write_provider_entry`) ; la perte de change ne
+/// porte que le change (1.11), l'écriture est équilibrée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn groupe_frais_au_compte_de_frais_en_devise(pool: MySqlPool) {
+    let (ctx, regle, ids) = monter_partielle(&pool).await;
+    let frais_usd = compte(
+        &ctx.pool,
+        ctx.seeded.company_id,
+        "6941",
+        "Expense",
+        Some("USD"),
+    )
+    .await;
+    sqlx::query("UPDATE bank_accounts SET fee_account_id = ? WHERE journal_account_id = ?")
+        .bind(frais_usd)
+        .bind(ctx.usd)
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+    let (s, b) = ctx.accepter(vec![groupe(&ids, regle, ctx.charge)]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    let ecriture = b["accepted"][0]["journalEntryIds"][0].as_i64().unwrap();
+    assert_eq!(
+        ctx.lignes(ecriture).await,
+        vec![
+            (ctx.charge, dec!(97.95), dec!(0), None, None),
+            (ctx.chf, dec!(0), dec!(86.60), None, None),
+            (
+                ctx.usd,
+                dec!(0),
+                dec!(12.50),
+                Some(dec!(13.89)),
+                Some(dec!(0.90))
+            ),
+            (
+                frais_usd,
+                dec!(0.04),
+                dec!(0),
+                Some(dec!(0.04)),
+                Some(dec!(0.90))
+            ),
+            (ctx.perte, dec!(1.11), dec!(0), None, None),
+        ]
+    );
+    let (debit, credit) = totaux(&ctx, ecriture).await;
+    assert_eq!((debit, credit), (dec!(99.10), dec!(99.10)), "équilibrée");
+    // Rien au compte de frais en CHF, la perte ne porte pas le frais.
+    assert_eq!(ctx.mouvement(ctx.frais).await.0, dec!(0));
+    assert_eq!(ctx.mouvement(ctx.perte).await.0, dec!(1.11));
+}
+
+/// Le solde qui porte le frais n'a pas de compte de frais : la revue met le
+/// groupe « à examiner » sous le motif commun d'un frais sans compte de frais
+/// (`fee_account_missing`, le solde nommé), sans proposition ; l'acceptation
+/// forgée est refusée en `failed[]` (`PROVIDER_PROPOSAL_STALE`, même motif),
+/// HTTP 200, rien d'écrit. Un solde sans frais (CHF) sans compte de frais ne
+/// bloque rien : le compte est réglé de nouveau, le groupe s'accepte.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn groupe_refuse_sans_compte_de_frais(pool: MySqlPool) {
+    let (ctx, regle, ids) = monter_partielle(&pool).await;
+    let ba_usd: i64 =
+        sqlx::query_scalar("SELECT id FROM bank_accounts WHERE journal_account_id = ?")
+            .bind(ctx.usd)
+            .fetch_one(&ctx.pool)
+            .await
+            .unwrap();
+    let regler = |compte: Option<i64>, ledger: i64| {
+        let pool = ctx.pool.clone();
+        async move {
+            sqlx::query("UPDATE bank_accounts SET fee_account_id = ? WHERE journal_account_id = ?")
+                .bind(compte)
+                .bind(ledger)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    };
+    regler(None, ctx.usd).await;
+    // Le solde CHF, sans frais dans ce paiement, n'a pas non plus de compte
+    // de frais : il n'est pas nommé.
+    regler(None, ctx.chf).await;
+
+    let revue = ctx.revue().await;
+    assert_eq!(
+        de_groupe(&revue["proposals"]),
+        Vec::<Value>::new(),
+        "{revue}"
+    );
+    let examen: Vec<&Value> = revue["toReview"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["code"] == "fee_account_missing")
+        .collect();
+    assert_eq!(examen.len(), 1, "{revue}");
+    assert_eq!(examen[0]["transaction"]["id"], ids[0], "{revue}");
+    assert_eq!(examen[0]["details"]["cardId"], "CARD-90000020");
+    assert_eq!(examen[0]["details"]["bankAccountIds"], json!([ba_usd]));
+    assert_eq!(examen[0]["details"]["bankTransactionIds"], json!(ids));
+
+    let avant = ctx.count("SELECT COUNT(*) FROM journal_entries").await;
+    let (s, b) = ctx.accepter(vec![groupe(&ids, regle, ctx.charge)]).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["accepted"], json!([]), "{b}");
+    assert_eq!(
+        b["failed"][0]["errorCode"], "PROVIDER_PROPOSAL_STALE",
+        "{b}"
+    );
+    assert_eq!(b["failed"][0]["bankTransactionId"], ids[0]);
+    assert_eq!(b["failed"][0]["details"]["reason"], "fee_account_missing");
+    assert_eq!(b["failed"][0]["details"]["bankAccountIds"], json!([ba_usd]));
+    assert_eq!(
+        ctx.count("SELECT COUNT(*) FROM journal_entries").await,
+        avant,
+        "rien d'écrit"
+    );
+    for id in ids {
+        assert_eq!(ctx.etat(id).await, ("pending".into(), None), "{id}");
+    }
+    assert_eq!(ctx.mouvement(ctx.perte).await.0, dec!(0));
+
+    // Le compte de frais réglé de nouveau (le seul solde à frais) : accepté.
+    regler(Some(ctx.frais), ctx.usd).await;
+    let revue = ctx.revue().await;
+    assert_eq!(de_groupe(&revue["proposals"]).len(), 1, "{revue}");
+    let (s, b) = ctx.accepter(vec![groupe(&ids, regle, ctx.charge)]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+}
+
+/// PayPal, Stripe et Wise peuvent partager **un même** compte de frais :
+/// aucune garde ne l'interdit (ni contrainte d'unicité, ni CHECK, ni la garde
+/// des réglages de prestataire) ; le frais du paiement groupé Wise y va.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn trois_prestataires_un_meme_compte_de_frais(pool: MySqlPool) {
+    let (ctx, regle, ids) = monter_partielle(&pool).await;
+    let c = ctx.seeded.company_id;
+    let paypal = compte(&ctx.pool, c, "1033", "Asset", None).await;
+    let stripe = compte(&ctx.pool, c, "1034", "Asset", None).await;
+    let (s, b) = ctx
+        .post(
+            "/api/v1/bank-accounts",
+            json!({ "bankName": "PayPal", "journalAccountId": paypal,
+                    "paypal": { "account": "PayPal www", "feeAccountId": ctx.frais } }),
+        )
+        .await;
+    assert_eq!(s, 201, "solde PayPal : {b}");
+    let (s, b) = ctx
+        .post(
+            "/api/v1/bank-accounts",
+            json!({ "bankName": "Stripe", "journalAccountId": stripe,
+                    "stripe": { "account": "Stripe boutique", "feeAccountId": ctx.frais } }),
+        )
+        .await;
+    assert_eq!(s, 201, "solde Stripe : {b}");
+    assert_eq!(
+        ctx.count(&format!(
+            "SELECT COUNT(DISTINCT provider) FROM bank_accounts WHERE fee_account_id = {}",
+            ctx.frais
+        ))
+        .await,
+        3,
+        "PayPal, Stripe et Wise sur le même compte de frais"
+    );
+    let (s, b) = ctx.accepter(vec![groupe(&ids, regle, ctx.charge)]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    let ecriture = b["accepted"][0]["journalEntryIds"][0].as_i64().unwrap();
+    assert!(
+        ctx.lignes(ecriture)
+            .await
+            .contains(&(ctx.frais, dec!(0.04), dec!(0), None, None)),
+        "le frais au compte de frais partagé"
     );
 }
 

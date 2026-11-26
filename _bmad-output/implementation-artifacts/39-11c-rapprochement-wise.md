@@ -307,6 +307,12 @@ depuis votre banque, versement Stripe), le reste par vos règles ; ce qui ne se 
   solde d'ouverture) et `NoPrevious` ; L3, L4 limites écrites, notées pour le manuel (fiche de la 39-11d). Trend : P1 1
   MEDIUM → P2 2 MEDIUM → P3 1 MEDIUM (une promesse de la documentation) ; passe P4 ciblée à lancer
   (`kesh-gate-logs/s39-11c/revue-p4-prompt.md`).
+- 2026-11-26 — correctif demandé par le mainteneur sur la PR de l'Epic 39 : le frais `FEE-CARD-…` d'un paiement groupé
+  allait, avec le change, au compte de perte de change ; il va désormais au compte de frais de son solde (contrôlé comme
+  un frais isolé), la perte ou le gain ne portant que le change. Un solde à frais sans compte de frais met le groupe « à
+  examiner » (`fee_account_missing`, le motif commun) et son acceptation est refusée (`PROVIDER_PROPOSAL_STALE`, même
+  raison, `details.bankAccountIds`), rien n'est écrit. Vérifié sans changement : un même compte de frais peut servir à
+  PayPal, Stripe et Wise (aucune unicité, CHECK ni garde ne l'interdit ; test ajouté).
 
 ## Dev Agent Record
 
@@ -552,5 +558,6 @@ Champ `known_chf` de `ProviderEntry` : non employé (le paiement groupé écrit 
 *Ajouté* — Les lignes d'un relevé Wise se rapprochent sur proposition (`GET /api/v1/wise/review`,
 `POST /api/v1/wise/accept`) : frais au compte de frais, conversions au cours de Wise, rattachement à l'écriture déjà
 passée de l'autre côté (virement, versement Stripe), le reste par vos règles ; un paiement par carte converti, pris sur
-plusieurs soldes, devient une seule écriture au montant du marchand ; ce qui ne se rapproche pas est listé avec son
-motif.
+plusieurs soldes, devient une seule écriture au montant du marchand, son frais au compte de frais du solde (jamais à la
+perte de change ; sans compte de frais, le paiement va « à examiner » et son acceptation est refusée) ; ce qui ne se
+rapproche pas est listé avec son motif.

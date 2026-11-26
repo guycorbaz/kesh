@@ -259,7 +259,7 @@ describe('wise-labels — genre et « ce qui sera fait » (Story 39-11d2)', () =
 		};
 		expect(wiseProposalKindLabel(g)).toBe('Paiement par carte');
 		expect(wiseProposalActionLabel(g, comptes, regles)).toBe(
-			'Une écriture : 97.95 CHF au compte 4000 — Achats (règle Boutique), chaque solde crédité de sa part, la différence de change sur son compte',
+			'Une écriture : 97.95 CHF au compte 4000 — Achats (règle Boutique), chaque solde crédité de sa part, le frais au compte de frais, la différence de change sur son compte',
 		);
 	});
 
@@ -306,6 +306,11 @@ describe('wise-labels — une phrase par motif et par écart', () => {
 		expect(wiseToReviewLabel({ code: 'no_rule' })).toContain('filtre de type CARD, TRANSFER');
 		expect(wiseToReviewLabel({ code: 'stripe_payout_unmatched' })).toContain('importez le rapport Stripe');
 		expect(wiseToReviewLabel({ code: 'fee_account_missing' })).toContain('compte de frais');
+		// Porté par un paiement groupé (`cardId`) : la phrase du groupe, non celle d'un frais isolé.
+		expect(wiseToReviewLabel({ code: 'fee_account_missing', details: { cardId: 'CARD-1' } })).toBe(
+			'Ce paiement par carte porte un frais, et le compte Wise n’a pas de compte de frais : réglez le compte de frais du compte bancaire, puis rechargez la revue.',
+		);
+		expect(wiseToReviewLabel({ code: 'fee_account_missing' })).not.toContain('paiement par carte');
 		expect(wiseGapLabel({ code: 'balance_gap', details: { currency: 'CHF', expected: '0.00', found: '1000.00', date: '2020-05-01' } })).toBe(
 			'Le relevé ne commence pas où finissait le précédent : solde d’ouverture 1000.00 CHF, au lieu de 0.00 CHF à la clôture du relevé précédent. Une période manque peut-être : importez-la.',
 		);
@@ -331,6 +336,9 @@ describe('wise-labels — refus de l’acceptation', () => {
 		).toContain('le relevé du solde CHF ne couvre pas cette date');
 		expect(wiseFailedLabel('PROVIDER_PROPOSAL_STALE', { reason: 'card_group_partly_reconciled', journalEntryIds: [3] })).toContain(
 			'Une part de ce paiement est déjà rapprochée',
+		);
+		expect(wiseFailedLabel('PROVIDER_PROPOSAL_STALE', { reason: 'fee_account_missing', bankAccountIds: [4] })).toContain(
+			'le compte Wise n’a pas de compte de frais',
 		);
 	});
 
