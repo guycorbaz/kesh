@@ -1,6 +1,6 @@
 # Story 55-4 : solde de la dette de l'epic
 
-Status: ready-for-dev
+Status: in-progress
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md`. Release : celle de l'epic, **avant le tag**.
 Règle : `CLAUDE.md` § *Priorités des défauts*, les puces « Un LOW de revue qui touche la production peut se corriger dans
@@ -35,7 +35,8 @@ afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre de
 - **Plafond : au plus 2 issues** (fixé au kickoff, fichier d'epic). Au-delà, les suivantes restent ouvertes, nommées à la
   rétrospective avec leur raison. Un correctif qui toucherait plus de cinq modules n'est pas pris (par analogie avec
   la règle de splitting préventif) et reste ouvert.
-- Frontend seulement, **sauf** une dette née de la 55-3a côté serveur (`kesh-report`, `kesh-api` ; l'aperçu et la marque,
+- Frontend et catalogues i18n (`messages.ftl`, avec leurs gardes Rust ciblées de `kesh-i18n` et de `textes_coherents`),
+  **sauf** une dette née de la 55-3a dans le code serveur (`kesh-report`, `kesh-api` ; l'aperçu et la marque,
   `kesh-qrbill`, sont sortis de l'epic le 2026-11-26) — les 55-3a et 55-3b restent dans l'epic (Q1 acceptée par le
   mainteneur le 2026-11-25) ; une 55-4 qui touche le serveur passe le gate complet et l'E2E complet à sa clôture ; une
   55-4 qui touche `messages.ftl` ou le manuel joue à sa clôture `cargo nextest run -p kesh-i18n` et
@@ -76,15 +77,21 @@ afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre de
    finding au-dessus de LOW (`CLAUDE.md` § *Review Iteration Rule*).
 ## Tâches
 
-- [ ] **T0** — Liste des candidates (AC-1). **Prérequis** : le mainteneur ou son agent a ouvert les issues des sections
+- [x] **T0** — Liste des candidates (AC-1). **Prérequis** : le mainteneur ou son agent a ouvert les issues des sections
       *Issues à ouvrir* et transmis leurs numéros ; une candidate sans numéro peut être retenue, son numéro reporté avant T1.
 - [ ] **T1** — Corrections et preuves (AC-2).
 - [ ] **T2** — Gates de fin d'epic (fichier d'epic, § *Gates*, *Dérogation*, Q6 tranchée par le mainteneur le
       2026-11-25), **après le dernier commit de code** des corrections, **avant la PR vers `main`** :
-      `scripts/gate-ci.sh origin/main` (ou la base de la PR de l'epic si elle diffère, nommée au journal) et E2E
-      complet ; « vert » = seulement les échecs attendus de `docs/testing.md` § *Les échecs attendus*, jugés fichier par
+      `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, les quatre commandes
+      frontend (`npm run check`, `lint-i18n-ownership`, `test:unit`, `build`), `scripts/gate-ci.sh kesh_ci_s55_4
+      kesh-gate-logs/s55-4/gate-ci.log` (backend comme la CI ; l'argument est une base jetable `kesh_ci_<suffixe>`, non une
+      référence git, `scripts/gate-ci.sh:8-10` ; script prêt : `kesh-gate-logs/s55-dev/fin/gate-ci.sh`, sur une copie
+      `git archive` de la tête de la branche de l'epic, après la dernière reprise) et E2E complet ; « vert » = seulement les échecs attendus de `docs/testing.md` § *Les échecs attendus*, jugés fichier par
       fichier ; journaux `kesh-gate-logs/s55-4/`. **Si l'E2E rougit**, l'epic n'entre pas dans `main` : la story fautive
-      est trouvée (spec rouge rapportée à la story qui a touché son écran ou sa route) et corrigée, puis T2 rejoué.
+      est trouvée (spec rouge rapportée à la story qui a touché son écran ou sa route) et corrigée, puis T2 rejoué. Le
+      correctif est porté par la fiche de la story fautive (Change Log, Dev Agent Record), hors du plafond de la 55-4 ; il
+      passe une passe de revue ciblée (à la demande du mainteneur, comme toute revue de cet epic) ; story serveur : gate
+      complet rejoué. De même si `gate-ci.sh` rougit (il s'arrête au premier binaire en échec : rejoué jusqu'au bout).
 - [ ] **T3** — Clôture : numéros des issues retenues reportés au fichier d'epic (tableau *Issues*) et au bloc de
       l'Epic 55 de `sprint-status.yaml` ; décompte des issues ouvertes et des bugs à la préparation du tag, demandé au
       mainteneur (pour la rétrospective).
@@ -139,3 +146,73 @@ d'epic), avec `refs #N` par ligne ; la note de l'epic est assemblée à la relea
   `kesh-api` (aperçu sorti de l'epic) ; resserrement de la dérogation Q6 (`nextest -p kesh-i18n`, `binary(textes_coherents)`
   pour une 55-4 qui touche `messages.ftl` ou le manuel). Aucune passe (plafond de huit atteint) : recontrôle au **T0**,
   ligne lue citée.
+- 2026-11-26 — **T0 (développement)**, tête de départ `6182b32a5` (55-1a à 55-3b en `review`, **sans revue de code** : le
+  mainteneur doit d'abord donner son accord). Source des candidates : les sections *Issues à ouvrir* des Dev Agent Records
+  des fiches 55-1a à 55-3b, réunies dans `kesh-gate-logs/s55-dev/issues-a-ouvrir.md` (lignes L1 à L14 du tableau). La revue
+  du code d'intégration n'a pas eu lieu avant ce T0 (aucun journal `kesh-gate-logs/s55-integration/`) : ses points iront en
+  issues à leur nom, hors plafond (V7-1, périmètre « si elle a eu lieu avant le T0 », ligne 49 de cette fiche). Aucune de
+  ces issues n'est encore ouverte : **numéro à reporter** pour chacune (AC-1 le permet, V7-2).
+  - **Candidates** (story d'origine, site) :
+    L1 (55-1a, `routes/(app)/reports/+page.svelte`, avis d'erreur) pas de bouton « Réessayer » ;
+    L2 (55-1a, `reports-page-url.test.ts`) mutation « clé écrite non enregistrée » non tuée ;
+    L3 (55-1b, `+page.svelte` `resyncActiveGroupedTab`) ;
+    L4 (55-1b, `+page.svelte` `writeUrlAtResponse`, `goto` asynchrone) ;
+    L5 (55-1a, rapports par compte analytique hors de l'adresse) ;
+    L6 (55-1a, `(app)/+layout.ts:10-11`, `login/+page.svelte:74`, la connexion ne ramène pas à l'adresse demandée) ;
+    L7 (55-2, `MirrorOfNote`) ; L8 (55-2, `+page.svelte` effet `vatSettingsRequested`, réglages TVA non relus après un
+    échec) ; L9 (55-2, recette D17 des écrans d'authentification) ; L10 (55-3a, `kesh-db/src/repositories/
+    imported_supplier_invoices.rs:409-433`, `LIMIT 1`) ; L11 (55-3a, section reportée de sa fiche) ; L12 (55-3b, captures
+    du manuel) ; L13 (55-3b, `ui/dialog/dialog-content.svelte:42`, « Close » en dur) ; L14 (55-3b, lecture en `Blob` des
+    PDF de facture et d'avoir écrite deux fois).
+  - **Exclusions** : L3 et L7, code de l'Epic 46 (`resyncActiveGroupedTab`, règle de la 46-2) et de l'Epic 47
+    (`MirrorOfNote.svelte`) — issue à leur epic ; L13, antérieure au kickoff : `git log -- frontend/src/lib/components/ui/
+    dialog/dialog-content.svelte` ne rend qu'un commit, `3d919d736` du 2026-04-06 (Story 1.9), ligne lue
+    `dialog-content.svelte:42` `<span class="sr-only">Close</span>` ; L10, antérieure au kickoff et hors du périmètre
+    serveur (`kesh-db`, et non `kesh-report`/`kesh-api`) : le dernier commit du fichier est `4d39f3774` (v0.17.6,
+    2026-11-12) ; L6, site antérieur à l'epic (`(app)/+layout.ts`, `login/+page.svelte`, non écrits par une story 55-x),
+    issue prévue par la fiche 55-1a ; L5, réduction de périmètre décidée à la validation de la 55-1a (rapports par compte
+    analytique hors de l'URL, C-55-1-7), évolution et non dette.
+  - **Restent candidates** : L1, L2, L4, L8, L9, L11, L12, L14 — toutes LOW, aucune `bug` (types proposés :
+    `enhancement`, `technical-debt`, `documentation`).
+  - **Retenues (2, le plafond)** — motif : à priorité égale (LOW, aucune `bug`), l'effet visible d'abord, puis la
+    protection d'un livrable `bug` P3 de l'epic :
+    1. **L8** — les comptes de TVA désignés ne sont pas relus après un échec : la ligne des comptes disparaît jusqu'au
+       rechargement de la page, sans signal. **Seule candidate restante à effet visible** sur un écran de l'epic, hors L1.
+       Ligne lue : `+page.svelte:187-191`
+       `if (activeTab !== 'vat' || vatReport === null || hiddenByMenu || vatSettingsRequested) return;
+       vatSettingsRequested = true; getInvoiceSettings().then(...).catch(() => (vatSettings = null));`. Correctif : la
+       lecture en échec se refait au prochain affichage du décompte (retour sur l'onglet, nouveau décompte), jamais en
+       boucle — `vatSettingsRequested` n'est pas un `$state`, sa remise à faux dans le `catch`, hors de l'effet, ne le
+       relance pas.
+    2. **L2** — mutation « clé écrite non enregistrée » de la 55-1a sans test qui la tue. Elle protège le mécanisme du
+       livrable b) (#1604, `bug` P3 : Retour du navigateur, état des Rapports dans l'URL). Ligne lue : `+page.svelte:1081-1085`
+       `function writeUrl(search: string, replace: boolean): void { lastHandledKey = search; if (page.url.search
+       .replace(/^\?/, '') === search) return; void goto(...)`. La fiche 55-1a la disait sans objet sous D16 (« réappliquer
+       sa propre adresse redonne le même état ») : faux pour le grand livre de **tous les comptes**, qui garde *Générer* et
+       dont un clic d'onglet écrit la clé **affichée**, non celle des champs (`urlForTab`, `+page.svelte:560-563`) — la
+       réappliquer remet les dates tapées à celles du rapport affiché. Test neuf, mutation nommée au T1.
+  - **Non retenues, laissées en issues** (« reste ouverte », T3) : L1 (choix R-25 en attente du mainteneur : le trancher
+    ici préempterait sa décision), L4 (fenêtre de quelques microtâches, non reproduite), L9 (exige une installation dont
+    l'envoi de courriels est configuré), L11 (texte d'une fiche, sans effet), L12 (à la release), L14 (refactorisation sans
+    effet visible).
+  - **R-1 (V8-1, MEDIUM)** — ligne lue : `scripts/gate-ci.sh:8-10` « Usage : scripts/gate-ci.sh <base> [journal] /
+    <base> kesh_ci_<suffixe> (a-z, 0-9, _) : recréée à neuf » et `:48-51` `BASE=${1:-}` …
+    `[[ "$BASE" =~ ^kesh_ci_[a-z0-9_]+$ ]] || refus … 2`. Décision : T2 récrit, `scripts/gate-ci.sh kesh_ci_s55_4
+    kesh-gate-logs/s55-4/gate-ci.log` par le script prêt `kesh-gate-logs/s55-dev/fin/gate-ci.sh` (copie `git archive` de
+    la tête, base `kesh_ci_s55_4`) ; parenthèse « ou la base de la PR » retirée (fichier d'epic déjà corrigé, § *Dérogation*
+    « `<base>` est une base jetable `kesh_ci_<suffixe>`, non une référence git »).
+  - **V8-2 (LOW)** — ligne lue : `grep -n "npm\|clippy" scripts/gate-ci.sh` ne rend aucune commande (le script ne joue que
+    `cargo test`, `:117` « ▶ cargo test, comme la CI »). Décision : T2 nomme `fmt`, `clippy`, les quatre commandes frontend,
+    `gate-ci.sh` et l'E2E complet.
+  - **V8-3 (LOW)** — ligne lue : T2, « la story fautive est trouvée … et corrigée, puis T2 rejoué ». Décision : T2 précise
+    que le correctif est porté par la fiche fautive, hors plafond, passe de revue ciblée (à la demande du mainteneur), gate
+    complet rejoué pour une story serveur, de même si `gate-ci.sh` rougit.
+  - **V8-4 (LOW)** — ligne lue : périmètre, « Frontend seulement, **sauf** une dette née de la 55-3a côté serveur ».
+    Décision : périmètre récrit « Frontend et catalogues i18n (`messages.ftl`, gardes Rust ciblées) … sauf une dette née
+    de la 55-3a dans le code serveur ».
+  - **V8-5 (LOW)** — ligne lue : Change Log du 2026-11-25, « Q1 (55-3a et 55-3b dans l'epic ; dette serveur admise) ».
+    Décision : l'entrée datée n'est pas réécrite (relevé daté) ; **annotation** : « dette serveur admise » est une
+    conséquence tirée de Q1 (les 55-3a et 55-3b dans l'epic, d'où une dette serveur possible, gate de la *Dérogation* pour
+    une story serveur), non une décision du mainteneur.
+  - **AC-7 (revue)** : aucune revue de code dans cet epic tant que le mainteneur n'a pas donné son accord ; les corrections
+    de T1 sont des **corrections non revues, revue à la demande du mainteneur**.
