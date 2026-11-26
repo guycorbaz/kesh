@@ -3110,8 +3110,9 @@ pub async fn refuse_foreign_currency_accounts_in_tx(
 /// Refuse comme parent un compte du plan qu'un compte bancaire **désigne** —
 /// son compte du plan (`journal_account_id`) ou, pour un compte de prestataire
 /// (PayPal, Stripe, Wise), son compte de frais (`fee_account_id`), même partagé
-/// par plusieurs prestataires ; un compte bancaire clos compte, un archivé non
-/// (Epic 46, décision du mainteneur du 2026-11-26). Ces comptes reçoivent des
+/// par plusieurs prestataires ; un compte bancaire **clos ou archivé** compte
+/// aussi : il peut être rouvert ou désarchivé, et ses écritures passées restent
+/// liées (Epic 46, décision du mainteneur du 2026-11-26). Ces comptes reçoivent des
 /// écritures automatiques (imports, rapprochements, acceptations de
 /// prestataire, dont certaines écrivent sans contrôler `postable`) : devenus
 /// parents, ils passeraient non imputables et ressortiraient en « solde propre »
@@ -3134,7 +3135,7 @@ async fn refuse_bank_linked_parent_in_tx(
     use crate::entities::bank_account::bank_account_display_name;
     let row: Option<(i64, String, Option<String>)> = sqlx::query_as(
         "SELECT id, bank_name, description FROM bank_accounts \
-         WHERE company_id = ? AND archived = FALSE \
+         WHERE company_id = ? \
          AND (journal_account_id = ? OR fee_account_id = ?) \
          ORDER BY id LIMIT 1 LOCK IN SHARE MODE",
     )

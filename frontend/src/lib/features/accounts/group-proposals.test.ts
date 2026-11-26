@@ -550,7 +550,7 @@ describe('comptes désignés par un compte bancaire (Epic 46, garde du mainteneu
 			...b,
 		}) as BankAccountSummary;
 
-	it('compte du plan et compte de frais, premier compte bancaire par identifiant, archivés ignorés', () => {
+	it('compte du plan et compte de frais, premier compte bancaire par identifiant, archivés compris', () => {
 		const links = bankLinkedAccounts([
 			banque({ id: 3, bankName: 'Wise', wise: { account: 'w', feeAccountId: 50 } }),
 			banque({ id: 1, bankName: 'Banque A', description: 'Courant', journalAccountId: 10 }),
@@ -560,7 +560,7 @@ describe('comptes désignés par un compte bancaire (Epic 46, garde du mainteneu
 		expect(links.get(10)).toBe('Banque A — Courant');
 		expect(links.get(11)).toBe('PayPal');
 		expect(links.get(50)).toBe('PayPal'); // frais partagés : le premier par identifiant
-		expect(links.has(12)).toBe(false);
+		expect(links.get(12)).toBe('Ancienne'); // un compte bancaire archivé désigne encore
 	});
 
 	it('groupe à réutiliser désigné → refus, la coche « réutiliser » ne s’offre pas', () => {

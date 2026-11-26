@@ -397,4 +397,9 @@ Journaux hors dépôt, `kesh-gate-logs/s46-5a/` : `clippy-t3.log`, `fmt-t3.log` 
   parent désigné par un compte bancaire (`refuse_bank_linked_parent_in_tx`), après les désignations de change et
   avant le parent en devise mouvementé ; la règle des parents mouvementés de la création ne change pas (#1431).
   Test `creation_d_un_sous_compte_sous_un_compte_lie_refusee` ; mutation (appel retiré) → rouge.
+- 2026-11-26 — **Compte bancaire archivé compris** (consigne du mainteneur : « archivé et clos compris ») : la garde
+  ne filtre plus `archived` ; un compte du plan désigné par un compte bancaire archivé ne devient pas parent non plus
+  (il peut être désarchivé, ses écritures passées restent liées). L'écran lit `listBankAccounts(true, true)`.
+  `compte_de_frais_partage_ne_devient_pas_groupe` affirme le refus des archivés ; mutation (filtre `archived = FALSE`
+  remis) → rouge.
 

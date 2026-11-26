@@ -23,7 +23,7 @@ vi.mock('$lib/features/accounts/accounts.api', () => ({
 	applyGroups: (req: unknown) => applyGroupsMock(req),
 }));
 
-// Epic 46, garde du mainteneur du 2026-11-26 : la page lit les comptes bancaires (clos compris)
+// Epic 46, garde du mainteneur du 2026-11-26 : la page lit les comptes bancaires (clos et archivés compris)
 // pour ne pas proposer comme groupe un compte qu'un compte bancaire désigne.
 const listBankAccountsMock = vi.fn<(a?: boolean, c?: boolean) => Promise<unknown[]>>();
 vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
@@ -232,7 +232,7 @@ describe('page Créer des groupes — comptes désignés par un compte bancaire'
 			{ id: 9, bankName: 'Banque Test', description: null, journalAccountId: 5, archived: false, paypal: null, wise: null, stripe: null },
 		]);
 		const card = await renderWithProposal();
-		expect(listBankAccountsMock).toHaveBeenCalledWith(false, true);
+		expect(listBankAccountsMock).toHaveBeenCalledWith(true, true);
 		// Le numéro du groupe porté sur 1040, sans écriture mais lié au compte bancaire.
 		await fireEvent.input(card.querySelector('[data-testid="account-groups-number"]')!, { target: { value: '1040' } });
 		const err = card.querySelector('[data-code="numberBankLinked"]');

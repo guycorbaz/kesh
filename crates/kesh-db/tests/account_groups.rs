@@ -975,8 +975,9 @@ async fn compte_d_un_compte_bancaire_ne_devient_pas_groupe(pool: MySqlPool) {
 }
 
 /// Le compte de frais partagé par deux prestataires : refusé, le refus nomme le
-/// premier compte bancaire (par identifiant). Un compte bancaire clos le
-/// désigne encore ; un compte bancaire archivé, non.
+/// premier compte bancaire (par identifiant). Un compte bancaire clos, ou
+/// archivé, le désigne encore (consigne du mainteneur : il peut être rouvert ou
+/// désarchivé, ses écritures passées restent liées).
 #[sqlx::test(migrations = "./test-schema")]
 async fn compte_de_frais_partage_ne_devient_pas_groupe(pool: MySqlPool) {
     let s = seed_accounting_company(&pool).await.unwrap();
@@ -1023,8 +1024,23 @@ async fn compte_de_frais_partage_ne_devient_pas_groupe(pool: MySqlPool) {
     let e = ranger(&pool, &s, membre_frais, frais).await.unwrap_err();
     assert_eq!(lie(&e).2, paypal, "un compte bancaire clos désigne encore");
 
-    // Les deux archivés : plus aucune désignation, le rangement passe.
+    // Les deux archivés : ils le désignent encore, le rangement reste refusé.
     sqlx::query("UPDATE bank_accounts SET archived = TRUE WHERE id IN (?, ?)")
+        .bind(paypal)
+        .bind(wise)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let e = ranger(&pool, &s, membre_frais, frais).await.unwrap_err();
+    assert_eq!(
+        lie(&e).2,
+        paypal,
+        "un compte bancaire archivé désigne encore"
+    );
+    assert!(lire(&pool, frais).await.postable, "rien n'est écrit");
+
+    // Désigné par personne : le rangement passe.
+    sqlx::query("UPDATE bank_accounts SET fee_account_id = NULL WHERE id IN (?, ?)")
         .bind(paypal)
         .bind(wise)
         .execute(&pool)

@@ -64,7 +64,7 @@
 	let refusal = $state<ServerRefusal | null>(null);
 
 	let set = $derived(proposalSkeletons(accounts, selection, mode));
-	// Les comptes désignés par un compte bancaire (clos compris) : l'aperçu les
+	// Les comptes désignés par un compte bancaire (clos et archivés compris) : l'aperçu les
 	// refuse comme groupes, comme le serveur (`ACCOUNT_PARENT_BANK_LINKED`).
 	let links = $state<BankLinks>(new Map());
 	let checked = $derived(checkProposals(set, edits, accounts, selection, mode, links));
@@ -82,7 +82,7 @@
 				fetchAccounts(true),
 				// Sans la liste des comptes bancaires, l'aperçu ne les signale pas ;
 				// le serveur refuse quand même (`ACCOUNT_PARENT_BANK_LINKED`).
-				listBankAccounts(false, true).catch(() => []),
+				listBankAccounts(true, true).catch(() => []),
 			]);
 			accounts = plan;
 			links = bankLinkedAccounts(banks);

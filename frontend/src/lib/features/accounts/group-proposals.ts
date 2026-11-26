@@ -34,16 +34,15 @@ import { bankAccountName } from '$lib/features/bank-accounts/format';
  * compte, le nom affiché du premier compte bancaire qui le désigne. Ces comptes
  * reçoivent des écritures automatiques : ils ne deviennent pas groupes (le
  * serveur le refuse, `409 ACCOUNT_PARENT_BANK_LINKED`). Les comptes bancaires
- * archivés n'en désignent plus ; les clos, si (à charger par
- * `listBankAccounts(false, true)`).
+ * clos et archivés en désignent aussi (rouverts ou désarchivés, ils reprennent ;
+ * à charger par `listBankAccounts(true, true)`).
  */
 export type BankLinks = ReadonlyMap<number, string>;
 
-/** {@link BankLinks} d'une liste de comptes bancaires (premier par identifiant). */
+/** {@link BankLinks} d'une liste de comptes bancaires, archivés et clos compris (premier par identifiant). */
 export function bankLinkedAccounts(bankAccounts: readonly BankAccountSummary[]): Map<number, string> {
 	const links = new Map<number, string>();
 	for (const b of [...bankAccounts].sort((x, y) => x.id - y.id)) {
-		if (b.archived) continue;
 		const fee = b.paypal?.feeAccountId ?? b.wise?.feeAccountId ?? b.stripe?.feeAccountId ?? null;
 		for (const id of [b.journalAccountId, fee]) {
 			if (id !== null && !links.has(id)) links.set(id, bankAccountName(b));
