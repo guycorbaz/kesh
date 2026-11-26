@@ -4,7 +4,7 @@
 
 Kesh : comptabilité suisse (Rust/Axum, MariaDB, SvelteKit), en production chez son mainteneur. Epic 55, « Navigation de
 l'interface » : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` (il fait foi pour le périmètre et les
-décisions D1 à D11). Worktree `/home/beat/claude/kesh/.claude/worktrees/kesh-e55`, branche `epic/55-navigation`, partie de
+décisions D1 à D11). Worktree `<worktree>/kesh-e55`, branche `epic/55-navigation`, partie de
 `origin/main` à `1e23edb55`. Le développement repartira de la PR de l'Epic 46, non fusionnée : lis-la par
 `git show pr/46-rapports-groupes:<fichier>` (`511e61d54`), `git show story/46-export-api-groupe:<fichier>` (`8ca669b3f`),
 `git show story/46-5:<fichier>` (`0f483c7bb`) ; l'Epic 47 par `git show epic/47-comptes-miroirs:<fichier>`.
@@ -38,7 +38,7 @@ Passe **3**, passe complète, **contexte frais**. Langue du rapport : français.
 - **A8 — Le modèle d'URL** : le tableau des paramètres, l'ordre canonique, la table des gestes et D3 forment-ils un
   modèle cohérent et sans boucle (une écriture de `goto` relue par l'effet) ? `ledgerHref` reste-t-il égal à l'octet près ?
   Le comportement de SvelteKit 2 (`goto` sur la même route, `page.url` de `$app/state`, `load` non rejoué) est-il bien
-  décrit (lis `/home/beat/claude/kesh/frontend/node_modules/@sveltejs/kit/src/runtime/client/client.js`, dépôt principal, en lecture si besoin) ?
+  décrit (lis `<dépôt>/frontend/node_modules/@sveltejs/kit/src/runtime/client/client.js`, dépôt principal, en lecture si besoin) ?
 - **A9 — Le regroupement de l'Epic 46** : l'intégration avec `reports-grouping.ts` et `acceptGrouped` (PR 46) est-elle
   juste et complète (mémoire, écho, export de la dernière réponse affichée) ?
 
@@ -55,7 +55,7 @@ Lecture seule. N'écris **aucun** fichier du dépôt ni du worktree. Aucun `carg
 
 ## Rapport
 
-Écris **un seul fichier** : `/home/beat/claude/kesh-gate-logs/s55-kickoff/55-1-validation-p3.md`, avec :
+Écris **un seul fichier** : `$GATE_LOGS/s55-kickoff/55-1-validation-p3.md`, avec :
 - le **verdict chiffré** : CRITICAL / HIGH / MEDIUM / LOW ;
 - chaque finding : identifiant `V3-N`, sévérité, ce qui est faux, la preuve (ligne lue), le correctif proposé ;
 - la **liste des axes exercés et non exercés** (une passe qui ne la donne pas ne compte pas).

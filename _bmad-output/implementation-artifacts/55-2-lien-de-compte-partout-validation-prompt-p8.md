@@ -4,7 +4,7 @@
 
 Kesh : comptabilité suisse (Rust/Axum, MariaDB, SvelteKit). Epic 55, « Navigation de l'interface » :
 `_bmad-output/planning-artifacts/epic-55-navigation-interface.md`. Worktree
-`/home/beat/claude/kesh/.claude/worktrees/kesh-e55`, branche `epic/55-navigation`.
+`<worktree>/kesh-e55`, branche `epic/55-navigation`.
 
 Passe **P8**, ciblée, **contexte frais**, modèle Sonnet. Langue du rapport : français. Le commit `cf0c2dcbd`
 (`git show cf0c2dcbd`) verse les décisions du mainteneur du 2026-11-26. Cette passe compte comme **P8** (la dernière
@@ -44,7 +44,7 @@ lecture sont admis.
 
 ## Rapport
 
-Écris **un seul fichier** : `/home/beat/claude/kesh-gate-logs/s55-decisions-2/55-2-55-1b-validation-p8.md`, avec le
+Écris **un seul fichier** : `$GATE_LOGS/s55-decisions-2/55-2-55-1b-validation-p8.md`, avec le
 verdict chiffré **par fiche** (55-2, 55-1b, et à part 55-1a, 55-4, fichier d'epic), chaque finding (identifiant `P8-n`,
 fiche, sévérité, preuve, correctif proposé), et la liste des axes exercés et non exercés. Puis rends ce même contenu en
 réponse, en entier.

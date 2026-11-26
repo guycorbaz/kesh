@@ -1,6 +1,6 @@
 # Prompt — passe ciblée sur le sélecteur d'exercice (D15), 55-1a, 55-2 et fichier d'epic
 
-Worktree `/home/beat/claude/kesh/.claude/worktrees/kesh-e55`, branche `epic/55-navigation`. Passe **ciblée**, contexte
+Worktree `<worktree>/kesh-e55`, branche `epic/55-navigation`. Passe **ciblée**, contexte
 frais, modèle Sonnet, en français. Les fiches sont au **plafond de huit passes** : cette passe ne compte pour aucune ; ses
 MEDIUM et au-dessus vont au **T0** (R-n), sans remédiation. Elle juge **un seul commit**, celui dont le message commence par
 « docs(epic-55) : sélecteur d'exercice des Rapports et du Grand livre versé (D15 » (`git log --oneline -3`, puis
@@ -57,6 +57,6 @@ Lecture seule. N'écris aucun fichier du dépôt ni du worktree, sauf le rapport
 
 ## Rapport
 
-Un seul fichier : `/home/beat/claude/kesh-gate-logs/s55-selecteur/selecteur-2026-11-26-validation.md` — verdict chiffré
+Un seul fichier : `$GATE_LOGS/s55-selecteur/selecteur-2026-11-26-validation.md` — verdict chiffré
 **par fiche** (55-1a, 55-2, fichier d'epic) au format C/H/M/L, findings (identifiant `SE-n`, fiche, sévérité, preuve —
 ligne lue —, correctif proposé), axes exercés et non exercés. Puis le même contenu en réponse.

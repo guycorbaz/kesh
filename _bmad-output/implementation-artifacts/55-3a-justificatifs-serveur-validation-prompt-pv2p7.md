@@ -4,7 +4,7 @@
 
 Kesh : comptabilité suisse (Rust/Axum, MariaDB, SvelteKit), en production chez son mainteneur. Epic 55, « Navigation de
 l'interface » : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md`. Worktree
-`/home/beat/claude/kesh/.claude/worktrees/kesh-e55`, branche `epic/55-navigation`, partie de `origin/main` à `1e23edb55`.
+`<worktree>/kesh-e55`, branche `epic/55-navigation`, partie de `origin/main` à `1e23edb55`.
 La PR de l'Epic 46 se lit par `git show pr/46-rapports-groupes:<fichier>` (`511e61d54`).
 
 Passe **Pv2p7**, ciblée, **contexte frais**, modèle Opus. Langue du rapport : français. Le commit `cf0c2dcbd`
@@ -80,7 +80,7 @@ Lecture seule. N'écris **aucun** fichier du dépôt ni du worktree. Aucun `carg
 
 ## Rapport
 
-Écris **un seul fichier** : `/home/beat/claude/kesh-gate-logs/s55-decisions-2/55-3a-validation-pv2p7.md`, avec :
+Écris **un seul fichier** : `$GATE_LOGS/s55-decisions-2/55-3a-validation-pv2p7.md`, avec :
 - le **verdict chiffré** CRITICAL / HIGH / MEDIUM / LOW, **séparément** pour la 55-3a, le fichier d'epic et la 55-3b ;
 - chaque finding : identifiant (`Pv2p7-n`), fiche, sévérité, ce qui est faux, la preuve (ligne lue), le correctif proposé ;
 - la **liste des axes exercés et non exercés** (une passe qui ne la donne pas ne compte pas).

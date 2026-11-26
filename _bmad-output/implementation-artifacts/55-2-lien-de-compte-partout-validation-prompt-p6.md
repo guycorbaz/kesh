@@ -4,7 +4,7 @@
 
 Kesh : comptabilité suisse (Rust/Axum, MariaDB, SvelteKit), en production chez son mainteneur. Epic 55, « Navigation de
 l'interface » : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` (il fait foi pour le périmètre et les
-décisions D1 à D11). Worktree `/home/beat/claude/kesh/.claude/worktrees/kesh-e55`, branche `epic/55-navigation`, partie de
+décisions D1 à D11). Worktree `<worktree>/kesh-e55`, branche `epic/55-navigation`, partie de
 `origin/main` à `1e23edb55`. Le développement repartira de la PR de l'Epic 46, non fusionnée : lis-la par
 `git show pr/46-rapports-groupes:<fichier>` (`511e61d54`), `git show story/46-export-api-groupe:<fichier>` (`8ca669b3f`),
 `git show story/46-5:<fichier>` (`0f483c7bb`) ; l'Epic 47 par `git show epic/47-comptes-miroirs:<fichier>`.
@@ -19,7 +19,7 @@ Passe **6**, passe ciblée, **contexte frais**. Langue du rapport : français.
 3. La fiche : `_bmad-output/implementation-artifacts/55-2-lien-de-compte-partout.md`.
 4. Le code qu'elle cite, **ligne par ligne** : chaque `chemin:ligne` se vérifie à la base indiquée.
 
-**Passe ciblée** : une seule lentille, braquée sur la remédiation de la passe précédente, commit `0a295bd20` (`git show 0a295bd20` ; le texte d'issue est dans `/home/beat/claude/kesh-gate-logs/s55-kickoff/issues-a-ouvrir.md`). Vérifie que chaque correctif est juste au code, qu'il ne crée pas de défaut neuf, et qu'il est propagé (même symptôme ailleurs dans la fiche, le fichier d'epic et les autres fiches). Les axes A1 à A9 ne s'exercent que sur ce que touche ce commit.
+**Passe ciblée** : une seule lentille, braquée sur la remédiation de la passe précédente, commit `0a295bd20` (`git show 0a295bd20` ; le texte d'issue est dans `$GATE_LOGS/s55-kickoff/issues-a-ouvrir.md`). Vérifie que chaque correctif est juste au code, qu'il ne crée pas de défaut neuf, et qu'il est propagé (même symptôme ailleurs dans la fiche, le fichier d'epic et les autres fiches). Les axes A1 à A9 ne s'exercent que sur ce que touche ce commit.
 
 ## Axes (chacun exercé, ou déclaré non exercé avec sa raison)
 
@@ -56,7 +56,7 @@ Lecture seule. N'écris **aucun** fichier du dépôt ni du worktree. Aucun `carg
 
 ## Rapport
 
-Écris **un seul fichier** : `/home/beat/claude/kesh-gate-logs/s55-kickoff/55-2-validation-p6.md`, avec :
+Écris **un seul fichier** : `$GATE_LOGS/s55-kickoff/55-2-validation-p6.md`, avec :
 - le **verdict chiffré** : CRITICAL / HIGH / MEDIUM / LOW ;
 - chaque finding : identifiant `V6-N`, sévérité, ce qui est faux, la preuve (ligne lue), le correctif proposé ;
 - la **liste des axes exercés et non exercés** (une passe qui ne la donne pas ne compte pas).

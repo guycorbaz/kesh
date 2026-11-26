@@ -183,7 +183,7 @@ sont ceux de `origin/main` ; ceux de la PR 46 se relèvent au T0 (+231 lignes ne
   appelée par `selectTab`) ou, si une autre génération est en vol, **à la fin de celle-ci** (`afterGeneration`) — règle
   revue de la 46-2 (P2 M1), décrite au manuel de la PR 46 (§ *Bilan*, « si vous revenez sur un rapport pendant la
   génération d'un autre, dès la fin de celle-ci ») et éprouvée par `reports-page-groupes.test.ts` (PR 46, 681 lignes).
-- SvelteKit 2 (relu à `/home/beat/claude/kesh/frontend/node_modules/@sveltejs/kit/src/runtime/client/client.js`) : un
+- SvelteKit 2 (relu à `<dépôt>/frontend/node_modules/@sveltejs/kit/src/runtime/client/client.js`) : un
   `goto` vers la même route met à jour `page.url` sans remonter le composant ni rejouer un `load` qui ne lit pas l'URL ;
   Retour et Suivant (`popstate`) de même ; au `popstate`, le focus est remis au corps de la page.
 - Liens entrants : `/reports?tab=aged-receivables` (`invoices/due-dates/+page.svelte:401`, `invoices/reminders/+page.svelte:277`),

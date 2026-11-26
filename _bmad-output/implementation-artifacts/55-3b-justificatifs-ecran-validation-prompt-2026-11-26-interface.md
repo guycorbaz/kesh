@@ -1,6 +1,6 @@
 # Prompt — passe ciblée sur les précisions d'interface du 2026-11-26 (55-3b, 55-1a, 55-2)
 
-Worktree `/home/beat/claude/kesh/.claude/worktrees/kesh-e55`, branche `epic/55-navigation`. Passe **ciblée**, contexte
+Worktree `<worktree>/kesh-e55`, branche `epic/55-navigation`. Passe **ciblée**, contexte
 frais, modèle Opus, en français. Les trois fiches sont au **plafond de huit passes** : cette passe ne compte pour aucune
 d'elles ; ses points vont à leur **T0**. Elle juge le commit qui porte le message « précisions d'interface »
 (`git log --oneline -3`, puis `git show <ce commit>`), qui verse quatre précisions de l'utilisateur :
@@ -26,7 +26,7 @@ Chaque précision doit être un **critère vérifiable**.
   `escape-layer/escape-layer.svelte`) et `frontend/src/lib/components/ui/dialog/` ; `frontend/src/lib/features/reports/ReportSelector.svelte`
   et `frontend/src/lib/components/ui/select/` ; `grep -rn selectOption frontend/tests/e2e`.
 - **A2 — Fidélité** : chaque précision versée exactement, ni plus ni moins ; la maquette (hors dépôt,
-  `/home/beat/claude/kesh-gate-logs/s55-maquettes/mocks-src.html`, images `mocks/m2.png`, `m5a.png` à `m5d.png`) dit-elle
+  `$GATE_LOGS/s55-maquettes/mocks-src.html`, images `mocks/m2.png`, `m5a.png` à `m5d.png`) dit-elle
   encore le contraire ?
 - **A3 — Constatable** : chaque critère dit comment on le constate (test, mutation, capture) ; un critère invérifiable ou
   vrai par construction est un finding. En particulier : le constat « pas de vignettes » (Vitest + capture) prouve-t-il
@@ -45,6 +45,6 @@ Lecture seule. N'écris aucun fichier du dépôt ni du worktree. Aucun `cargo`, 
 
 ## Rapport
 
-Un seul fichier : `/home/beat/claude/kesh-gate-logs/s55-decisions-2/interface-2026-11-26-validation.md` — verdict chiffré
+Un seul fichier : `$GATE_LOGS/s55-decisions-2/interface-2026-11-26-validation.md` — verdict chiffré
 **par fiche** (55-3b, 55-1a, 55-2), findings (identifiant `UI-n`, fiche, sévérité, preuve, correctif), axes exercés et non
 exercés. Puis le même contenu en réponse.

@@ -4,7 +4,7 @@
 
 Kesh : comptabilité suisse (Rust/Axum, MariaDB, SvelteKit), en production chez son mainteneur. Epic 55, « Navigation de
 l'interface » : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` (il fait foi pour le périmètre et les
-décisions D1 à D11). Worktree `/home/beat/claude/kesh/.claude/worktrees/kesh-e55`, branche `epic/55-navigation`, partie de
+décisions D1 à D11). Worktree `<worktree>/kesh-e55`, branche `epic/55-navigation`, partie de
 `origin/main` à `1e23edb55`. Le développement repartira de la PR de l'Epic 46, non fusionnée : lis-la par
 `git show pr/46-rapports-groupes:<fichier>` (`511e61d54`), `git show story/46-export-api-groupe:<fichier>` (`8ca669b3f`),
 `git show story/46-5:<fichier>` (`0f483c7bb`) ; l'Epic 47 par `git show epic/47-comptes-miroirs:<fichier>`.
@@ -57,7 +57,7 @@ Lecture seule. N'écris **aucun** fichier du dépôt ni du worktree. Aucun `carg
 
 ## Rapport
 
-Écris **un seul fichier** : `/home/beat/claude/kesh-gate-logs/s55-kickoff/55-3a-validation-p2.md`, avec :
+Écris **un seul fichier** : `$GATE_LOGS/s55-kickoff/55-3a-validation-p2.md`, avec :
 - le **verdict chiffré** : CRITICAL / HIGH / MEDIUM / LOW ;
 - chaque finding : identifiant `V2-N`, sévérité, ce qui est faux, la preuve (ligne lue), le correctif proposé ;
 - la **liste des axes exercés et non exercés** (une passe qui ne la donne pas ne compte pas).

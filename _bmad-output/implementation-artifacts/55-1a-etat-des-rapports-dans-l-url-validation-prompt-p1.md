@@ -38,7 +38,7 @@ Passe **1**, passe complète, **contexte frais**. Langue du rapport : français.
 - **A8 — Le modèle d'URL** : le tableau des paramètres, l'ordre canonique, la table des gestes et D3 forment-ils un
   modèle cohérent et sans boucle (une écriture de `goto` relue par l'effet) ? `ledgerHref` reste-t-il égal à l'octet près ?
   Le comportement de SvelteKit 2 (`goto` sur la même route, `page.url` de `$app/state`, `load` non rejoué) est-il bien
-  décrit (lis `/home/beat/claude/kesh/frontend/node_modules/@sveltejs/kit/src/runtime/client/client.js`, dépôt principal, en lecture si besoin) ?
+  décrit (lis `<dépôt>/frontend/node_modules/@sveltejs/kit/src/runtime/client/client.js`, dépôt principal, en lecture si besoin) ?
 - **A9 — Le regroupement de l'Epic 46** : l'intégration avec `reports-grouping.ts` et `acceptGrouped` (PR 46) est-elle
   juste et complète (mémoire, écho, export de la dernière réponse affichée) ?
 
