@@ -42,6 +42,25 @@ décision. Le correctif proposé par la passe est la résolution par défaut.
   touche dans le modèle — P17 amendé (*Appliquer une URL*, point 2 ; AC-8 b' ; AC-9 ; mutation « retrait du désarmement de
   P17 »), la clé des champs comparée à la clé affichée (AC-16), `fy` déduit des dates (AC-5, AC-15) —, et confirmer avec le
   mainteneur la décision elle-même (question au fichier d'epic) et C-55-1-8.
+- **R-9 à R-13 (passe ciblée D15, Sonnet, `kesh-gate-logs/s55-selecteur/selecteur-2026-11-26-validation.md`, 0/0/5/3, aucune remédiation)** — à trancher au T0
+  avant le code, ligne lue citée au Change Log :
+  - **R-9 (SE-1)** — Le modèle d'URL n'a pas suivi l'AC-15 : « période facultative » (tableau des paramètres), « une période
+    vide ne s'écrit pas », « Complète : classiques — `fy` », AC-5 (« période hors exercice garde le message de l'API ») et D5
+    du fichier d'epic ; fixer le `fy` écrit en « Plusieurs »/« Hors exercice » et *Générer* sur une date vidée ; un Vitest
+    de `reports-url.test.ts` par cas.
+  - **R-10 (SE-2)** — Le périmé (AC-16) repose sur une clé affichée que les rapports par compte analytique n'ont pas : dire
+    leur sort au changement de date (vidage ou grisé, export), et ajouter un Vitest et une mutation pour eux et pour le
+    Grand livre périmé.
+  - **R-11 (SE-3)** — Le sort de `selectedFiscalYearId` : `$bindable` de `ReportSelector` (`:26`) alors que le Grand livre ne
+    l'écrit jamais ; sa valeur en « Plusieurs »/« Hors exercice » ; l'effet P17 amendé déclenché par une date saisie ; le
+    préremplissage de la 55-2 (AC-12) qui en dépend.
+  - **R-12 (SE-5)** — Les choix des fiches non déclarés (exports désactivés quand périmé, compte du Grand livre dans le
+    périmé, en-tête « (hors exercice) », bornes complètes d'un doublon, message `reports-nav-needs-one-fy`, majuscule de
+    « Du », guillemets du nom saisi) : à lister en C-55-1-10 et à joindre à la question au mainteneur.
+  - **R-13 (SE-6)** — Le décompte des modules (six avec `i18n-keys.test.ts`, au-dessus du seuil de cinq) et la taille : poser
+    au mainteneur le vrai choix avant le T0 (story séparée avec dérogation à la borne de six, ou 55-1a en L).
+  - LOW : SE-4 (restes de P17 : AC-9, mutation, T3, Pièges), SE-7 (`fiscalYears` des six vues, doublon dans l'en-tête),
+    SE-8 (format jour-mois sans test de forme ; DE/IT/EN de six clés à écrire).
 - **R-6 (décision Q6 du mainteneur, 2026-11-25, versée sans passe : plafond atteint)** — § *Gates* aligné sur la
   *Dérogation* du fichier d'epic (story purement écran : specs des Rapports et de la navigation à la story, E2E complet et
   `gate-ci.sh` en fin d'epic) ; le T0 relit la phrase contre le fichier d'epic et le cite au Change Log.
@@ -681,3 +700,5 @@ période réelle. (refs #À-VENIR)
   (piloter `ui/select` sous jsdom), l'AC-12 « aucun texte ». Passe de validation ciblée unique (Sonnet, prompt
   `55-1a-55-2-epic-validation-prompt-2026-11-26-selecteur.md`), hors décompte (fiche au plafond) ; ses MEDIUM vont au T0
   (R-8 et suivants).
+- 2026-11-26 — Passe ciblée D15 (Sonnet, `kesh-gate-logs/s55-selecteur/selecteur-2026-11-26-validation.md`), hors décompte : 0/0/5/3 (SE-1, SE-2, SE-3, SE-5, SE-6 MEDIUM ; SE-4,
+  SE-7, SE-8 LOW). **Aucune remédiation** (fiche au plafond) : renvoi au **T0** en R-9 à R-13, LOW listés avec eux.

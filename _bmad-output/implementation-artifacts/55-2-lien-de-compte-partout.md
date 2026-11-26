@@ -20,6 +20,10 @@ le tranche avant toute ligne de code, ligne lue et décision citées au Change L
 - **R-4 (D15, 2026-11-26)** — Le sélecteur du Grand livre, récrit au-delà du plafond de huit passes (une passe ciblée
   seulement ; ses MEDIUM s'ajoutent ici en R-5 et suivants) : au T0, relire l'AC-11 à l'AC-15 contre la 55-1a (AC-14 à
   AC-17) telle que le développement de la 55-1a l'aura livrée, ligne lue citée au Change Log.
+- **R-5 (passe ciblée D15, SE-3, MEDIUM)** — Le sort de `selectedFiscalYearId` avec le bandeau `ReportSelector` (lié en
+  `$bindable`, alors que le Grand livre ne doit jamais l'écrire) et le préremplissage de l'AC-12 qui en dépend : à trancher
+  au T0 avec R-11 de la 55-1a. LOW : SE-9 (*Modules touchés* à compléter : `ReportSelector`, bandeau de la page).
+  Rapport : `kesh-gate-logs/s55-selecteur/selecteur-2026-11-26-validation.md`.
 - **LOW à reprendre** : V6-2 (préremplissage à l'**entrée** sur l'onglet, une fois, jamais à la saisie ; test « deux dates
   vidées à la main restent vides »), V6-3 (exception notée aux lignes `:146` et `:175` de la 55-1a ; `reports.spec.ts` cité
   pour la 55-2 au tableau des fichiers communs), V6-4 (second exercice créé pour l'E2E, `api-fixtures.ts:445` ; mutation
@@ -367,3 +371,4 @@ onglet. (refs #À-VENIR, #À-VENIR)
   `reports-nav-ledger-free-dates`, la fonction `fiscalYearMatching` (remplacée par `etatDuMenu` de la 55-1a), R-1 (caduc),
   R-3 (`ui/select`). Passe de validation ciblée unique (Sonnet, prompt
   `55-1a-55-2-epic-validation-prompt-2026-11-26-selecteur.md`), hors décompte ; ses MEDIUM vont au T0 (R-4 et suivants).
+- 2026-11-26 — Passe ciblée D15 (Sonnet, `kesh-gate-logs/s55-selecteur/selecteur-2026-11-26-validation.md`), hors décompte : 0/0/1/1 (SE-3, SE-9). Aucune remédiation : R-5 au **T0**.

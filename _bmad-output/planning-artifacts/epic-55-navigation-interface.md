@@ -395,6 +395,11 @@ Versées aux décisions D12 à D14, à l'en-tête (*Migration*, *Backend*), aux 
   démonstration et captures : `kesh-gate-logs/s55-selecteur/selecteur-exercice-demo.html`). Avec, à confirmer en même
   temps : *Générer* désactivé sur « Plusieurs » et « Hors exercice » hors du Grand livre (C-55-1-8), et la 55-1a portée de
   M à L (cinq modules, à la borne) plutôt qu'une septième story.
+  *Passe ciblée D15 du 2026-11-26* (`kesh-gate-logs/s55-selecteur/selecteur-2026-11-26-validation.md`, 0/0/3/0 pour ce fichier) : le décompte des modules est bas (six avec
+  `i18n-keys.test.ts`, SE-6) — le vrai choix est une story séparée avec dérogation à la borne de six stories, ou la 55-1a en
+  L ; d'autres choix des fiches sont à confirmer avec D15 (exports désactivés quand le rapport est périmé, compte du Grand
+  livre dans le périmé, en-tête « (hors exercice) », message `reports-nav-needs-one-fy`, SE-5) ; D5 reste à aligner sur
+  l'AC-15 (SE-1). Renvoyés au T0 de la 55-1a (R-9, R-12, R-13).
 
 - **Numérotation** — à confirmer par l'utilisateur : le **56** pour l'epic à part des liens de compte (Q9) ; un numéro
   pour l'epic « PDF marqués » (esquisse hors du dépôt, `kesh-gate-logs/s55-decisions-2/epic-pdf-marques-esquisse.md`).
