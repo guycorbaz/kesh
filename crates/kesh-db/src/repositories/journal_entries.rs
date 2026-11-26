@@ -843,8 +843,9 @@ where
 ///
 /// **Note atomicité** : l'écriture d'ouverture n'a aucun `project_id` (DTO sans
 /// champ projet) → `create_in_tx` court-circuite l'Étape 0 (validation projets)
-/// et ne verrouille QUE `fiscal_years` — l'ordre reste sentinelle puis
-/// exercice, la convention de Pattern 5, qui réduit la fréquence des
+/// et ne prend aucun verrou de projet : elle reprend `fiscal_years` (ré-entrant),
+/// `accounts` en partage et le compteur de numéros — l'ordre reste sentinelle
+/// puis exercice, la convention de Pattern 5, qui réduit la fréquence des
 /// interblocages sans les exclure (P3-ECH confirmé) : la route est rejouée
 /// (enveloppe `retry_on_deadlock`, Story 15-5e2).
 ///
@@ -852,9 +853,12 @@ where
 /// `accounts` S (les lignes visées, étape 2-bis, avant `count_by_company` pour
 /// ne pas ouvrir la vue : #669) → compteur de numéros. Le verrou `accounts` est
 /// celui que `validate_lines_accounts_in_tx` prend ensuite : **avancé, non neuf**,
-/// donc aucune arête neuve dans le graphe des attentes. Les gestes qui écrivent
-/// `accounts` (dont le retypage, `accounts::update`) prennent `companies` en
-/// partage d'abord : ils s'excluent de cette fonction dès son sentinel.
+/// donc aucune arête neuve dans le graphe des attentes. Les gestes qui
+/// **modifient** un compte existant (dont le retypage, `accounts::update`,
+/// `archive_guarded`, `reactivate`) prennent `companies` en partage d'abord : ils
+/// s'excluent de cette fonction dès son sentinel. Les créations en lot
+/// (`bulk_create`, `bulk_create_from_chart`) n'insèrent que des comptes neufs,
+/// qu'aucune requête déjà lancée ne peut viser.
 ///
 /// **Portée exacte de la sérialisation** (Pass 1 BH-1 + Pass 3 BH3-1 code
 /// review) : la garde « company vierge » est **company-wide**, donc le verrou

@@ -148,10 +148,93 @@ fn la_requete_epingle_index_ordre_et_verrou() {
     );
 }
 
-/// Sonde négative de M11 : sans `FORCE INDEX`, la garde rougit.
+/// Sonde de **portée** de M11 : l'extracteur est borné à la fonction nommée. Une
+/// fonction voisine du même fichier qui prend `LOCK IN SHARE MODE` **sans**
+/// `FORCE INDEX` ne rend pas le motif de `lock_types_by_ids_in_tx` : si
+/// l'extracteur rendait les littéraux de tout le fichier, elle le rendrait.
+/// (Un `replace` global du motif dans le fichier serait vrai par construction.)
 #[test]
-fn sonde_negative_sans_force_index_rougit() {
-    let source = lire(ACCOUNTS).replace("FORCE INDEX (PRIMARY)", "");
+fn sonde_negative_l_extracteur_est_borne_a_la_fonction() {
+    let source = lire(ACCOUNTS);
+    let voisine = litteraux_de(&source, "type_in_share_mode");
+    assert!(
+        voisine.contains("LOCK IN SHARE MODE"),
+        "la sonde doit viser une fonction qui verrouille en partage"
+    );
+    assert!(
+        !voisine.contains("FORCE INDEX (PRIMARY)"),
+        "l'extracteur déborde de la fonction nommée"
+    );
     let requete = litteraux_de(&source, LECTURE);
-    assert!(!requete.contains("FORCE INDEX (PRIMARY)"));
+    assert!(requete.contains("FORCE INDEX (PRIMARY)"));
+}
+
+/// Le corps **masqué** (commentaires et chaînes vides) de la fonction `nom`.
+fn corps_masque(source: &str, nom: &str) -> String {
+    let (_, masque) = decouper(source);
+    let (_, de, a) = fonctions(&masque)
+        .into_iter()
+        .find(|(n, _, _)| n == nom)
+        .unwrap_or_else(|| panic!("fonction {nom} introuvable"));
+    masque[de..a].to_string()
+}
+
+/// `(position de la lecture des types, position de count_by_company)` dans le
+/// corps masqué de `create_opening_entry`, ou `None` si l'un manque.
+fn ordre_lecture_et_recensement(source: &str) -> Option<(usize, usize)> {
+    let corps = corps_masque(source, "create_opening_entry");
+    Some((
+        corps.find(&format!("{LECTURE}("))?,
+        corps.find("count_by_company(")?,
+    ))
+}
+
+/// **M10** — la lecture verrouillante des types précède `count_by_company`
+/// (première lecture cohérente de la transaction : lue après, elle s'exécuterait
+/// vue ouverte, et rendrait `ER_CHECKREAD` (1020) sous `innodb_snapshot_isolation`,
+/// MariaDB >= 11.6, #669 — sans effet visible sous 10.11, d'où la garde lexicale).
+///
+/// ⚠️ **Limite** : elle ne connaît que les **noms** des deux appels. Une autre
+/// lecture ordinaire ajoutée avant, sous un autre nom, lui échappe : c'est à la
+/// revue de code de la voir.
+#[test]
+fn la_lecture_des_types_precede_le_recensement() {
+    let (lecture, recensement) = ordre_lecture_et_recensement(&lire(JOURNAL))
+        .expect("create_opening_entry appelle la lecture et le recensement");
+    assert!(
+        lecture < recensement,
+        "la lecture des types suit count_by_company : la vue naîtrait avant le verrou (#669)"
+    );
+}
+
+/// Sonde négative de M10 : sur une copie du texte réel où l'appel est **déplacé**
+/// après `count_by_company` (et non supprimé : il est toujours présent), la
+/// garde voit l'ordre fautif.
+#[test]
+fn sonde_negative_l_appel_deplace_apres_le_recensement_rougit() {
+    let source = lire(JOURNAL);
+    let appel = format!(
+        "    let types = super::accounts::{LECTURE}(&mut tx, company_id, &account_ids).await?;\n"
+    );
+    assert_eq!(
+        source.matches(&appel).count(),
+        1,
+        "appel introuvable ou ambigu"
+    );
+    let ancre = "    // Étape 4 : statut vivant du premier exercice";
+    assert_eq!(
+        source.matches(ancre).count(),
+        1,
+        "ancre introuvable ou ambiguë"
+    );
+    let deplacee = source
+        .replacen(&appel, "", 1)
+        .replacen(ancre, &format!("{appel}{ancre}"), 1);
+    assert_ne!(source, deplacee, "la sonde n'a rien déplacé");
+    let (lecture, recensement) = ordre_lecture_et_recensement(&deplacee)
+        .expect("l'appel est toujours présent dans le corps, seule sa place change");
+    assert!(
+        lecture > recensement,
+        "la copie déplacée doit montrer l'ordre fautif"
+    );
 }

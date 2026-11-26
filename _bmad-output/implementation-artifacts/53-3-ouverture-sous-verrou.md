@@ -104,7 +104,7 @@ contrôle ne peut être visé par une requête déjà lancée (identifiant incon
   types** → `count_by_company` → statut. Ordre des refus : `NotFound` → `ALREADY_HAS_ENTRIES` (409) → `FIRST_YEAR_CLOSED` (400) →
   **`NON_BALANCE_ACCOUNT` (400, neuf)** → les refus de `create_in_tx_inner`, dans leur ordre : `FiscalYearClosed`,
   `LATER_FISCAL_YEAR_CLOSED`, `DATE_OUTSIDE_FISCAL_YEAR`, `PERIOD_LOCKED`, puis `INACTIVE_OR_INVALID_ACCOUNTS` / `ACCOUNT_NOT_POSTABLE`, puis
-  le contrôle des devises. C'est l'ordre actuel des verdicts, à l'exception de D3. *Écartée 1* : garder la lecture au handler et la
+  le contrôle des devises. C'est l'ordre actuel des verdicts, à l'exception de D3 ; **sous course**, l'ordre sous verrou s'applique aussi au compte de résultat (une écriture ou une clôture survenue entre les pré-contrôles du handler et le sentinelle rend `ALREADY_HAS_ENTRIES` ou `FIRST_YEAR_CLOSED` avant `NON_BALANCE`, là où le pré-contrôle du handler rendait `NON_BALANCE` : aucun effet sur les livres). *Écartée 1* : garder la lecture au handler et la
   **répéter** dans la transaction (double lecture : voir D3). *Écartée 2* : la lecture après `count_by_company` (vue ouverte, P6 ii).
 - **D2 — la lecture est verrouillante : `FORCE INDEX (PRIMARY)`, `ORDER BY id`, `LOCK IN SHARE MODE`, scopée à la société, posée d'emblée**
   (P6). `FORCE INDEX (PRIMARY)` n'est **pas** conditionnel à l'`EXPLAIN` de la base de dev : la revue 15-5d (B-1) l'a établi, sur une table
@@ -149,8 +149,9 @@ contrôle ne peut être visé par une requête déjà lancée (identifiant incon
   le demande aujourd'hui (entre les deux, `books_locked_through` et `find_later_closed` sont des lectures ordinaires, le second
   `fiscal_years FOR UPDATE` est ré-entrant, `validate_taggable_in_tx` sort tôt sans projet : `projects.rs:94-96`) ; `count_by_company` est
   une lecture non verrouillante. L'arête `{companies X, fiscal_years X} → accounts S` existe donc déjà : la story la **déplace** de
-  quelques instructions, sans la créer. Les gestes qui **écrivent** `accounts` prennent tous `companies` en partage d'abord (`create` `:199`, `update` `:1132`,
-  `archive_guarded` `:1453`, `reactivate` `:1640`, complément `opening_complement.rs:454-457`) : aucun cycle avec le sentinelle exclusif.
+  quelques instructions, sans la créer. Les gestes qui **modifient** un compte existant prennent `companies` en partage d'abord (`update` `:1132`,
+  `archive_guarded` `:1453`, `reactivate` `:1640`, complément `opening_complement.rs:454-457`) ; `create` (`:199`) aussi ; les créations en lot (`bulk_create`, `bulk_create_from_chart`) n'insèrent que
+  des comptes neufs, sans verrou de société (angle mort assumé : un compte neuf n'est dans aucune requête déjà lancée) : aucun cycle avec le sentinelle exclusif.
 - **D6 — pas de migration.** Aucun schéma, aucune donnée. `kesh_version_min_required` inchangé ; P5–P8 du § *Migration breaking policy* sans
   objet. Release `c` si elle partait seule ; elle sort dans la release de l'Epic 53 (v0.21.0 au fichier d'epic ; `b` si la 53-2 porte sa migration).
 
@@ -298,7 +299,7 @@ n'est qu'un contrôle d'absence de régression). Le story file n'affirme que ce 
 | M9 | lecture **non scopée par la société** (`WHERE id IN …` seul) | test renommé de `opening_balances_repository.rs:260` (compte `foreign` absent du résultat) ; AC-5 (d) |
 | M11 | retirer `FORCE INDEX (PRIMARY)` ou `ORDER BY id` de `lock_types_by_ids_in_tx` | **aucun test** (le plan de la base de test reste `PRIMARY`, l'ordre de verrouillage n'est pas observé) : **angle mort écrit**, gardé par la revue et par la mesure (a) d'AC-6 ; la garde lexicale d'AC-8 peut en outre exiger les deux motifs dans les **littéraux** de `lock_types_by_ids_in_tx` (premier retour de `lexique::decouper`, la fonction délimitée par `fonction_englobante` : la requête est une chaîne, donc absente du texte masqué) |
 | M12 | rétablir au handler un pré-contrôle des types **avant** `accounting::validate` | AC-5 (e) (1)(2)(3) : les codes redeviennent `VALIDATION_ERROR` |
-| M10 | placer la lecture verrouillante **après** `count_by_company` (vue ouverte, P6 ii) | **aucun test sous 10.11** : angle mort écrit, protégé par le doc-comment et par AC-6 (la place) ; ne devient visible que sous ≥ 11.6 (#669) |
+| M10 | placer la lecture verrouillante **après** `count_by_company` (vue ouverte, P6 ii) | **aucun test de comportement sous 10.11** (l'effet, `ER_CHECKREAD`, n'existe que sous ≥ 11.6, #669) ; tuée par la **garde lexicale d'ordre** `la_lecture_des_types_precede_le_recensement` (revue de code P1, R7-1), sondée par une copie où l'appel est déplacé |
 
 **Comment M2 (variante verrouillante) et M4 meurent** : uniquement par la **panique de l'attente `PROCESSLIST`** (la requête attendue ne se
 montre jamais en attente), non par une assertion sur le résultat. À écrire au Dev Agent Record, et à **vérifier dans le journal de chaque
@@ -400,7 +401,7 @@ doublait D3, AC-1, AC-5, AC-8, T4, les mutations et les Notes de version, est **
 ### Commits (branche `story/53-3-ouverture-sous-verrou`, base `4d540a6ea`)
 
 `4b61e8c04` (étape 0 : V4-1 à V4-6, T0) ; `ff2c982dd` (tests rouges + clé `FY_OPENING_NON_BALANCE_ACCOUNT_KEY` seule) ; `607fb31e8` (**dernier commit de
-code** : correctif et garde lexicale) ; `98e2051af` (fusion de `origin/main` = `fbfa64a27`, qui ne touche aucun fichier de la story) ; `a4e7c2f47` (prompt de la
+code** : correctif et garde lexicale) ; `98e2051af` (fusion de `origin/main` = `fbfa64a27`, qui ne touche aucun fichier de code de la story : seul `sprint-status.yaml`, fichier commun, gagne les blocs de `main`) ; `a4e7c2f47` (prompt de la
 revue P1) ; ce commit (Dev Agent Record, statut).
 
 ### Ce qui a été écrit
@@ -433,7 +434,7 @@ l'attente, requête de lecture des types jamais vue ; refus séquentiel : `Ok` ;
 | M7 | tuée (db) | AC-5 d |
 | M8 | tuée (db) | AC-5 c |
 | M9 | tuée (db) | test de portée par société, AC-5 d |
-| M10 (lecture après `count_by_company`) | **vivante** (25 sur 25 verts) | **angle mort écrit** : aucun test sous 10.11 ; ne devient visible que sous MariaDB ≥ 11.6 (#669) ; protégée par le doc-comment et la place |
+| M10 (lecture après `count_by_company`) | vivante à `607fb31e8` (25 sur 25 verts) ; **tuée** après la revue P1 (R7-1) | garde lexicale d'ordre `la_lecture_des_types_precede_le_recensement` (voir § *Revue de code P1*) ; l'effet sous MariaDB ≥ 11.6 (#669) n'est pas observable ici |
 | M11 (sans `FORCE INDEX`, sans `ORDER BY id`) | tuées (db) | la garde lexicale `la_requete_epingle_index_ordre_et_verrou` (la fiche annonçait « aucun test » : la garde AC-8 en ajoute un) |
 | M12 (pré-contrôle rétabli au handler) | tuée (api) | AC-5 e (1)(2)(3) |
 
@@ -465,8 +466,27 @@ Voir § T0. Lecture citée : requête neuve `type = range`, `key = PRIMARY`, `ro
   mapping, quatre locales, aucun site périmé. Manuel (PDF aplati) : « jamais les comptes de produits ou de charges » (`user-manual.tex:1051`) reste vrai ; **aucune modification de manuel**.
 - Mots-clés de fermeture dans les commits de la branche : aucun (`refs #513` seulement).
 - Recoupements déclarés : `journal_entries.rs` avec la 53-1 (fonctions distinctes), `accounts.rs` et `fiscal_years.rs` non déclarés au fichier d'epic (ligne à ajouter par l'orchestrateur, § Dev Notes).
-- Limite : AC-3 et AC-4 prouvent la fermeture sur MariaDB 10.11 ; le comportement sous ≥ 11.6 (`ER_CHECKREAD`) n'est protégé que par la place de la lecture (M10 vivante).
+- Limite : AC-3 et AC-4 prouvent la fermeture sur MariaDB 10.11 ; le comportement sous ≥ 11.6 (`ER_CHECKREAD`) n'est pas observable ici : la place de la lecture est gardée par la garde lexicale d'ordre (voir § *Revue de code P1*), qui ne connaît que les noms des deux appels.
 
+
+### Revue de code P1 (Opus, 0/0/1/6, `kesh-gate-logs/e533/code-review-p1.md`) — remédiation, un commit
+
+- **R7-1 (MEDIUM)** : `opening_types_sous_verrou_lexical.rs` gagne `la_lecture_des_types_precede_le_recensement` (position de `lock_types_by_ids_in_tx(` < position de
+  `count_by_company(` dans le corps **masqué** de `create_opening_entry`) et sa sonde négative `sonde_negative_l_appel_deplace_apres_le_recensement_rougit` (copie du texte réel
+  où l'appel est **déplacé** après le recensement, non supprimé ; contrôles de présence et de changement). **M10 rejouée : tuée** (journal `mutations/M10-apres-revue-db.log`).
+  Limite écrite : la garde ne connaît que les noms des deux appels (modèle : `t_b4_la_lecture_de_l_exercice_suivant_suit_le_recensement`, `journal_entries.rs`).
+- **R7-2** : la sonde négative de M11 devient une sonde de **portée** (`sonde_negative_l_extracteur_est_borne_a_la_fonction`) : les littéraux de `type_in_share_mode` (qui
+  verrouille en partage sans `FORCE INDEX`) ne contiennent pas `FORCE INDEX (PRIMARY)`.
+- **R5-1, R5-2, R4-1, R2-1, R12-1** : doc-comments de `opening_balances.rs` (liste des gardes : refus après société vierge et statut) et de `journal_entries.rs` (« Note atomicité » ;
+  gestes qui **modifient** un compte existant, créations en lot exceptées), D1 (ordre des refus sous course), § *Verrous* (D5), Dev Agent Record (la fusion ne touche aucun fichier de
+  **code** de la story). Grep de la phrase corrigée : `prennent .companies.` et « écrivent `accounts` » sur `crates` et la fiche.
+- **Gates de la remédiation P1** (journaux `rem-*.log`, `mutations/M10-apres-revue-db.log`) : `cargo fmt --check` et `clippy --workspace --all-targets -D warnings` verts ;
+  nextest `binary(opening_types_sous_verrou_lexical) | binary(opening_balances_repository) | binary(opening_balances_e2e)` vert (EXIT 0) ; **M10 rejouée : tuée**
+  (27 tests, 25 passés, 2 échoués, dont `la_lecture_des_types_precede_le_recensement`) ; `scripts/test-fast.sh --ci` **6723 sur 6723** passés (1 lent, 17 ignorés).
+  **Incident et exactitude** : la restauration de M10 par `git checkout` a effacé les corrections de doc-comments de `journal_entries.rs` (R5-2, R2-1), alors non commitées ;
+  elles ont été réécrites ensuite. Le `test-fast --ci` complet a donc tourné **sans** ces deux doc-comments ; leur dernière réécriture ne change que des commentaires et n'a été
+  couverte que par `cargo fmt --check`, `clippy -D warnings` et le gate ciblé `binary(opening_balances_repository) | binary(opening_types_sous_verrou_lexical)` (la garde lexicale lit le
+  texte masqué : un commentaire n'y change rien). Le gate complet n'est pas rejoué pour des commentaires seuls ; l'E2E non plus (commentaires, un test et la fiche).
 
 ## Change Log
 

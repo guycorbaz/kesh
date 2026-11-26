@@ -373,12 +373,14 @@ fn status_response(
 /// 2. `accounting::validate` (équilibre / ≥2 lignes / montants ≥ 0 /
 ///    débit⊕crédit) via `map_core_error` (DRY) ;
 /// 3. `create_opening_entry` : sentinel `companies` + `fiscal_years`, **type des
-///    comptes lu sous verrou** (Story 53-3, #513 : toute ligne dont le type
-///    est `Revenue`/`Expense` → `400 non-balance-account` ; un id absent
-///    — inexistant / autre company — retombe dans `create_in_tx` →
-///    `INACTIVE_OR_INVALID_ACCOUNTS`, P3-AA-1/BH3-6), puis garde « company
-///    vierge » et statut, **sous** les `FOR UPDATE` (autorité anti-course,
-///    P1-C1/P3-BH3-1/P4).
+///    comptes lu sous verrou** (Story 53-3, #513, étape 2-bis), puis garde
+///    « company vierge » et statut, **sous** les `FOR UPDATE` (autorité
+///    anti-course, P1-C1/P3-BH3-1/P4), et enfin le **refus** (étape 4-bis) : toute
+///    ligne dont le type lu est `Revenue`/`Expense` → `400 non-balance-account` ;
+///    un id absent — inexistant / autre company — retombe dans `create_in_tx` →
+///    `INACTIVE_OR_INVALID_ACCOUNTS` (P3-AA-1/BH3-6). Sous course, l'ordre sous
+///    verrou s'applique donc aussi au compte de résultat (409 ou
+///    `first-year-closed` avant `non-balance-account`).
 ///
 /// ⚠️ Depuis la Story 53-3, `validate` **précède** le contrôle du type : une
 /// requête qui cumule un compte de résultat et un refus de `validate` rend le
