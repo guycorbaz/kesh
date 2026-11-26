@@ -1,6 +1,6 @@
 # Story 55-3b : ouvrir les justificatifs d'une écriture depuis le Journal (et le Grand livre)
 
-Status: in-progress
+Status: review
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 à D14. Issue : #1607 (point c, comme la
 55-3a ; `enhancement`, P4, Q5). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration.** **Suit la 55-3a**
@@ -353,7 +353,7 @@ grand livre avec la colonne.
 
 ## Tâches
 
-- [ ] **T0** — Base `epic/55-navigation` avec les 55-1a, 55-1b, 55-2 et 55-3a ; lignes du manuel sur la base de développement ; et les
+- [x] **T0** — Base `epic/55-navigation` avec les 55-1a, 55-1b, 55-2 et 55-3a ; lignes du manuel sur la base de développement ; et les
       points renvoyés par la validation, chacun tranché au Change Log, ligne lue citée :
       - hauteur de la visionneuse dans le dialogue (titre, liste, cadre et « Fermer » tiennent dans `85vh`, sans double
         défilement) ;
@@ -368,15 +368,15 @@ grand livre avec la colonne.
         phrases du figement ; à écrire tels au Change Log ;
       - hauteur (Vv2p7-5) : titre, liste, message ou cadre, et « Fermer » ;
       - points de la passe du 2026-11-26 (Change Log), la fiche étant au plafond de huit passes.
-- [ ] **T1** — Vitest rouges.
-- [ ] **T2** — `DocumentPreview` (`errorMessage`, rien d'autre) ; lecteurs dans `reports.api.ts`
+- [x] **T1** — Vitest rouges.
+- [x] **T2** — `DocumentPreview` (`errorMessage`, rien d'autre) ; lecteurs dans `reports.api.ts`
       (`fetchEntryDocuments`, `fetchInvoicePdf`, `fetchCreditNotePdf`) ; l'état « pas encore émis » (AC-5) ; `EntryDocumentsViewer.svelte` (la liste en haut,
       `DocumentPreview` dessous, sélection par primitives) ; `EntryDocuments.svelte` (le dialogue `ui/dialog`, **une
       instance par vue**, et la lecture de la liste au clic) ; l'icône de chaque ligne est un bouton qui lui passe
       l'écriture **et son élément** ; l'instance rend le focus à cet élément à la fermeture.
-- [ ] **T3** — Vues du journal et du grand livre (colonne conditionnelle) ; types `reports.types.ts`.
-- [ ] **T4** — i18n, manuel, E2E, captures.
-- [ ] **T5** — Gates (fichier d'epic, § *Gates*).
+- [x] **T3** — Vues du journal et du grand livre (colonne conditionnelle) ; types `reports.types.ts`.
+- [x] **T4** — i18n, manuel, E2E, captures.
+- [x] **T5** — Gates (fichier d'epic, § *Gates*).
 
 ## Gates
 
@@ -475,10 +475,84 @@ d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; gran
 
 ### Agent Model Used
 
+Claude Opus 5.5 (agent de développement de la story, sans revue de code).
+
 ### Completion Notes List
+
+- **Livré** : `EntryDocuments.svelte` (le dialogue `ui/dialog`, **une instance par vue**, `openFor(entryId, titre,
+  élément)` ; l'icône est un snippet exporté du même fichier, `entryDocumentsButton`), `EntryDocumentsViewer.svelte`
+  (liste en haut à partir de deux, `DocumentPreview` dessous, sélection par deux primitives, « PDF pas encore émis »
+  sans lecture), `entry-documents.ts` (lecteur par genre qui refuse un `Blob` vide, noms de fichier et replis,
+  libellés, texte d'erreur, titre ; module pur ajouté pour la testabilité, non nommé par la fiche) ; `hasDocuments` sur
+  `JournalEntryRow`/`LedgerLine`, `EntryDocumentKind`/`EntryDocument` en fin de `reports.types.ts` ; `fetchEntryDocuments`,
+  `fetchInvoicePdf`, `fetchCreditNotePdf` dans `reports.api.ts` ; `DocumentPreview` gagne **deux** propriétés
+  facultatives, `errorMessage` (AC-4, lue dans le `catch` seulement) et `hideThumbnails` (AC-11, repli prévu par
+  l'AC-11 : voir R-9) — comportement inchangé sans elles ; Journal : icône sur la ligne d'en-tête
+  (`journal-entry-header-<id>`, `journal-entry-number-<id>`, `journal-entry-documents-<id>`) ; Grand livre : colonne
+  `documents` après « Libellé », présente si une ligne du **rapport** porte `hasDocuments`, `colspan` dérivés de la liste
+  effective (`columns`), icône `ledger-entry-documents-<lineId>` au numéro de `piece()` ; onze clés `reports-nav-*`
+  ×4 locales ; manuel (§ 11.6.1, refus d'un PDF disparu, § Grand livre, § Journal des écritures et son paragraphe
+  `sec:journal-justificatifs`, « Journaux »).
+- **R-9 (vignettes), constaté** : Chromium de Playwright **avec tête** (Google Chrome for Testing 147.0.7727.15, sous
+  `xvfb-run`) **montre** le panneau des vignettes sur l'URL `blob:` nue (capture
+  `captures-avec-tete/55-3b-3-visionneuse-un-justificatif.png`) : le repli de l'AC-11 est donc pris —
+  `hideThumbnails` ajoute `#pagemode=none&navpanes=0`, et Chromium l'honore (aucune vignette,
+  `captures-avec-tete-sans-vignettes/55-3b-3-…`, `-4-…`). Sans tête, le cadre reste vide (pas de lecteur PDF), d'où
+  les captures avec tête. Les cinq appelants d'avant gardent l'URL nue (Vitest).
+- **UI-8** : le Vitest du clic à côté fonctionne sous jsdom (`pointerdown`/`pointerup` avec coordonnées positives, le
+  rectangle du contenu étant nul ; rappel bits-ui de 10 ms) — gardé, et l'E2E le constate aussi (`page.mouse.click(5, 5)`).
+- **R-6, défaut retenu, en attente de confirmation du mainteneur** : « son prochain téléchargement, ou son prochain envoi
+  par e-mail, le figera » (sans « depuis sa fiche ») dans les quatre locales ; manuel « (depuis la fiche ou par l'API) ».
+  **Une clé** pour le libellé de l'icône et le titre (`reports-nav-documents-title`, pas de `-button`) : défaut retenu,
+  en attente. **Signalé au mainteneur (R-7)** : une facture envoyée avant la v0.12.1 et jamais figée est dite « PDF pas
+  encore émis ».
+- **Écarts au T0, en cours de développement** : l'erreur « vide » n'est pas une classe `EmptyDocumentError` comme écrit
+  au T0, mais une `Error` nommée (`emptyDocumentError()`, reconnue par son nom) : la garde
+  `i18n-libelle-en-dur.test.ts` refuse toute classe dans `src/`, et `erreurs-en-texte.test.ts` refuse `instanceof
+  Error` (relevés par les gardes au front complet).
+- **Rôle Consultation** (AC-4) : `grep -n "role" EntryDocuments.svelte` vide ; routes sous « tout rôle authentifié »
+  (`lib.rs:1296`, `:1309`, `:1325`) ; E2E Consultation vert.
+- **AC-9, constat** : `grep -cE "fig[ée]|refig"` 56 lignes (`user-manual.tex`) et 21 (`admin-manual.tex`) à la base,
+  aucune ne disant qu'une ouverture fige (`admin-manual.tex:1688`, « le premier téléchargement … le fige », reste juste).
+  Captures du manuel montrant le grand livre (p. ex. `rd-grand-livre-usd.png`) : périmées si la colonne y paraît, à
+  refaire à la release.
+- **Tests ajoutés** (recomptés, de `4c19bd76d` à la tête ; déclarations `it(`/`test(`, et tests exécutés) :
+  `EntryDocuments.test.ts` 11 (neuf), `EntryDocumentsViewer.test.ts` 12 déclarations, 16 exécutés (deux boucles de
+  trois), `GeneralLedgerView.test.ts` 27 → 32 (+5), `reports.api.test.ts` +2, `DocumentPreview.test.ts` 10 → 16 (+6,
+  dont l'hôte `DocumentPreviewHost.test.svelte` : sans lui, `rerender` de testing-library renotifie toutes les
+  propriétés et relit le document, ce qui n'arrive pas dans l'application) — **40 Vitest exécutés de plus** ; E2E
+  `reports-entry-documents.spec.ts` 5 (neuf). `JournalReportView.test.ts` inchangé : l'icône du Journal est testée dans
+  `EntryDocuments.test.ts`, monté sur `JournalReportView`.
+- **Mutations** (`kesh-gate-logs/s55-dev/55-3b/mutations/`, une à la fois, témoins non mutés verts, « tuée » = test
+  nommé en échec sur une assertion) : **17 sur 17 tuées** au passage complet à `48b92e713`
+  (`resultats-final-48b92e713.txt`) ; m12 rejouée à `9efde054f` (tuée). Premier passage : m09 et m12 refusées par le
+  script (échec par `TestingLibraryElementError`, non par une assertion) → tests réécrits, rejouées tuées. ⚠️ Le
+  premier script restaurait par `git checkout`, qui a effacé un travail non commité au second passage (refait à
+  l'identique, commité avant tout nouveau passage ; le script restaure désormais depuis une copie). **UI-6** : mutation
+  de hauteur (`py-2` sur l'icône) jouée sur l'E2E — l'assertion de hauteur rougit (« Received: 12.09375 », ≤ 1 attendu),
+  `mutation-hauteur-e2e.sh`.
+- **Gates** (dernier commit de code `9efde054f`), tous par `heavy.sh` : `clippy.sh 55-3b/final` fmt rc=0, clippy rc=0
+  (aucun Rust changé) ; `nextest.sh 55-3b/i18n -p kesh-i18n` 42/42 ; `nextest.sh 55-3b/textes -p kesh-api -E
+  'binary(textes_coherents)'` 34/34 ; `make user` réussi (`55-3b/manuel-make.log`, 2 passes, 0 référence indéfinie),
+  PDF contrôlé par `pdftotext` (copie `55-3b/user-manual-controle.pdf`) puis remis par `git checkout` ;
+  `front.sh 55-3b/final` — check 0 erreur (30 avertissements préexistants, aucun dans les fichiers de la story),
+  lint-i18n-ownership, Vitest **5585 tests (318 fichiers)**, build : tous rc=0 ; E2E partiel (16 specs : `reports*.spec.ts`
+  dont `reports-entry-documents` et `reports-navigation`, `homepage-charts`, `open-items`, `dunning-roundtrip`, `smoke`,
+  et les specs des écrans de `DocumentPreview` : `supplier-documents`, `backup-restore-new-install`,
+  `session-idle-warning`, `supplier-invoice-unknown-outcome`) — **84 passés, 0 échec** (7,6 min, `55-3b/e2e/`) ; à `48b92e713` (avant le correctif de la garde)
+  84/84 (`55-3b/e2e-48b92e713/`). Garde KF-043 (`e2e-selecteurs-traduits.test.ts`) verte. E2E complet et gate-ci en fin
+  d'epic.
+- **Recette visuelle** (`kesh-gate-logs/s55-dev/55-3b/captures/`, thème clair, sans tête) : `1-journal-icone` (icône
+  monochrome à côté de « #1 », ligne à hauteur des autres), `2-pdf-pas-encore-emis` (le message à la place de la
+  visionneuse, sans liste), `3-visionneuse-un-justificatif` et `4`/`5` (liste de deux, élément marqué ; cadre vide
+  sans tête), `6-erreur-410` (message du serveur en rouge dans le dialogue), `7-grand-livre-colonne` (colonne
+  « Justificatifs » après « Libellé »), `8-grand-livre-visionneuse` ; avec tête : `captures-avec-tete/` (vignettes
+  visibles, avant le repli) et `captures-avec-tete-sans-vignettes/` (PDF rendu sans vignettes, une et deux factures).
 
 ### Issues à ouvrir
 
+- (LOW, `documentation`) Les captures du manuel qui montrent le grand livre (`rd-grand-livre-usd.png` et voisines)
+  sont à refaire à la release si la colonne « Justificatifs » y paraît (Epic 55, story 55-3b).
 - (LOW, `bug` P4) `frontend/src/lib/components/ui/dialog/dialog-content.svelte:42` porte un `sr-only` « Close » anglais en
   dur pour tout dialogue à bouton par défaut (Epic 55, story 55-3b).
 
@@ -486,6 +560,18 @@ d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; gran
   `reports.api.ts` (C-55-3b-2).
 
 ### File List
+
+- `frontend/src/lib/features/reports/EntryDocuments.svelte`, `EntryDocumentsViewer.svelte`, `entry-documents.ts` (neufs)
+- `frontend/src/lib/features/reports/EntryDocuments.test.ts`, `EntryDocumentsViewer.test.ts` (neufs)
+- `frontend/src/lib/features/reports/JournalReportView.svelte`, `GeneralLedgerView.svelte`, `GeneralLedgerView.test.ts`
+- `frontend/src/lib/features/reports/reports.types.ts`, `reports.api.ts`, `reports.api.test.ts`
+- `frontend/src/lib/features/imported-supplier-invoices/DocumentPreview.svelte`, `DocumentPreview.test.ts`,
+  `DocumentPreviewHost.test.svelte` (neuf)
+- `frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal` 3785 → 3796), `i18n-libelle-en-dur.test.ts` (152 → 154)
+- `frontend/tests/e2e/reports-entry-documents.spec.ts` (neuf)
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `docs/manual/fr/user-manual.tex`
+- `_bmad-output/implementation-artifacts/55-3b-justificatifs-ecran.md`, `sprint-status.yaml`
 
 ## Change Log
 
@@ -658,3 +744,7 @@ d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; gran
     **Vv2p7-6** sans objet.
   - **Manuel, constat de l'AC-9** — `grep -cE "fig[ée]|refig"` : 56 lignes dans `user-manual.tex`, 21 dans
     `admin-manual.tex`, lues à cette base ; aucune ne dit qu'une ouverture fige.
+- 2026-11-27 — **Développée** (sans revue de code) : T1 à T5 ; R-9 constaté avec tête, repli de l'AC-11 pris
+  (`hideThumbnails`) ; erreur « vide » sans classe (gardes) — annotation du T0 ci-dessus, qui disait « classe
+  `EmptyDocumentError` » ; mutations 17/17 et mutation de hauteur E2E tuées ; gates de la story verts (Dev Agent
+  Record). Statut `review`.
