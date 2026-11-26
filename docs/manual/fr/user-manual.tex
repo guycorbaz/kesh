@@ -4304,13 +4304,19 @@ la réponse à la dernière demande s'affiche, et l'écran revient toujours à l
 barre indique --- si vous revenez sur un rapport pendant la génération d'un autre, dès la fin de
 celle-ci. Si une demande échoue, le message d'erreur s'affiche et l'écran garde la présentation
 précédente~; pour la redemander, changez de nouveau la présentation, ou quittez l'onglet et revenez-y.
-Changer la présentation d'un rapport pendant le chargement d'un autre rapport interrompt ce chargement~: revenir
+Changer la présentation d'un rapport pendant le chargement d'un autre rapport interrompt ce chargement, comme y
+arriver par le retour arrière ou par un lien (\S\ref{sec:rapports-exports})~: revenir
 sur son onglet le relance. Chaque demande est inscrite au journal
 d'audit, comme un changement de période. Le navigateur \textbf{retient votre présentation}, pour
 chaque société et chaque rapport~: en revenant sur la page, vous retrouvez la hiérarchie, le
 niveau, la place des sous-totaux et les groupes ouverts ou fermés à la main --- dans la mesure où
 le navigateur le permet (en navigation privée, ou si le stockage du site est refusé, la
 présentation par défaut revient, sans erreur). Un groupe disparu du plan depuis est oublié.
+L'\textbf{adresse de la page porte aussi la présentation affichée}~; elle prime sur celle que
+retient le navigateur~: ouvrir un lien vers un rapport, ou y revenir par le retour arrière, l'affiche
+dans la présentation de l'adresse, qui devient la présentation retenue. Une adresse sans présentation
+prend celle que retient le navigateur. L'adresse change à la réponse du serveur, non au geste~: tant
+que le rapport redemandé n'est pas affiché, elle reste celle du rapport à l'écran.
 
 Les boutons d'export PDF et CSV reprennent la présentation affichée
 (\S\ref{sec:rapports-exports}).
@@ -4566,8 +4572,9 @@ que la concordance annuelle exige (art.~72 al.~1 LTVA), et Kesh ne l'outille pas
 
 \subsection{Visualisation et exports}\label{sec:rapports-exports}
 
-\paragraph{Naviguer dans les rapports.} L'onglet, l'exercice, la période et, au grand livre, le compte et les
-comptes sans mouvement suivent l'adresse de la page, si bien que le retour arrière et l'avance du navigateur les
+\paragraph{Naviguer dans les rapports.} L'onglet, l'exercice, la période, la présentation du bilan, du compte de
+résultat et de la balance (hiérarchie, niveau, sous-totaux, groupes ouverts ou fermés à la main) et, au grand
+livre, le compte et les comptes sans mouvement suivent l'adresse de la page, si bien que le retour arrière et l'avance du navigateur les
 retrouvent~: chaque clic sur un onglet est une étape de l'historique (les flèches du clavier, elles, n'en ajoutent
 pas), et un rapport déjà affiché revient sans être rechargé. L'adresse se copie~: ouverte par un utilisateur
 connecté, ou rechargée, elle rouvre le même rapport avec ses réglages, sans autre geste. Elle retient le dernier

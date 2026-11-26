@@ -17,6 +17,7 @@ import {
 	disposeContextSafe,
 } from './helpers/test-state';
 import { createJournalEntryViaApi, todayInZurich } from './helpers/api-fixtures';
+import { preparerArbre } from './helpers/reports-groupes';
 
 const ANNEE = Number(todayInZurich().slice(0, 4));
 const PRECEDENTE = ANNEE - 1;
@@ -219,6 +220,87 @@ test('AC-24 — rechargement : le rapport reste, grisé, aria-busy', async ({ pa
 	await expect(page.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false');
 	await expect(page.getByTestId('report-period-heading')).toContainText(`au 30.09.${ANNEE}`);
 	await page.unroute(/\/api\/v1\/reports\/balance-sheet\?/);
+});
+
+// ----- Story 55-1b (D4) — la présentation des rapports groupés dans l'URL -------------------------
+
+async function capture1b(page: Page, nom: string): Promise<void> {
+	if (!process.env.KESH_CAPTURES_DIR) return;
+	await page.screenshot({ path: `${process.env.KESH_CAPTURES_DIR}/55-1b-${nom}.png`, fullPage: true });
+}
+
+/** Un changement de présentation, et l'adresse que sa réponse écrit. */
+async function presentation(page: Page, geste: () => Promise<void>, attendu: RegExp): Promise<void> {
+	const req = page.waitForRequest((r) => /\/api\/v1\/reports\/balance-sheet\?/.test(r.url()));
+	await geste();
+	await req;
+	await expect(page).toHaveURL(attendu);
+}
+
+test('55-1b AC-1, AC-4 — la présentation dans l’adresse : lien dans un nouveau contexte, rechargement, Retour', async ({
+	page,
+	browser,
+}) => {
+	// Plan groupé neuf (19 > 190 > 1900, 1910) : la base est remise au preset, l'arbre créé une fois.
+	await seedTestState('with-company');
+	await login(page);
+	const g19 = await preparerArbre(page);
+	await page.goto('/reports');
+	await expect(page.getByTestId('grouped-group-19')).toBeVisible({ timeout: 10000 });
+	// La présentation n'entre dans l'adresse que par la réponse affichée.
+	await presentation(page, () => page.getByTestId('grouping-level').selectOption('1'), /view=grouped&level=1&subtotals=header$/);
+	await presentation(page, () => page.getByTestId('group-toggle-19').click(), new RegExp(`level=1&subtotals=header&open=${g19}$`));
+	await presentation(
+		page,
+		() => page.getByTestId('grouping-position').selectOption('footer'),
+		new RegExp(`level=1&subtotals=footer&open=${g19}$`),
+	);
+	await capture1b(page, '1-bilan-groupe-avant-lien');
+	const adresse = page.url();
+
+	// AC-1 — nouveau contexte, cookies de la session, mémoire du navigateur vide : la présentation de l'adresse.
+	const etat = await page.context().storageState();
+	const autre = await browser.newContext({ storageState: { cookies: etat.cookies, origins: [] } });
+	try {
+		const p2 = await autre.newPage();
+		await p2.goto(adresse);
+		await expect(p2.getByTestId('grouping-level')).toHaveValue('1');
+		await expect(p2.getByTestId('grouping-position')).toHaveValue('footer');
+		await expect(p2.getByTestId('group-toggle-19')).toHaveAttribute('aria-expanded', 'true');
+		await expect(p2.getByTestId('grouped-group-190')).toBeVisible();
+		await expect(p2).toHaveURL(adresse);
+		await capture1b(p2, '3-lien-colle-nouveau-contexte');
+		// Rechargement avec une AUTRE vue en mémoire : l'adresse l'emporte (AC-2).
+		await p2.evaluate(() => {
+			for (const k of Object.keys(localStorage)) {
+				if (k.startsWith('kesh-report-grouping:') && k.endsWith(':balance-sheet')) {
+					localStorage.setItem(k, JSON.stringify({ shown: true, detailLevel: 2, subtotalPosition: 'header', open: [], closed: [] }));
+				}
+			}
+		});
+		await p2.reload();
+		await expect(p2.getByTestId('grouping-level')).toHaveValue('1');
+		await expect(p2.getByTestId('grouping-position')).toHaveValue('footer');
+		await expect(p2).toHaveURL(adresse);
+	} finally {
+		await autre.close();
+	}
+
+	// AC-4 — Bilan au niveau 1 ; Compte de résultat ; Bilan ; niveau 2 ; Retour deux fois : le niveau 1.
+	await page.locator('#reports-tab-income-statement').click();
+	await ongletActif(page, 'income-statement');
+	await page.locator('#reports-tab-balance-sheet').click();
+	await expect(page).toHaveURL(adresse);
+	await presentation(page, () => page.getByTestId('grouping-level').selectOption('2'), /view=grouped&level=2&subtotals=footer$/);
+	await page.goBack();
+	await ongletActif(page, 'income-statement');
+	await page.goBack();
+	await ongletActif(page, 'balance-sheet');
+	await expect(page).toHaveURL(adresse);
+	await expect(page.getByTestId('grouping-level')).toHaveValue('1');
+	await expect(page.getByTestId('group-toggle-19')).toHaveAttribute('aria-expanded', 'true');
+	await expect(page.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false');
+	await capture1b(page, '2-apres-retour');
 });
 
 test('D15 — le sélecteur : libellé, exercice choisi → dates, « Exercice entier », « Plusieurs », « Hors exercice »', async ({ page }) => {
