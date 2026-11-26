@@ -1644,10 +1644,11 @@ Le PDF d'une facture est produit \textbf{une seule fois} : au premier téléchar
     \item La \textbf{restauration d'une sauvegarde} antérieure au gel ramène la facture à l'état non figé : son prochain téléchargement figera un \textbf{nouveau} document. L'ancien reste dans le répertoire des documents, et son empreinte au journal d'audit.
     \item La \textbf{dévalidation} détache le document figé (son empreinte reste au journal d'audit) ; la revalidation en figera un nouveau au premier téléchargement.
     \item Les \textbf{rappels}, eux, sont produits à chaque envoi (cf. \S\ref{sec:relances-user}) : seul le PDF de la facture est figé.
+    \item \textbf{Afficher une facture depuis les rapports} (Journal, Grand livre, \S\ref{sec:journal-justificatifs}) \textbf{ne la fige pas} : une facture figée s'y montre par son PDF figé~; une facture qui ne l'est pas encore y est signalée «~PDF pas encore émis~», sans aperçu --- son PDF émis reste produit au premier téléchargement (depuis la fiche ou par l'API) ou au premier envoi. L'état affiché vaut à l'ouverture de la visionneuse.
 \end{itemize}
 
 \begin{keshwarning}
-\textbf{Si le fichier figé a disparu} --- typiquement après une restauration qui n'a pas repris le répertoire des documents : une sauvegarde d'avant la version 0.15.0, ou un dump de la base (depuis la 0.15.0, la sauvegarde \texttt{.keshbackup} emporte le fichier figé) ---, le téléchargement est \textbf{refusé} avec un message qui nomme le fichier manquant (\texttt{<empreinte>.pdf}). Kesh ne le régénère jamais de lui-même : ce serait fabriquer une pièce qui n'a pas été émise. Le remède est de \textbf{restaurer ce fichier} depuis la sauvegarde du répertoire des documents --- c'est le seul moyen de retrouver l'original. À défaut, un \textbf{administrateur} voit apparaître sur la fiche, après ce refus, le bouton \emph{Refiger le document} : il produit un \textbf{nouveau} document avec les données et la langue du client d'aujourd'hui, \textbf{qui n'est pas l'original}, et le journal d'audit garde l'empreinte de l'ancien et du nouveau. Une facture annulée ne peut pas être refigée : seule la restauration du fichier la répare.
+\textbf{Si le fichier figé a disparu} --- typiquement après une restauration qui n'a pas repris le répertoire des documents : une sauvegarde d'avant la version 0.15.0, ou un dump de la base (depuis la 0.15.0, la sauvegarde \texttt{.keshbackup} emporte le fichier figé) ---, le téléchargement est \textbf{refusé} avec un message qui nomme le fichier manquant (\texttt{<empreinte>.pdf})~; l'affichage depuis les rapports est refusé de même, avec le même message. Kesh ne le régénère jamais de lui-même : ce serait fabriquer une pièce qui n'a pas été émise. Le remède est de \textbf{restaurer ce fichier} depuis la sauvegarde du répertoire des documents --- c'est le seul moyen de retrouver l'original. À défaut, un \textbf{administrateur} voit apparaître sur la fiche, après ce refus \textbf{à un téléchargement depuis la fiche}, le bouton \emph{Refiger le document} : il produit un \textbf{nouveau} document avec les données et la langue du client d'aujourd'hui, \textbf{qui n'est pas l'original}, et le journal d'audit garde l'empreinte de l'ancien et du nouveau. Une facture annulée ne peut pas être refigée : seule la restauration du fichier la répare.
 \end{keshwarning}
 
 \subsection{Envoyer une facture par e-mail}\label{sec:envoi-email}
@@ -4397,7 +4398,8 @@ est-il fait ?}
 Chaque compte y est encadré par trois lignes sans lesquelles ce n'est pas un extrait : le
 \textbf{solde d'ouverture}, le \textbf{total des mouvements} (débit et crédit), le \textbf{solde
 de clôture}. Entre les deux, une ligne par écriture, avec sa date, sa pièce, son journal, son
-libellé, sa \textbf{contrepartie} — les autres comptes de la même écriture —, le \textbf{solde
+libellé, ses \textbf{justificatifs} (l'icône de l'écriture, comme au journal, \S\ref{sec:journal-justificatifs}~; la
+colonne n'apparaît que si une écriture du rapport en a), sa \textbf{contrepartie} — les autres comptes de la même écriture —, le \textbf{solde
 progressif} après chaque mouvement et, en dernière colonne, son \textbf{lettrage}.
 
 \begin{itemize}
@@ -4534,7 +4536,9 @@ Les factures dont les rappels sont \textbf{suspendus restent comptées} dans la 
 
 \subsection{Journal des écritures}
 
-\emph{Mensuel} → \emph{Rapports} → \emph{Journal}. Liste chronologique de toutes les écritures de la période sélectionnée. Vue brute, idéale pour audit ou contrôle. Le numéro de compte de chaque ligne ouvre le grand livre de ce compte sur la période du journal (\S\ref{sec:grand-livre}).
+\emph{Mensuel} → \emph{Rapports} → \emph{Journaux}. Liste chronologique de toutes les écritures de la période sélectionnée. Vue brute, idéale pour audit ou contrôle. Le numéro de compte de chaque ligne ouvre le grand livre de ce compte sur la période du journal (\S\ref{sec:grand-livre}).
+
+\paragraph{Les justificatifs d'une écriture.}\label{sec:journal-justificatifs} Une écriture qui a un justificatif porte, à côté de son numéro, une \textbf{icône de document}~; un clic l'ouvre dans la visionneuse, sans passer par l'écriture ni par la pièce. Les justificatifs sont le \textbf{PDF de la facture} (l'écriture de vente), le \textbf{PDF de l'avoir}, et le \textbf{document de la facture fournisseur} (son achat)~; l'écriture d'un \textbf{règlement} montre la ou les factures qu'il règle, client ou fournisseur. Avec un seul justificatif, la visionneuse l'ouvre directement~; avec plusieurs, leur liste paraît en haut, et un clic dans la liste change le document affiché. Une facture dont le PDF n'est pas encore émis n'est pas affichée~: la visionneuse dit «~PDF pas encore émis~» --- l'ouvrir depuis les rapports \textbf{ne la fige pas} (\S\ref{sec:pdf-fige}). La visionneuse se ferme par \emph{Fermer}, par un clic à côté ou par la touche Échap~; Échap reste sans effet quand le curseur est dans le PDF lui-même (cliquez à côté ou sur \emph{Fermer}). Le Grand livre porte la même icône sur ses lignes (\S\ref{sec:grand-livre}).
 
 \subsection{Décompte TVA}\label{sec:decompte-tva}
 

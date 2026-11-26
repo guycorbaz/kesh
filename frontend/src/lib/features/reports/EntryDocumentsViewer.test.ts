@@ -120,12 +120,13 @@ describe('EntryDocumentsViewer', () => {
 	] as const) {
 		it(`facture « ${cas} » : « PDF pas encore émis », aucun lecteur, aucun DocumentPreview (mutation : lecteur de facture appelé)`, async () => {
 			const r = render(EntryDocumentsViewer, { documents: [facture({ pdfStatus: status })] });
-			const msg = r.getByTestId('entry-documents-not-issued');
-			expect(msg.getAttribute('role')).toBe('status');
-			expect(msg.textContent).toContain('PDF pas encore émis');
-			expect(r.queryByTestId('document-preview')).toBeNull();
 			await new Promise((res) => setTimeout(res, 10));
+			// Assertions d'abord sur la lecture : c'est elle qui figerait la facture.
 			expect(invoicePdf).not.toHaveBeenCalled();
+			expect(r.queryByTestId('document-preview')).toBeNull();
+			const msg = r.queryByTestId('entry-documents-not-issued');
+			expect(msg?.getAttribute('role')).toBe('status');
+			expect(msg?.textContent).toContain('PDF pas encore émis');
 		});
 	}
 
@@ -176,8 +177,10 @@ describe('EntryDocumentsViewer', () => {
 		supplierDoc.mockImplementation(async () => vide());
 		for (const doc of [facture(), avoir(), fournisseur()]) {
 			const r = render(EntryDocumentsViewer, { documents: [doc] });
-			expect((await r.findByTestId('document-preview-error')).textContent?.trim()).toBe(
-				'Le document reçu est vide.',
+			await waitFor(() =>
+				expect(r.queryByTestId('document-preview-error')?.textContent?.trim()).toBe(
+					'Le document reçu est vide.',
+				),
 			);
 			r.unmount();
 		}
