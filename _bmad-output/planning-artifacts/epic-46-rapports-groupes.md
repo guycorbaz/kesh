@@ -258,7 +258,7 @@ autrement que `CLAUDE.md`, et ce qui le compense.)*
    décision D7). Règle des gates de l'epic, posée la nuit du 2026-11-22 par le responsable de l'epic : par story,
    fmt, clippy, nextest (complet, ou du rayon pour une story sans `kesh-db`), frontend complet et **E2E partiel** —
    les seules specs ajoutées ou touchées ; **`scripts/gate-ci.sh` et l'E2E complet une fois, à la fin, sur la
-   branche de la PR**. Concernées : 46-2 (1 spec), 46-3 (aucune spec), 46-5a, 46-5b (2 specs), 46-6a (aucune spec), 46-6b (1 spec),
+   branche de la PR**. Concernées : 46-2 (1 spec), 46-3 (aucune spec), 46-5a (aucune spec), 46-5b (1 spec), 46-6a (aucune spec), 46-6b (1 spec),
    46-7 (3 specs), 46-8 (4 specs). La 46-1 et la 46-4 ont joué l'E2E complet et `gate-ci.sh` à leur dernier commit de
    code. Compensation : `gate-ci.sh` et l'E2E complet (`fr_CH.UTF-8`, seuls les sept échecs de la KF-029 admis) à
    chaque tête poussée de la PR, après chaque reprise de `main` et chaque correctif de revue d'intégration.

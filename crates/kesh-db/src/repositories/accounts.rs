@@ -2051,14 +2051,18 @@ fn role_conflict(role: AccountRole, holder: Account) -> DbError {
 ///   [`DbError::AccountParentBankLinked`], `reactivated_number` renseigné :
 ///   la garde de [`guard_parent_change_in_tx`], que la réactivation ne
 ///   traverse pas. Jugé après les désignations de change.
+/// - **Parent de bilan en devise mouvementé** →
+///   [`DbError::AccountForeignParentHasEntries`], après le lien bancaire, comme
+///   à [`create`] : il passerait non imputable avec son solde.
 /// - **Parent désigné compte de gains, de pertes ou de conversion** (Story 37-1,
 ///   revue de code P2, 37-1-CR-P2-7) → [`DbError::AccountIsFxDifferenceAccount`] :
 ///   un compte désigné ne reçoit pas de sous-compte (AC-4), et réactiver un
 ///   enfant archivé lui en rendrait un — l'enfant archivé laisse le parent
 ///   repasser imputable, puis être désigné. La société est lue sur le pool
 ///   (`company_id` immuable), puis `companies` en partage **en premier verrou**
-///   (ordre global ; une désignation tient `companies` en exclusif), le parent en
-///   partage, et ses désignations par les recherches verrouillantes de
+///   (ordre global ; une désignation tient `companies` en exclusif), le parent
+///   `FOR UPDATE` (en partage jusqu'à la revue d'intégration de la PR de
+///   l'Epic 46 : il passe désormais non imputable), et ses désignations par les recherches verrouillantes de
 ///   [`fx_designations_of_in_tx`].
 ///
 /// # `clear_role` — code review 14-3a, décision D4
@@ -2169,6 +2173,14 @@ pub async fn reactivate(
                 },
                 other => other,
             });
+        }
+        // Revue ciblée des correctifs H1 (M-A) : le parent passe non imputable
+        // plus bas ; un compte de bilan en devise qui porte des écritures y
+        // perdrait la réévaluation, sans recours tant que le sous-compte est
+        // actif — refusé comme à la création (37-5-CR-P3-1).
+        if let Err(e) = refuse_foreign_parent_with_entries_in_tx(&mut tx, parent_id).await {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(e);
         }
     }
 
@@ -3189,7 +3201,8 @@ pub async fn refuse_foreign_currency_accounts_in_tx(
 /// fait d'en devenir le parent est refusé. Lecture verrouillante (`LOCK IN
 /// SHARE MODE`), comme les autres lectures de `bank_accounts` du dépôt : une
 /// liaison concurrente est vue, ou s'interbloque avec ce changement, que la
-/// route rejoue.
+/// route rejoue — sauf `PUT /accounts/{id}/reactivate`, qui ne rejoue pas :
+/// l'interblocage y rend un `500` transitoire, sans rien écrire.
 async fn refuse_bank_linked_parent_in_tx(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
