@@ -1,6 +1,6 @@
 # Story 55-3b : ouvrir les justificatifs d'une écriture depuis le Journal (et le Grand livre)
 
-Status: ready-for-dev
+Status: in-progress
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 à D14. Issue : #1607 (point c, comme la
 55-3a ; `enhancement`, P4, Q5). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration.** **Suit la 55-3a**
@@ -585,3 +585,76 @@ d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; gran
   0/0/3/5. Renvoi au **T0** (R-8 à R-10, en tête) ; LOW UI-4 à UI-8 listés en tête.
 - 2026-11-26 (soir) — **D16 versée** (le rapport se charge seul ; un rechargement garde la vue montée) : note à l'AC-5
   et R-11 au T0 ; sans passe de remédiation (fiche au plafond).
+- 2026-11-27 — **T0 du développement** (base `epic/55-navigation` à `4c19bd76d`, 55-1a, 55-1b, 55-2 et 55-3a
+  développées ; lignes citées à cette base). Chaque point renvoyé, la ligne lue et la décision :
+  - **R-1, R-2, R-4, R-5** — caducs (décision du mainteneur du 2026-11-26 : aucun aperçu, aucun bandeau, aucun PDF
+    marqué), comme l'écrit la tête de la fiche. **R-3** — tranché (§ *Gates* : `nextest -p kesh-i18n` et
+    `binary(textes_coherents)` à la clôture, la story touchant `messages.ftl` et le manuel).
+  - **R-6** — `user-manual.tex:1641` « Qui que ce soit qui télécharge le premier --- y compris un utilisateur en
+    consultation ou une clé d'API en lecture --- fige le document » : « depuis sa fiche » est trop étroit. **Défaut
+    retenu, en attente de confirmation du mainteneur** : `reports-nav-documents-not-issued` = « PDF pas encore émis :
+    cette facture n'a pas encore de PDF figé ; son prochain téléchargement, ou son prochain envoi par e-mail, le
+    figera. » (traductions alignées : sans « depuis sa fiche ») ; au manuel, « au premier téléchargement (depuis la
+    fiche ou par l'API) ou au premier envoi ».
+  - **R-7** — `user-manual.tex:1642-1643` (« Une facture validée avant la version v0.12.1 est figée à son prochain
+    téléchargement … le document figé n'est pas forcément celui que le client a reçu ») : « aucune nuance » tient au
+    vocabulaire de Kesh, où « émis » veut dire « figé » ; **signalé au mainteneur** : une facture envoyée avant la
+    v0.12.1 se verra dite « pas encore émise » et promettre un gel qui peut différer du document reçu (le bandeau daté
+    de l'epic « PDF marqués » le dira). Aucun texte de plus.
+  - **R-8** — `@lucide/svelte` rend `stroke="currentColor"` pour toute icône : le constat porte donc sur l'absence
+    de **toute** classe à préfixe de couleur (`text-`, `fill-`, `stroke-`, `bg-`, variantes `hover:`/`focus:`
+    comprises) sur le bouton et sur le SVG (Vitest, motif ouvert et non liste), et l'E2E compare
+    `getComputedStyle(svg).color` à celle du `#numéro` de la même ligne. Défaut retenu.
+  - **R-9, UI-5** — `frontend/playwright.config.ts` sans `headless` ni `channel` : sans tête, Chromium n'a pas de
+    lecteur PDF. Décision : la capture des vignettes se fait **avec tête**, Chromium de Playwright (révision 1217)
+    sous `xvfb-run`, sur un PDF de facture d'une page ; repli `#pagemode=none` / `navpanes=0` seulement si le
+    lecteur montre les vignettes (résultat au Dev Agent Record).
+  - **R-10** — tests complétés : Vitest des trois fermetures (Échap, « Fermer », clic à côté) avec focus rendu ;
+    E2E : clic sur le fond, hauteur par `boundingBox`, `src` sans fragment, couleur (R-8).
+  - **R-11** — `routes/(app)/reports/+page.svelte:1616` `{#if loading && inFlightTab === activeTab}` (premier
+    chargement : la vue est démontée) et `:1625` `<div class={reloadingActive ? 'opacity-60' : ''}
+    data-testid="report-content">` (rechargement : la vue reste montée, le `dto` est remplacé). Décision : la
+    sélection est tenue par deux primitives et l'écriture ouverte est un état d'`EntryDocuments` (identifiant et
+    libellé copiés au clic) ; un Vitest remplace le `dto` par un objet égal, dialogue ouvert, et constate une seule
+    lecture du document et le titre inchangé.
+  - **UI-4** — `DocumentPreview.svelte:92-97` (le `<iframe src={view.url}>`) : référence corrigée.
+  - **UI-6** — `JournalReportView.svelte:63` (`<div class="flex justify-between text-sm">`, ligne d'en-tête sans
+    `data-testid`) : `data-testid="journal-entry-header-<entryId>"` posé ; la mutation de la mesure (remplissage
+    vertical sur le bouton) est jouée sur l'E2E de hauteur (résultat au Dev Agent Record).
+  - **UI-7** — Échap ne ferme pas une fois le focus dans le cadre du PDF (autre document) : dit au manuel et à la
+    note de version.
+  - **UI-8** — bits-ui 2.16.5, `dismissible-layer.svelte:8` `interactOutsideBehavior = "close"` et
+    `escape-layer.svelte:8` `escapeKeydownBehavior = "close"` : le Vitest du clic à côté s'écrit en premier
+    (`pointerdown` puis `pointerup` sur le fond) ; s'il ne peut pas constater la fermeture sous jsdom, l'E2E est le
+    constat et le Vitest est retiré (dit au Dev Agent Record).
+  - **Hauteur (Vv2p6, Vv2p7-5)** — `DocumentPreview.svelte:92-97` : `class="h-[75vh] w-full"`, et le précédent
+    `LinkSettlementModal.svelte:201` `max-h-[85vh] overflow-y-auto` : titre + liste + cadre de 75vh + « Fermer »
+    dépasseraient 85vh. Décision : `DocumentPreview` inchangé (seule `errorMessage` s'ajoute) ; le dialogue borne la
+    hauteur du cadre par une variante d'arbre (`[&_iframe]:h-[…]`, plus basse avec la liste), la liste défile seule
+    au-delà de quelques éléments ; constat E2E : hauteur du dialogue ≤ 85 % de la fenêtre et aucun défilement
+    interne (`scrollHeight ≤ clientHeight`).
+  - **Fichier d'epic** — `helpers/api-fixtures.ts` non touché : les aides du règlement groupé vivent dans le spec neuf.
+  - **Une instance du dialogue par vue** — tranché (fiche) : `EntryDocuments.svelte` rendu une fois par vue, ouvert
+    par `openFor(entryId, label, élément)` ; l'icône de chaque ligne est un snippet exporté du même fichier.
+  - **Erreur « vide »** — classe `EmptyDocumentError` (module `entry-documents.ts`), reconnue par `errorMessage`
+    **avant** `pdfErrorMessage`. **Une clé** pour le libellé de l'icône et le titre, qui portent le même texte :
+    `reports-nav-documents-title` (« Justificatifs de l'écriture n° { $number } ») ; `reports-nav-documents-button`
+    n'est pas créée. Défaut retenu, en attente de confirmation du mainteneur.
+  - **`pdfErrorMessage` (V3-6)** — `pdf-error.ts:39-41` : hors `ApiError`, son texte générique dit
+    « téléchargement » ; `errorMessage` ne l'appelle donc que pour une `ApiError` (le reste retombe sur le texte de
+    `DocumentPreview`, « Le document n'a pas pu être affiché »).
+  - **E2E Consultation** — exigé (patron `reports.spec.ts:437-460`) : un utilisateur *Consultation* ouvre le PDF figé
+    d'une facture depuis le Journal. Constat par construction : routes sous « tout rôle authentifié »,
+    `lib.rs:1296` (`/invoices/{id}/pdf`), `:1309` (`/credit-notes/{id}/pdf`), `:1325`
+    (`/supplier-invoices/{id}/source-document`).
+  - **LOW V3-1 à V3-7** — V3-1 caduc (D12 : les phrases du figement restent justes) ; V3-2 repris (décor à montant
+    exact, sans compte désigné, aides neuves dans le spec) ; V3-3 tracé (*Issues à ouvrir*) ; V3-4 repris (mock de
+    `$app/navigation`, `page.url()` avant et après à l'E2E) ; V3-5 repris (E2E Consultation) ; V3-6 ci-dessus ; V3-7
+    repris (le commentaire « Lettrage est la dernière » de `GeneralLedgerView.svelte:36-39` corrigé).
+  - **Vv2p6-1, Vv2p6-2** — caducs depuis D12 (règle de réécriture des phrases du figement retirée) ; **Vv2p6-3** —
+    `admin-manual.tex` non touché (aucune phrase n'y devient fausse), `focus-scope.svelte.js:72-90` lu (focus rendu par
+    défaut, d'où `onCloseAutoFocus` avec `preventDefault()` et le focus rendu explicitement).
+  - **Vv2p7-3** caduc ; **Vv2p7-4** repris (le message suit l'élément choisi) ; **Vv2p7-5** repris (hauteur) ;
+    **Vv2p7-6** sans objet.
+  - **Manuel, constat de l'AC-9** — `grep -cE "fig[ée]|refig"` : 56 lignes dans `user-manual.tex`, 21 dans
+    `admin-manual.tex`, lues à cette base ; aucune ne dit qu'une ouverture fige.
