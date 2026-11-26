@@ -231,7 +231,7 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 | Contacts | `GET /contacts`, `GET /contacts/{id}` | `POST /contacts`, … |
 | Produits | `GET /products`, `GET /products/{id}` | `POST /products`, … |
 | Factures | `GET /invoices`, `GET /invoices/{id}` | `POST /invoices`, `PUT /invoices/{id}`, … ² |
-| Écritures comptables | `GET /journal-entries`, `GET /journal-entries/{id}` | `POST /journal-entries` (refuse une écriture identique à une écriture du même jour, § « Saisir une écriture »), `PUT /journal-entries/{id}` ⁴, `DELETE /journal-entries/{id}` ⁴, `POST /journal-entries/conversions` (conversion entre devises, § « Écritures en devise »), … |
+| Écritures comptables | `GET /journal-entries`, `GET /journal-entries/{id}` | `POST /journal-entries` (refuse une écriture identique à une écriture de la même date, § « Saisir une écriture »), `PUT /journal-entries/{id}` ⁴, `DELETE /journal-entries/{id}` ⁴, `POST /journal-entries/conversions` (conversion entre devises, § « Écritures en devise »), … |
 | Lettrages | `GET /letterings/{key}` ⁵ | `POST /letterings` ⁵, `DELETE /letterings/{key}` ⁵ |
 | Postes ouverts et rapprochements proposés | `GET /accounts/{id}/open-items` ⁶, `GET /accounts/{id}/lettering-proposals` ⁶ | — (accepter une proposition : `POST /letterings`) |
 | Taux de TVA | `GET /vat-rates` | — ¹ |
