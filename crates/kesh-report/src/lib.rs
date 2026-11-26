@@ -12,12 +12,21 @@
 //! Story 9-2a — Sérialiseurs export PDF & CSV :
 //! - [`pdf`] — 4 fonctions `render_*_pdf` (printpdf 0.7, Helvetica builtin).
 //! - [`csv`] — 4 fonctions `render_*_csv` (csv 1.3, BOM UTF-8, `;` delimiter, CRLF).
+//!
+//! Story 46-3 — le bilan et le compte de résultat **par groupes**
+//! (`render_grouped_*`), et [`texte_pdf`], l'extracteur de texte PDF des tests.
+//! Story 46-6b — la balance des comptes par groupes, par les mêmes lignes
+//! ([`render_grouped_trial_balance_pdf`](pdf::render_grouped_trial_balance_pdf),
+//! [`render_grouped_trial_balance_csv`](csv::render_grouped_trial_balance_csv)).
 
 pub mod aged_receivables;
 pub mod balance_sheet;
 pub mod csv;
 pub mod errors;
+#[cfg(test)]
+mod essai_groupes;
 pub mod general_ledger;
+pub mod groupes;
 pub mod homepage_summary;
 pub mod income_statement;
 pub mod journal_report;
@@ -25,6 +34,7 @@ pub mod opening;
 pub mod pdf;
 pub mod period;
 pub mod project_report;
+pub mod texte_pdf;
 pub mod trial_balance;
 pub mod vat_report;
 
@@ -37,6 +47,10 @@ pub use errors::ReportError;
 pub use general_ledger::{
     GeneralLedger, LedgerLine, LedgerOptions, LedgerPeriod, LedgerSection, MAX_LEDGER_LIMIT,
     generate as generate_general_ledger,
+};
+pub use groupes::{
+    ArbreComptes, AvecGroupes, Grouping, LigneBalanceGroupee, LigneRapport, NiveauDetail,
+    OptionsGroupes, PositionSousTotal, SectionsBilan, SectionsResultat,
 };
 pub use homepage_summary::{HomepageSummary, generate as generate_homepage_summary};
 pub use income_statement::{IncomeStatement, generate as generate_income_statement};
@@ -57,6 +71,17 @@ pub use csv::{
 pub use pdf::{
     PdfContext, SectionLabels, render_balance_sheet_pdf, render_income_statement_pdf,
     render_journal_report_pdf, render_trial_balance_pdf,
+};
+
+// Story 46-3 — exports du bilan et du compte de résultat par groupes ;
+// Story 46-6b — de la balance.
+pub use csv::{
+    render_grouped_balance_sheet_csv, render_grouped_income_statement_csv,
+    render_grouped_trial_balance_csv,
+};
+pub use pdf::{
+    render_grouped_balance_sheet_pdf, render_grouped_income_statement_pdf,
+    render_grouped_trial_balance_pdf,
 };
 
 // Story 11-2 — re-exports rapport TVA

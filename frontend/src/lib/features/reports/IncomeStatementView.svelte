@@ -1,15 +1,24 @@
 <script lang="ts">
 	// Story 9-1 — Vue Compte de résultat.
+	// Story 46-2 — avec `groupedRows`, Produits et Charges rendent leurs lignes
+	// groupées (lien vers le grand livre sur les comptes, AC-4) ; sans, la vue à
+	// plat d'avant, inchangée.
 	import Big from 'big.js';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import AccountCurrencyBalance from './AccountCurrencyBalance.svelte';
+	import GroupedReportRows, { BALANCE_COLUMNS } from './GroupedReportRows.svelte';
 	import { formatReportAmount, formatSwissDate, isReportEmpty } from './reports.api';
-	import type { IncomeStatementDto } from './reports.types';
+	import type { GroupedRow, IncomeStatementDto } from './reports.types';
 
 	interface Props {
 		dto: IncomeStatementDto;
+		/** Story 46-2 — clic sur l'accordéon d'un groupe (vue groupée seulement). */
+		onToggleGroup?: (row: GroupedRow) => void;
 	}
-	let { dto }: Props = $props();
+	let { dto, onToggleGroup = () => {} }: Props = $props();
+
+	let grouped = $derived(dto.groupedRows && dto.grouping ? dto.groupedRows : null);
+	let subtotalPosition = $derived(dto.grouping?.subtotalPosition ?? 'header');
 	let empty = $derived(isReportEmpty('income-statement', dto));
 
 	const fmt = formatReportAmount;
@@ -55,6 +64,15 @@
 						</tr>
 					</thead>
 					<tbody>
+						{#if grouped}
+							<GroupedReportRows
+								rows={grouped.revenues}
+								{subtotalPosition}
+								columns={BALANCE_COLUMNS}
+								period={dto.period}
+								onToggle={onToggleGroup}
+							/>
+						{:else}
 						{#each dto.revenues as r (r.accountId)}
 							<tr>
 								<td class="px-2 py-1 font-mono">{r.accountNumber}</td>
@@ -62,6 +80,7 @@
 								<td class="px-2 py-1 text-right font-mono">{fmt(r.balance)}</td>
 							</tr>
 						{/each}
+						{/if}
 					</tbody>
 					<tfoot>
 						<tr class="border-t font-semibold">
@@ -85,6 +104,15 @@
 						</tr>
 					</thead>
 					<tbody>
+						{#if grouped}
+							<GroupedReportRows
+								rows={grouped.expenses}
+								{subtotalPosition}
+								columns={BALANCE_COLUMNS}
+								period={dto.period}
+								onToggle={onToggleGroup}
+							/>
+						{:else}
 						{#each dto.expenses as e (e.accountId)}
 							<tr>
 								<td class="px-2 py-1 font-mono">{e.accountNumber}</td>
@@ -92,6 +120,7 @@
 								<td class="px-2 py-1 text-right font-mono">{fmt(e.balance)}</td>
 							</tr>
 						{/each}
+						{/if}
 					</tbody>
 					<tfoot>
 						<tr class="border-t font-semibold">

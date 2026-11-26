@@ -444,6 +444,20 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  *
  * **Fusion d'origin/main dans epic/50 (2026-11-24)** : 140 (PayPal) + 2 (48-12b) = **142**, `conforme`
  * 119 + 2 = **121**, provisoires, à confirmer par la garde.
+ *
+ * **130 → 131** (Story 46-2) : `toggleLabel` (`reports/GroupedReportRows.svelte`, tout par
+ * `i18nMsg`) ; `ecartee` **21**, `conforme` **109 → 110**, relevés par la garde
+ * (`kesh-gate-logs/s46-2/front-test-unit.log`), non additionnés.
+ *
+ * **131 → 132** (Story 46-6b) : `fxText` (`reports/TrialBalanceView.svelte`, tout par
+ * `i18nMsg`), la seconde ligne en devise d'un compte ou d'un groupe de la balance, sortie du
+ * gabarit pour servir les deux vues ; `ecartee` **21**, `conforme` **110 → 111**, relevés par
+ * la garde (`kesh-gate-logs/s46-6b/front-test-unit.log`), non additionnés.
+ *
+ * **132 → 135** (Story 46-5b) : `typeLabel` et `proposalMessageText`
+ * (`routes/(app)/accounts/groups/messages.ts`), `kindLabel` (`accounts/groups/+page.svelte`),
+ * tout par `i18nMsg` ; `ecartee` **21**, `conforme` **111 → 114**, relevés par la garde
+ * (« expected 135 to be 132 »), non additionnés.
  */
 // **138 → 145** (Story 40-7d) : les libellés de l'écran Stripe (`stripe/stripe-labels.ts`) et les
 // libellés communs aux prestataires (`provider/provider-labels.ts`), tous par `i18nMsg` ;
@@ -469,7 +483,15 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
 // `conforme` **139 → 140**, relevés par la garde (« expected 162 to be 161 »).
 // **162 → 163** (correctif du frais d'un paiement groupé Wise) : `cardGroupFeeAccountMissingLabel`
 // (`wise/wise-labels.ts`, par `i18nMsg`) ; `conforme` **140 → 141**, relevés par la garde (« expected 163 to be 162 »).
-const CANDIDATES_ATTENDUES = 163;
+
+// **149 → 151** (Epic 46 reposé sur main à a914c4823, branche pr/46-rapports-groupes-v2) : `toggleLabel`
+// (46-2) et `fxText` (46-6b) ; `conforme` **128 → 130**, confirmés par la garde (`kesh-gate-logs/s46-pr/front-vitest-a.log`).
+// **151 → 154** (Story 46-5 ajoutée à la branche pr/46-rapports-groupes-v2, 2026-11-26) : `typeLabel`,
+// `proposalMessageText` et `kindLabel` (46-5b) ; `conforme` **130 → 133**, à confirmer par la garde.
+// **168** (fusion anticipée de pr/39-wise-v2 dans pr/46-rapports-groupes-v2, 2026-11-26) : 163 (pr/39) + 5
+// (Epic 46 : `toggleLabel`, `fxText`, `typeLabel`, `proposalMessageText`, `kindLabel`) ; `conforme` **146**
+// (141 + 5), `ecartee` **22** ; confirmés par la garde (`kesh-gate-logs/s46-pr2/compteurs-1.log`).
+const CANDIDATES_ATTENDUES = 168;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -986,7 +1008,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 22, conforme: 141 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 22, conforme: 146 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

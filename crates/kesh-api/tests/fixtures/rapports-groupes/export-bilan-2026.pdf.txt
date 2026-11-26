@@ -1,0 +1,22 @@
+Société PME 46-3
+Bilan
+Période : 01.01.2026 31.12.2026
+Devise CHF
+Actifs
+1020 Banque 20'433.00
+1025 Banque USD USD 1'500.00 1'367.00
+1100 Débiteurs 3'000.00
+1520 Informatique 4'000.00
+Total actifs 28'800.00
+Passifs
+2000 Créanciers 3'000.00
+2400 Emprunts bancaires 4'000.00
+Total passifs 7'000.00
+Capitaux propres
+Capital
+2800 Capital social 20'000.00
+Résultat reporté (calculé) 4'050.00
+Résultat de l'exercice -2'250.00
+Total capitaux propres 21'800.00
+Total passifs + Capitaux propres 28'800.00
+page 1 / 1
