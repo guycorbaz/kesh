@@ -356,7 +356,7 @@ l'utilisateur dans le cas courant : même message de refus. Aucune migration. `r
 - **Q1 — tranchée OUI (2026-11-25), sur la description exacte de D3** : le changement d'ordre des verdicts est accepté (`ENTRY_UNBALANCED` et les
   `FX_*` jugés par `accounting::validate`, au lieu de `VALIDATION_ERROR` ; statut 400 inchangé).
 - **Q2 — tracée** : issue **#1580** (helper d'attente `PROCESSLIST`, migration vers `kesh_db::test_fixtures::attendre_une_requete_en_cours`).
-- **W10 — issue à ouvrir** par l'orchestrateur (« on trace toujours », CLAUDE.md § *Priorités des défauts*). Texte proposé :
+- **W10 — issue ouverte : #1590** (ouverte par l'orchestrateur) (« on trace toujours », CLAUDE.md § *Priorités des défauts*). Texte proposé :
   **Titre** : `La modification de l'écriture d'ouverture peut y poser une ligne de compte de résultat`
   **Labels** : `enhancement`, `P3`, `triage` (le Project Lead peut la requalifier `bug` P2 : la génération refuse ce que la modification admet).
   **Corps** : `POST /api/v1/opening-balances` refuse les comptes de produits et de charges (le bilan d'ouverture ne touche que des comptes de
@@ -379,7 +379,7 @@ l'utilisateur dans le cas courant : même message de refus. Aucune migration. `r
    `count_by_company(` dans le corps masqué de `create_opening_entry`. Une lecture placée sous une branche ou avant un retour anticipé passerait la garde sans s'exécuter sur tous les
    chemins. Le cas n'existe pas dans le code actuel (une occurrence de chaque). La doc du test dit « les noms des deux appels » mais pas cette limite de flux. Correction : une phrase à la doc
    du test (ordre textuel, non ordre d'exécution), ou une garde de flux. Hors de la story 53-3 (`refs #513`).
-3. Déjà prêtes : plan de `validate_lines_accounts_in_tx` (`kesh-gate-logs/e533/issue-plan-validate.md`) ; W10 (§ *Décisions du Project Lead*).
+3. Déjà ouvertes : plan de `validate_lines_accounts_in_tx` : **#1591** (`kesh-gate-logs/e533/issue-plan-validate.md`) ; W10 : **#1590** (§ *Décisions du Project Lead*).
 
 ## Dérogation règle de splitting
 
@@ -471,8 +471,8 @@ calculer la mutation et l'avait tronqué ; restauré par `git checkout` et `touc
 
 Voir § T0. Lecture citée : requête neuve `type = range`, `key = PRIMARY`, `rows = 4`, sans `Using filesort` (`t0-mesures.txt`, `t0-mesures-bis.txt`) ; un compte non visé en
 `FOR UPDATE NOWAIT` réussit, un compte visé échoue en 1205, l'`INSERT` réussit (sonde (c) faite, puisque le plan de `validate` a été vu en `ALL` une fois).
-**Issue à ouvrir (AC-6 ii)** : le plan de `validate_lines_accounts_in_tx` dépend des statistiques (`ALL` mesuré sur statistiques périmées, `range` après `ANALYZE`) ; texte prêt :
-`kesh-gate-logs/e533/issue-plan-validate.md`. Issue W10 : texte au § *Décisions du Project Lead*. Les deux, à ouvrir par l'orchestrateur.
+**Issue (AC-6 ii), ouverte : #1591** : le plan de `validate_lines_accounts_in_tx` dépend des statistiques (`ALL` mesuré sur statistiques périmées, `range` après `ANALYZE`) ; texte prêt :
+`kesh-gate-logs/e533/issue-plan-validate.md`. Issue W10 : **#1590** (texte au § *Décisions du Project Lead*).
 
 ### Recontrôles
 
@@ -517,5 +517,5 @@ Voir § T0. Lecture citée : requête neuve `type = range`, `key = PRIMARY`, `ro
   Tendance de la revue : P1 0/0/1/6 → P2 0/0/0/4. **Modèles** : Opus (validations P1, P3 ; revue P1), Sonnet (fiche, validations P2, P4, développement), Haiku (revue P2 ciblée). **Reclassements** : aucun.
   **Incidents** : (1) le premier pilote de mutations a tronqué `journal_entries.rs` (motif périmé, fichier ouvert avant le calcul) — restauré, rien de commité muté ; (2) la restauration de M10 par `git checkout`
   a effacé des doc-comments non commités de `journal_entries.rs`, réécrits ensuite (le gate complet a donc tourné sans eux ; fmt, clippy et gate ciblé couvrent la réécriture). Retenu : restaurer une mutation par copie du
-  fichier, jamais par `git checkout` sur un fichier portant du travail non commité ; commiter avant de lancer un pilote qui modifie le worktree. **Issues** : #1580 (Q2, assistant d'attente) ; à ouvrir : plan de
-  `validate_lines_accounts_in_tx`, W10, P2-1, P2-3.
+  fichier, jamais par `git checkout` sur un fichier portant du travail non commité ; commiter avant de lancer un pilote qui modifie le worktree. **Issues** : #1580 (Q2, assistant d'attente) ; ouvertes : #1591 (plan de
+  `validate_lines_accounts_in_tx`), #1590 (W10) ; à ouvrir : P2-1, P2-3.
