@@ -3,7 +3,7 @@
 Status: ready-for-dev
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 (Q1), D10, D12 (afficher n'est pas figer :
-sans aperçu dans l'Epic 55), D14 (fiche de la facture, Q8). Issue : #À-VENIR (`enhancement`, **P4**, Q5 ; point c,
+sans aperçu dans l'Epic 55), D14 (fiche de la facture, Q8). Issue : #1607 (`enhancement`, **P4**, Q5 ; point c,
 convenu au téléphone le 2026-11-25 entre l'utilisateur et le mainteneur).
 Release : la prochaine planifiée après la 0.20.0. **Aucune migration. ⚠️ Backend** (`kesh-report`, `kesh-api`) : un
 booléen additif dans la réponse JSON du journal et du grand livre, et **une route de lecture minimale** qui liste les
@@ -189,8 +189,7 @@ n'ajoute **aucune route de PDF** et ne touche ni `issued_invoice_pdf.rs`, ni `in
 ### Limite connue et évolution : un PDF produit hors de Kesh
 
 Un jour, une facture client créée par l'API pourra porter un **PDF produit hors de Kesh** ; c'est lui qui devra
-s'afficher, à la place du PDF que Kesh génère. **Non livré ici** (issue `enhancement`, évolution : texte dans
-`kesh-gate-logs/s55-decisions/issues-a-envoyer.md`). Le modèle ne l'empêche pas : un élément de la liste
+s'afficher, à la place du PDF que Kesh génère. **Non livré ici** (issue #1609, `enhancement`, évolution, hors de l'epic). Le modèle ne l'empêche pas : un élément de la liste
 désigne la **facture** (`kind`, `id`), non un fichier ; c'est la route de lecture qui choisit le fichier servi ; et
 `pdfStatus` est une énumération ouverte, à laquelle une valeur (`external`) s'ajoutera, que l'écran d'aujourd'hui traite
 déjà (aucun bandeau). Issue `enhancement` à ouvrir (section *Issues à ouvrir*).
@@ -335,7 +334,7 @@ Aucune : la story ne change ni un écran ni un PDF (la recette du PDF marqué su
 API : les écritures du journal et les lignes du grand livre portent `hasDocuments` (vrai quand l'écriture a au moins un
 justificatif : facture, avoir, document de facture fournisseur ; absent sinon) ; `GET /journal-entries/{id}/documents` rend
 la liste des justificatifs d'une écriture, avec l'état du PDF d'une facture (`pdfStatus` : `frozen` ou `notFrozen`) ;
-`GET /invoices/{id}/pdf` est inchangé ; exports PDF et CSV inchangés. (refs #À-VENIR)
+`GET /invoices/{id}/pdf` est inchangé ; exports PDF et CSV inchangés. (refs #1607)
 
 ## Dev Notes
 
@@ -565,8 +564,7 @@ de code.
 
 - (`enhancement`, évolution) Une facture client créée par l'API pourra porter un PDF produit hors de Kesh, qui **est** la
   pièce émise (copié, sauvegardé, figé, jamais régénéré ; ni second PDF ni QR-facture de Kesh ; « lien seulement » sur
-  demande) ; le modèle de la liste ne l'empêche pas (*Limite connue et évolution*) (Epic 55, story 55-3a). Texte prêt :
-  `kesh-gate-logs/s55-decisions/issues-a-envoyer.md`.
+  demande) ; le modèle de la liste ne l'empêche pas (*Limite connue et évolution*) (Epic 55, story 55-3a). **Ouverte : #1609.**
 - (LOW, `enhancement`) Le détail d'une écriture de règlement fournisseur groupé ne montre qu'un document
   (`find_source_document_of_entry`, `LIMIT 1`) quand le journal les montre tous.
 

@@ -2,7 +2,7 @@
 
 Status: ready-for-dev
 
-Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 à D14. Issue : #À-VENIR (point c, comme la
+Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 à D14. Issue : #1607 (point c, comme la
 55-3a ; `enhancement`, P4, Q5). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration.** **Suit la 55-3a**
 (booléen `hasDocuments`, route `GET /journal-entries/{id}/documents`, `pdfStatus`), **la 55-2** (mêmes vues) **et la 55-1a** (URL, mémoire des rapports).
 
@@ -392,7 +392,7 @@ des specs des Rapports et de la navigation, au dernier commit de code ; la story
 de la facture, de l'avoir, document de la facture fournisseur ; pour un règlement, la ou les factures réglées. Avec un
 seul justificatif, il s'ouvre directement ; avec plusieurs, une liste en haut permet de choisir. Afficher ainsi une
 facture **ne la fige pas** : une facture figée s'ouvre par son PDF figé ; une facture dont le PDF n'est pas encore émis
-est signalée « PDF pas encore émis », sans aperçu. (refs #À-VENIR)
+est signalée « PDF pas encore émis », sans aperçu. (refs #1607)
 
 ## Dev Notes
 

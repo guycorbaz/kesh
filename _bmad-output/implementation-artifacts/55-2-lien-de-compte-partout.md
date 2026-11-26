@@ -3,8 +3,8 @@
 Status: review
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D6, D7 (Q3, acceptée par le mainteneur le
-2026-11-25), D8. Issues : #À-VENIR (`enhancement`,
-P4, point a) ; #À-VENIR (`bug`, P3, point d : sélecteur d'exercice du Grand livre, AC-11 à AC-15). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration. Suit la 55-1a**
+2026-11-25), D8. Issues : #1603 (`enhancement`,
+P4, point a) ; #1608 (`bug`, P3, point d : sélecteur d'exercice du Grand livre, AC-11 à AC-15). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration. Suit la 55-1a**
 (l'URL du grand livre et le Retour).
 
 ## ⚠️ Points renvoyés au développement (validation P6)
@@ -316,7 +316,7 @@ de la navigation au dernier commit de code ; suite complète et `scripts/gate-ci
 Grand livre et, pour la TVA, les comptes de TVA due et d'impôt préalable. Le Grand livre a le même sélecteur d'exercice que les
 autres rapports ; des dates choisies à la main franchissent la borne (« Plusieurs », « Hors exercice ») ; ses dates sont
 pré-remplies, et *Générer* utilisable, en arrivant d'un autre
-onglet. Tous les liens sont soulignés d'un trait léger, pour se voir sans la couleur. (refs #À-VENIR, #À-VENIR)
+onglet. Tous les liens sont soulignés d'un trait léger, pour se voir sans la couleur. (refs #1603, #1608)
 
 ## Dev Notes
 

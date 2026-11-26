@@ -2,7 +2,7 @@
 
 Status: review
 
-Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D4. Issue : #À-VENIR (`bug`, P3, point b, comme
+Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D4. Issue : #1604 (`bug`, P3, point b, comme
 la 55-1a). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration.** **Suit la 55-1a**
 (le modèle d'URL, ses deux sens, ses clés) ; **base : la PR de l'Epic 46**, qui crée la présentation.
 
@@ -244,7 +244,7 @@ de la navigation au dernier commit de code ; suite complète et `scripts/gate-ci
 
 *Rapports* : l'adresse d'un bilan, d'un compte de résultat ou d'une balance porte aussi sa présentation (hiérarchie,
 niveau, sous-totaux, groupes ouverts ou fermés à la main) ; elle prime sur celle que retient le navigateur, et ouvrir un
-lien ou revenir par *Retour* remplace la présentation retenue. (refs #À-VENIR)
+lien ou revenir par *Retour* remplace la présentation retenue. (refs #1604)
 
 ## Dev Notes
 

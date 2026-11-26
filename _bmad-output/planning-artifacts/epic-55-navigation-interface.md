@@ -32,11 +32,11 @@ liens (D17) dans la 55-2, qui gagne un balayage mécanique des liens de l'applic
 
 | Point | Type | Priorité | Issue |
 |---|---|---|---|
-| a) Liens de compte partout dans les Rapports | `enhancement` | P4 | #À-VENIR |
-| b) Retour du navigateur, état des Rapports dans l'URL | `bug` | P3 | #À-VENIR |
-| c) Justificatifs (PDF) d'une écriture depuis le Journal | `enhancement` | P4 (Q5, décidé le 2026-11-25) | #À-VENIR (convenue au téléphone le 2026-11-25) |
-| d) Grand livre sans sélecteur d'exercice (*Générer* inutilisable en arrivant d'un autre onglet) | `bug` | P3 | #À-VENIR ; traité par la 55-2 |
-| e) PDF d'une facture produit hors de Kesh (évolution, **non livrée** par l'epic) | `enhancement` | — | #À-VENIR ; ni livrable ni fermée par l'epic |
+| a) Liens de compte partout dans les Rapports | `enhancement` | P4 | #1603 |
+| b) Retour du navigateur, état des Rapports dans l'URL | `bug` | P3 | #1604 |
+| c) Justificatifs (PDF) d'une écriture depuis le Journal | `enhancement` | P4 (Q5, décidé le 2026-11-25) | #1607 (convenue au téléphone le 2026-11-25) |
+| d) Grand livre sans sélecteur d'exercice (*Générer* inutilisable en arrivant d'un autre onglet) | `bug` | P3 | #1608 ; traité par la 55-2 |
+| e) PDF d'une facture produit hors de Kesh (évolution, **non livrée** par l'epic) | `enhancement` | — | #1609 ; ni livrable ni fermée par l'epic |
 
 Textes des cinq issues, prêts à ouvrir : `kesh-gate-logs/s55-decisions/issues-a-envoyer.md` (celui de d) y est repris de
 `kesh-gate-logs/s55-kickoff/issues-a-ouvrir.md`).

@@ -2,7 +2,7 @@
 
 Status: review
 
-Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D1 à D3 (réponse de l'utilisateur du 2026-11-25, AC-13), D5 (D4 : 55-1b). Issue : #À-VENIR (`bug`, P3, point b).
+Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D1 à D3 (réponse de l'utilisateur du 2026-11-25, AC-13), D5 (D4 : 55-1b). Issue : #1604 (`bug`, P3, point b).
 Release : la prochaine planifiée après la 0.20.0 (numéro fixé par le mainteneur). **Frontend seulement, aucune migration.**
 **Base : la PR de l'Epic 46** (`pr/46-rapports-groupes`, `511e61d54` au kickoff), reprise dans `epic/55-navigation` avant T1.
 
@@ -686,7 +686,7 @@ toujours remplis, « Exercice entier » remet les bornes, « Plusieurs » ou « 
 sortent d'un exercice, et l'en-tête du rapport dit la période réelle. Le bouton *Générer* disparaît : le rapport se
 charge à l'ouverture, au choix d'un exercice, en quittant les dates ou par Entrée, et reste affiché, grisé, pendant qu'il
 se recharge ; seul le Grand livre de tous les comptes garde un bouton. Les exports portent sur le rapport affiché.
-(refs #À-VENIR)
+(refs #1604)
 
 ## Dev Notes
 
