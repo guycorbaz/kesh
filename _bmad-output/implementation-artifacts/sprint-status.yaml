@@ -1298,7 +1298,7 @@ development_status:
   epic-58: in-progress
   58-1-numero-facture-textes-tests: backlog  # 8 issues (#1115, #1117-#1120, #1122-#1124) ; usage réel du Project Lead
   58-2-comptes-designes-tests-revue: backlog  # 10 issues (#592, #732, #736, #1060-#1066, #1127, #1433)
-  58-3-manuel-guide-api-ecarts: backlog  # 10 issues ; documentation seule
+  58-3-manuel-guide-api-ecarts: drafted  # 2026-11-26 fiche (Sonnet) ; validation P1 (Opus) à lancer ; 10 issues ; documentation seule (un seul fichier de code : post_restore.rs, chaînes) ; reprend main après la release 0.20.0
   58-4-textes-interface-i18n: backlog  # 10 issues ; catalogues des quatre locales
   58-5-cosmetique-ecrans: backlog  # 10 issues ; recette visuelle
   58-6-tests-frontend-reconciliation: backlog  # 10 issues
