@@ -1289,7 +1289,7 @@ const ATTENDU = {
 	// `kesh-gate-logs/s46-pr2/garde-vitest-1.log`) — `numberBankLinked` et `parentBankLinked` (`accounts/groups/messages.ts`).
 	// Fusion de pr/46-rapports-groupes-v2 (ecf6cf835, main avec les Epics 39 et 40, garde de la 46-5) dans
 	// epic/55-navigation (2026-11-27) : les deux côtés gardés ; 3958 (pr/46) + 7 (Epic 55, 3789 → 3796 de son côté)
-	// = **3965**, provisoire, à confirmer par la garde.
+	// = **3965**, confirmé par la garde (`kesh-gate-logs/s55-revue/fusion/gardes-1.log`).
 	sitesTotal: 3965,
 	sitesNonResolus: 31,
 	relais: 6,
