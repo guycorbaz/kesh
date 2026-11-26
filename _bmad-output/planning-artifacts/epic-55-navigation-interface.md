@@ -4,10 +4,11 @@
 Branche `epic/55-navigation`, partie de `origin/main` à `1e23edb55` pour le kickoff (fichier d'epic et fiches seulement,
 aucun code). **Le développement repart de la PR de l'Epic 46, une fois celle-ci poussée** (§ *Recouvrement avec l'Epic 46*) :
 la branche reprend alors cette base avant la première ligne de code de la 55-1a.
+*(Annoté le 2026-11-26 : la PR de l'Epic 46, #1600, est fusionnée dans `main` par squash, `56d47b2cc` ; la branche a repris `main` à cette tête.)*
 
 **Release visée** : la **prochaine release planifiée après la 0.20.0** — numéro et milestone **fixés par le mainteneur**
 (`CLAUDE.md` § *Numérotation des versions* : un numéro n'est acquis qu'au tag). Contrainte d'ordre : l'Epic 55 part de
-l'Epic 46 (prévision 0.21.0) ; il ne peut pas sortir avant lui, et sort au plus tôt avec lui ou dans la release suivante.
+l'Epic 46 (fusionné dans `main` le 2026-11-26, `56d47b2cc`, documenté « depuis la v0.20.0 ») ; il ne peut pas sortir avant lui, et sort au plus tôt avec lui ou dans la release suivante.
 Un epic = une release.
 
 **Migration** : aucune. **Backend** : **oui, pour la seule 55-3a** (voir § *Backend*), ajout d'un booléen (`hasDocuments`) aux
