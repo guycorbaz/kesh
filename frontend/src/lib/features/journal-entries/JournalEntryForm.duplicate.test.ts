@@ -385,6 +385,49 @@ describe('JournalEntryForm — J2a et relevé C', () => {
 		expect(createMock.mock.calls[0][0].lines[0].foreign.rate).toBe('0.9');
 	});
 
+	it('AC-11 (b, A1) : une saisie qui reste équilibrée quand le cours change part directement de J2a en J2b, avec le cours mis à jour (37-3b-CR-P1-5)', async () => {
+		const { cache, resolutions } = cacheDifferee();
+		const USD2 = account(11, '1023', { currency: 'USD' });
+		render(JournalEntryForm, {
+			props: {
+				accounts: [CHF1, USD, USD2, GAIN, LOSS],
+				accountsLoadError: false,
+				multiCurrency: true,
+				companyFx: { fxGainAccountId: 31, fxLossAccountId: 32 },
+				rateLookup: cache,
+				onSuccess,
+				onCancel
+			}
+		});
+		await fireEvent.input(document.getElementById('entry-description')!, {
+			target: { value: 'Virement USD' }
+		});
+		await pick(0, '1022');
+		await waitFor(() => expect(val('journal-entry-line-fx-rate-0')).toBe('0.8846'));
+		await fireEvent.input(screen.getByTestId('journal-entry-line-fx-debit-0'), { target: { value: '100' } });
+		await pick(1, '1023');
+		await waitFor(() => expect(val('journal-entry-line-fx-rate-1')).toBe('0.8846'));
+		await fireEvent.input(screen.getByTestId('journal-entry-line-fx-credit-1'), { target: { value: '100' } });
+
+		// Autre mois, puis « Valider » aussitôt : J2a, rien n'est parti.
+		await fireEvent.input(document.getElementById('entry-date')!, { target: { value: '2026-04-10' } });
+		createMock.mockResolvedValueOnce({});
+		await fireEvent.click(valider());
+		await tick();
+		expect(createMock).not.toHaveBeenCalled();
+		expect(resolutions).toHaveLength(1);
+
+		// La recherche se résout : les deux lignes prennent le cours d'avril, restent
+		// équilibrées, et le PREMIER envoi — formé après l'attente — le porte.
+		resolutions[0]('0.9');
+		await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
+		const corps = createMock.mock.calls[0][0];
+		expect(corps.lines[0].foreign.rate).toBe('0.9');
+		expect(corps.lines[1].foreign.rate).toBe('0.9');
+		expect(corps.lines[0].debit).toBe('90.00');
+		expect(corps.lines[1].credit).toBe('90.00');
+	});
+
 	it('relevé C1 (câblage, M25) : la résolution d’une recherche consulte `canWriteEntry`', async () => {
 		const spy = vi.spyOn(submitState, 'canWriteEntry').mockReturnValue(false);
 		const { cache, lookup } = cacheDifferee();

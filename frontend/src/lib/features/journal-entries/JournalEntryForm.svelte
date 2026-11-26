@@ -307,10 +307,10 @@
 	$effect(() => {
 		const d = entryDate;
 		if (d === untrack(() => lastDate)) return;
-		lastDate = d;
 		// Story 53-1a (relevé C2) : hors des états de saisie, la date ne programme
-		// aucune recherche.
+		// aucune recherche (et n'est pas marquée vue : revue P1, E3).
 		if (!canWriteEntry(untrack(() => phase))) return;
+		lastDate = d;
 		refreshOnDate();
 	});
 	$effect(() => () => refreshOnDate.cancel());
@@ -574,6 +574,10 @@
 
 	/** Applique les lignes générées par l'assistant : remplace le brouillon. */
 	function applyAssistant(result: { lines: LineDraft[]; description: string }) {
+		// Story 53-1a (D8, revue P1 E1) : la modale de remplacement est hors du
+		// `<fieldset>` ; à partir de J2b elle ne doit plus écrire la saisie (le corps
+		// gardé divergerait de ce que l'écran montre).
+		if (!canWriteEntry(phase)) return;
 		lines = result.lines;
 		// Les lignes sont remplacées : les refus par ligne ne visent plus rien.
 		lineRefusals = {};
@@ -593,6 +597,12 @@
 			applyAssistant(result);
 		}
 	}
+
+	// Story 53-1a (E1) : la confirmation de remplacement se ferme dès que la saisie
+	// n'est plus modifiable (J2a, J2b, J3, J5, J6 : la saisie est figée).
+	$effect(() => {
+		if (!canWriteEntry(phase)) pendingAssistant = null;
+	});
 
 	function confirmAssistantReplace() {
 		if (pendingAssistant) applyAssistant(pendingAssistant);
@@ -890,6 +900,8 @@
 			// champ. Rendre le focus fait passer un brouillon de compte par le `blur`
 			// d'`AccountAutocomplete`, qui le jette : le champ montre le compte qui part.
 			(document.activeElement as HTMLElement | null)?.blur();
+			// Story 53-1a (E1) : modale de remplacement ouverte, le raccourci n'envoie rien.
+			if (pendingAssistant !== null) return;
 			if (canSubmit) handleSubmit();
 		}
 	}

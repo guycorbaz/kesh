@@ -16,9 +16,10 @@
 ///   écritures saisies : `journal_entries::create`).
 /// - [`DuplicatePolicy::Confirmed`] : l'appelant a reçu `confirmNotDuplicate:
 ///   true`. Il lève les refus **que le dépôt déclare levables** — les factures
-///   fournisseur par `DuplicateRule::lifted_by_confirmation` (la règle 2 ; la
-///   règle 1 jamais, à la saisie), les écritures saisies toujours (Story 53-1a,
-///   Q4). Un refus levé ainsi s'inscrit au journal d'audit
+///   fournisseur par `DuplicateRule::lifted_by_confirmation`, seule source (à la
+///   création, à la modification et à la complétion la règle 2 seulement, jamais
+///   la règle 1 ; au repassage en brouillon d'une annulée, les deux, D6bis), les
+///   écritures saisies toujours (Story 53-1a, Q4). Un refus levé ainsi s'inscrit au journal d'audit
 ///   (`supplier_invoice.duplicate_confirmed`, `journal_entry.duplicate_confirmed`),
 ///   dans la même transaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
