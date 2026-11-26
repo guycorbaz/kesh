@@ -519,7 +519,9 @@ async fn creation_sans_solde_comportement_d_avant(pool: MySqlPool) {
         // `accountKind` et `cardLast4` à tout compte (intégration de la 0.17.6 :
         // les deux stories, écrites en parallèle, se rencontrent ici) ; dix-sept
         // depuis la 38-11b, qui ajoute `provider` et `paypal` (`null` pour un
-        // compte ordinaire) ; dix-huit depuis la 40-7b, qui ajoute `stripe`.
+        // compte ordinaire) ; dix-huit depuis la 39-11b, qui ajoute `wise`, et
+        // depuis la 40-7b, qui ajoute `stripe` ; dix-neuf à l'intégration des
+        // Epics 39 et 40, qui réunit les deux.
         let mut cles: Vec<&str> = resp
             .as_object()
             .unwrap()
@@ -548,10 +550,13 @@ async fn creation_sans_solde_comportement_d_avant(pool: MySqlPool) {
                 "stripe",
                 "updatedAt",
                 "version",
+                "wise",
             ]
         );
         assert_eq!(resp["provider"], serde_json::Value::Null);
         assert_eq!(resp["paypal"], serde_json::Value::Null);
+        assert_eq!(resp["wise"], serde_json::Value::Null);
+        assert_eq!(resp["stripe"], serde_json::Value::Null);
         let details = common::audit_details(&pool, "bank_account", id, "bank_account.created")
             .await
             .expect("details");

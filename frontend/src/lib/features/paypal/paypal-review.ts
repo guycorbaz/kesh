@@ -6,6 +6,7 @@
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 import { defaultFiscalYearId, selectedInDateOrder } from '$lib/features/provider/provider-review';
+import { accountNumberName } from '$lib/features/provider/provider-labels';
 import type { PaypalAcceptProposal, PaypalProposal } from './paypal.types';
 
 /** L'exercice proposé par défaut (règle commune aux prestataires, 40-7d). */
@@ -95,10 +96,8 @@ export function withdrawalAccountCandidates(
 		.sort((a, b) => a.number.localeCompare(b.number));
 }
 
-function accountName(accounts: readonly AccountResponse[], id: number): string {
-	const a = accounts.find((x) => x.id === id);
-	return a ? `${a.number} — ${a.name}` : `#${id}`;
-}
+/** Le nom « numéro — nom » d'un compte (règle commune aux prestataires, 39-11d2). */
+const accountName = accountNumberName;
 
 /** Ce que fera une proposition (colonne « Ce qui sera fait »), hors retrait sans compte. */
 export function proposalActionLabel(p: PaypalProposal, accounts: readonly AccountResponse[]): string {

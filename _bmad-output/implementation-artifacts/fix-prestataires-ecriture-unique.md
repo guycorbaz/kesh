@@ -142,6 +142,21 @@ mettre le `po_…`, ou aucun identifiant » et l'angle mort retirés ; test unit
 de compilation, non conflit de texte ; `one_key_kind` si Wise n'a qu'un genre de clé). Journal :
 `kesh-gate-logs/s40-m2d/`.
 
+## Reprise sur `pr/39-wise-v2` (Wise)
+
+*Fait le 2026-11-25*, à la préparation de la PR de l'Epic 39, après la fusion de `pr/40-stripe` (`a31ed4d00`) dans
+`pr/39-wise-v2` : Wise est branché sur la règle commune. Son `extract_ids` était vide (`no_ids`) : toute écriture de
+même montant, rapprochée de l'autre côté, valait par prudence pour toutes ses transactions. Désormais `wise_ids_in` lit
+les identifiants Wise d'un libellé (mot entier, lettre en tête, chiffre après un tiret, casse ramenée aux majuscules),
+et la clé de chaque genre se retrouve dans le libellé qu'écrit l'acceptation ; `same_key_kind` est le préfixe de
+l'identifiant (`TRANSFER`, `CARD`, `FEE-TRANSFER`…). Revue Wise : candidates au rattachement d'un virement filtrées par
+`names_another` (jamais l'écriture qui nomme un autre virement) et réduites à l'écriture déjà passée quand il y en a
+une ; sans candidate, `already_posted` avant une règle ; paiement par carte converti dont une ligne est déjà
+comptabilisée : la ligne sous `already_posted`, les autres sous `card_group_partly_posted`, le groupe non proposé ;
+`sale_without_receipt` retiré (Wise n'a pas de vente). Acceptation : `rejudge_writing` par ligne d'un `card_group` ;
+`link_entry` hors vente refusé (`entry_changed`) vers une écriture qui nomme une autre transaction ou qui n'est pas
+celle déjà passée. Journal : `kesh-gate-logs/s39-pr/`.
+
 ## Change Log
 
 - 2026-11-24 — correctif (`62d8783bb`), sonde positive (`0617f7ef3`), remédiation de la revue P1 (`4d9093c34`).
@@ -171,6 +186,12 @@ de compilation, non conflit de texte ; `one_key_kind` si Wise n'a qu'un genre de
   montant) : le genre ne se restreint que pour un versement (`5c100ac01`), LOW-1 laissé (clé absente : sens prudent) ;
   P2 ciblée (Haiku) 0/0/0/4, boucle close ; ses LOW L1 à L3 (commentaires, fiche) corrigés sans code exécutable, L4
   laissé. Mutations (`kesh-gate-logs/s40-m2d/mut/BILAN.md`) : quatre, toutes tuées. Gates : `kesh-gate-logs/s40-m2d/GATES.md`.
+
+- 2026-11-25 — `pr/39-wise-v2`, branchement de Wise (§ *Reprise sur `pr/39-wise-v2`*) : `55b5f7ef3`, `571e0253e` ;
+  revue P1 complète (Sonnet) 0/0/2/4 → `433143efe` ; P2 ciblée (Opus) 0/0/1/3 → `08660a3c1` ; P3 ciblée (Sonnet)
+  0/0/1/4 → `4a119939f` ; P4 ciblée (Haiku) 0/0/0/0 sur le commit, une observation reclassée LOW (texte de l'API,
+  `a327b158d`) ; boucle close. LOW en issues : `kesh-gate-logs/s39-pr/issues-a-ouvrir.md`. Mutations :
+  `kesh-gate-logs/s39-pr/mut/BILAN.md`.
 
 ## Notes de version
 

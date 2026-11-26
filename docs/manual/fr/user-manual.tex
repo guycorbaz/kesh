@@ -457,7 +457,7 @@ Le plan comptable est la colonne vertébrale de votre comptabilité. Kesh fourni
     \item \textbf{Numéro} : par exemple 1020.1 pour un sous-compte de la banque.
     \item \textbf{Nom} : par exemple « UBS compte courant ».
     \item \textbf{Type} : Actif, Passif, Produit ou Charge.
-    \item \textbf{Compte parent (optionnel)} : compte de niveau supérieur (1020 dans l'exemple). Il se change ensuite par \emph{Modifier le compte} (\S\ref{sec:modification-compte}).
+    \item \textbf{Compte parent (optionnel)} : compte de niveau supérieur (1020 dans l'exemple). Le compte d'un compte bancaire (son compte du plan, ou le compte de frais d'un compte PayPal, Wise ou Stripe) ne reçoit pas de sous-compte : il reçoit des écritures automatiques et ne doit pas devenir un compte de regroupement --- si 1020 est le compte de votre compte bancaire, rangez plutôt 1020 et ses voisins sous un groupe (\S\ref{sec:creer-groupes}). Il se change ensuite par \emph{Modifier le compte} (\S\ref{sec:modification-compte}).
     \item \textbf{Rôle} : fonction du compte dans l'application (\emph{Créances clients}, \emph{TVA due}, \emph{Capital}, \emph{Résultat de l'exercice}\ldots) ou \emph{Aucun}. Voir la section \emph{Rôles des comptes} ci-dessous.
     \item \textbf{Postable} : décocher pour un compte de regroupement (compte titre) sur lequel on ne saisit pas d'écriture.
 \end{itemize}
@@ -489,8 +489,9 @@ c'est pourquoi il ne doit porter \textbf{aucune écriture} --- son solde ne se c
 L'ancien parent garde son état, et redevient postable si vous cochez \textbf{Postable} une fois
 qu'il n'a plus de sous-compte actif. Le champ ne propose ni le compte lui-même, ni ses
 sous-comptes (un compte ne se range pas sous lui-même), ni les comptes qui portent des écritures.
-Kesh refuse aussi, comme à la création, un parent archivé et un compte de différence de change
---- le message dit lequel. (À la \emph{création} d'un compte, un parent qui porte des écritures
+Kesh refuse aussi, comme à la création, un parent archivé et un compte de différence de change,
+et le compte d'un compte bancaire (son compte du plan, ou le compte de frais d'un compte
+PayPal, Wise ou Stripe), qui reçoit des écritures automatiques --- le message dit lequel. (À la \emph{création} d'un compte, un parent qui porte des écritures
 est encore accepté~: créez plutôt vos comptes de groupe sans écriture.)
 
 \begin{keshwarning}
@@ -507,11 +508,92 @@ C'est pourquoi Kesh \textbf{refuse le changement au premier essai} et vous indiq
 
 \paragraph{Un compte lié à un compte bancaire ou à une carte.} Un compte du plan lié à un compte bancaire \textbf{non archivé} ne change pas de type vers un type que ce lien n'admet plus : un compte bancaire se lie à un actif ou à un passif, une carte de crédit à un \textbf{passif} seulement (\S\ref{sec:carte-credit}). Le refus nomme le compte bancaire (\texttt{ACCOUNT\_LINKED\_\allowbreak TO\_BANK\_ACCOUNT}) et aucune confirmation ne le lève : changez d'abord le compte lié du compte bancaire, sur la page \emph{Comptes bancaires}. Un compte lié à un compte bancaire \textbf{archivé} se retype comme les autres.
 
+\subsection{Créer des groupes d'après les numéros}\label{sec:creer-groupes}
+
+Pour structurer un plan existant --- une banque par groupe, puis les liquidités ---, le bouton
+\textbf{Créer des groupes} de l'écran du plan (rôles Comptable et Administrateur) ouvre une page en
+trois zones. \textbf{Rien n'est créé ni déplacé avant votre confirmation.}
+
+\begin{enumerate}
+    \item \textbf{Choisir les comptes} : cochez les comptes à ranger (\emph{Tout le plan} et
+    \emph{Aucun} sont des raccourcis). Les comptes de groupe --- ceux qui ont un sous-compte actif,
+    en gras --- ne se cochent pas : ils servent de parent.
+    \item \textbf{Propositions} : Kesh propose les groupes selon l'un de deux modes.
+    \begin{itemize}
+        \item \emph{Un groupe par numéro sans son dernier chiffre} (par défaut) : 1170 et 1171
+        vont au groupe 117. Un numéro qui ne réunit qu'un seul compte coché ne donne aucune
+        proposition --- sauf s'il est déjà un compte de groupe, auquel cas le compte y est rattaché ;
+        la page rappelle ces comptes seuls de leur préfixe.
+        \item \emph{Un seul groupe pour la sélection} : un groupe pour tous les comptes cochés, de
+        numéro leur plus long préfixe commun ; si ce préfixe est le numéro de leur parent commun
+        (10), Kesh propose 100, s'il est libre.
+    \end{itemize}
+    Chaque proposition se modifie : numéro, et pour un groupe à créer, nom (les mots communs aux
+    noms des comptes, «~Banque A~») et parent (le parent commun des comptes ; à choisir s'ils
+    n'en ont pas ; la racine est permise, avec un avertissement). Les comptes d'une proposition se
+    décochent un par un. Quand le numéro est déjà pris, trois cas :
+    \begin{itemize}
+        \item c'est un \textbf{compte de groupe} : les comptes y sont \textbf{rattachés}, rien n'est créé ;
+        \item c'est un compte \textbf{sans écriture} ni sous-compte : il peut devenir le groupe, si vous
+        cochez \emph{Réutiliser ce compte comme groupe} --- il ne sera plus imputable ;
+        \item c'est un compte qui \textbf{porte des écritures}, ou un compte archivé : refus, saisissez un
+        autre numéro.
+    \end{itemize}
+    \textbf{Le compte d'un compte bancaire ne devient jamais un groupe} : ni groupe réutilisé ou
+    rattaché, ni parent d'un groupe créé. Cela vaut pour le compte du plan d'un compte bancaire et,
+    pour un compte PayPal, Wise ou Stripe, pour son compte de frais, même partagé par plusieurs
+    prestataires (un compte bancaire clos ou archivé compte encore : il peut être rouvert ou désarchivé). Ces comptes
+    reçoivent des écritures automatiques ; devenus groupes, ils ne seraient plus imputables. La page
+    le signale par une erreur qui nomme le compte bancaire, et ne les offre pas comme parent ; Kesh
+    le refuse aussi à la confirmation, et quand on y range un compte dessous, à la création d'un
+    compte comme à \emph{Modifier le compte}. Ranger ces comptes \emph{dans} un groupe reste possible : ils restent imputables.
+    Un groupe ne réunit que des comptes \textbf{d'un même type} : des types mêlés sont refusés ;
+    décochez les comptes d'un type pour lever le refus. Kesh signale aussi, sans bloquer, des devises
+    mêlées (le groupe s'affiche en CHF), les comptes de même préfixe non cochés et deux banques
+    réunies sous un même préfixe (un bloc de dix qui chevauche une dizaine).
+
+    Chaque proposition est \emph{en attente} à l'ouverture. \textbf{Accepter} la retient (le bouton
+    est inactif tant qu'elle porte une erreur), \textbf{Écarter} la désactive --- elle n'entre ni dans
+    l'aperçu ni dans la confirmation, et ses erreurs ne bloquent rien ---, \textbf{Revenir} la remet
+    en attente. Changer de sélection recalcule les propositions en gardant vos choix sur
+    celles qui restent : ce que vous avez modifié (numéro, nom, parent, comptes décochés, état) est
+    gardé, le reste suit la nouvelle sélection. Changer de mode affiche les propositions de l'autre
+    mode, avec les choix que vous y aviez faits ; ceux du premier mode vous attendent si vous y
+    revenez. Une proposition acceptée dont un changement de la
+    \textbf{sélection} modifie les comptes \textbf{repasse en attente} : acceptez-la de nouveau. Si la
+    sélection revient exactement aux comptes acceptés, elle \textbf{redevient acceptée} d'elle-même,
+    sans nouveau clic, avec les champs tels que vous les avez laissés --- l'aperçu et le pied de page
+    montrent cet état. Décocher un compte \emph{dans la proposition} ne la remet pas en attente : elle
+    reste acceptée, avec un compte de moins. Un parent choisi qui devient l'un des comptes
+    de la proposition est remis \emph{à choisir}.
+    \item \textbf{Aperçu de l'arbre} : le plan tel qu'il sera après confirmation, avec les marques
+    \emph{nouveau}, \emph{déplacé} et \emph{devient groupe} ; \emph{Montrer seulement les branches
+    modifiées} réduit l'arbre aux groupes touchés.
+\end{enumerate}
+
+Le pied de page compte les groupes à créer, les comptes réutilisés, les comptes à déplacer et les
+propositions sans réponse. \textbf{Confirmer} est inactif tant qu'aucune proposition n'est acceptée
+ou qu'une acceptée porte une erreur. La confirmation est \textbf{tout ou rien} : tous les groupes
+sont créés et tous les comptes rangés en une fois, avec une entrée du journal d'audit par compte
+créé ou déplacé --- ou, si Kesh refuse une étape, \textbf{rien n'est écrit}. Le message dit alors
+quelle proposition et quel compte sont en cause ; la page garde votre sélection et vos
+propositions. \textbf{Recharger le plan}, offert après tout refus, relit les comptes sans rien perdre
+de vos choix : c'est le geste à faire si un compte a été modifié, archivé, supprimé ou a reçu une
+écriture entre-temps.
+
+\paragraph{Ranger sur deux niveaux.} Pour obtenir 10, puis 100 Liquidités sous 10, puis 103 Banque A sous 100 et ses comptes sous 103,
+créez d'abord le groupe des liquidités en mode \emph{un seul groupe} (100 sous 10), confirmez,
+puis revenez créer les groupes par banque, dont le parent commun est alors 100 : un compte de
+groupe ne se range pas dans la même confirmation que ses comptes («~un niveau à la fois~»).
+
+Déplacer un groupe existant reste un geste de \emph{Modifier le compte}
+(\S\ref{sec:modification-compte}). Cette fonction n'est pas ouverte aux clés d'API.
+
 \subsection{Suppression d'un compte}
 
 Un compte ne peut être supprimé que s'il n'a aucune écriture ni sous-compte. Sinon, vous pouvez l'\textbf{archiver} (le compte reste visible dans les écritures historiques mais n'est plus proposé à la saisie).
 
-Pour retrouver un compte archivé, cocher \emph{Afficher les archivés} en haut de la page. Un bouton \textbf{Réactiver} permet de le remettre en service. La réactivation est refusée dans deux cas : si son \textbf{compte parent} est lui-même archivé (il faut le réactiver d'abord), ou si son \textbf{rôle} a été attribué à un autre compte pendant son archivage — le message d'erreur nomme alors le compte concerné, dont il faut retirer le rôle au préalable.
+Pour retrouver un compte archivé, cocher \emph{Afficher les archivés} en haut de la page. Un bouton \textbf{Réactiver} permet de le remettre en service. La réactivation est refusée si son \textbf{compte parent} est lui-même archivé (il faut le réactiver d'abord), si son \textbf{rôle} a été attribué à un autre compte pendant son archivage — le message d'erreur nomme alors le compte concerné, dont il faut retirer le rôle au préalable —, si son compte parent est un compte de différence de change désigné, ou, depuis la version~0.20.0, si son compte parent est \textbf{désigné par un compte bancaire} (son compte comptable, ou le compte de frais d'un compte PayPal, Wise ou Stripe, même clos ou archivé) : un tel compte reçoit des écritures automatiques et ne peut pas redevenir un compte de regroupement ; le sous-compte reste archivé, et le message nomme le compte parent et le compte bancaire ; de même si son compte parent est un compte d'actif ou de passif \textbf{en devise qui porte des écritures}, comme à la création d'un sous-compte. Réactivé, un sous-compte rend son compte parent \textbf{non imputable}, comme la création d'un sous-compte (depuis la version~0.20.0 ; auparavant, un compte parent repassé imputable pendant l'archivage de son dernier sous-compte le restait).
 
 \label{sec:plan-comptable-archivage}
 
@@ -975,7 +1057,7 @@ Le panneau ne bloque rien par lui-même~: \textbf{deux contrôles}, marqués \em
 
 \begin{description}
     \item[Exercices antérieurs] Un exercice plus ancien est encore ouvert~: le panneau nomme le plus ancien, qu'il faut clôturer d'abord. Ce contrôle bloque, et c'est la clôture elle-même qui bloque (le bouton \emph{Clôturer} est alors désactivé).
-    \item[Transactions bancaires à rapprocher] Des transactions bancaires, importées ou saisies à la main, datées (date de comptabilisation bancaire) dans l'exercice, attendent leur rapprochement --- y compris celles que vous avez écartées des propositions. Lien~: \emph{Réconciliation bancaire} (\S\ref{sec:reconciliation})~; pour un compte PayPal, le lien \emph{Ouvrir la page PayPal}, à côté du compte, mène à la page PayPal (\S\ref{sec:comptes-paypal}), où ses transactions se rapprochent~; de même \emph{Ouvrir la page Stripe} pour un compte Stripe (\S\ref{sec:compte-stripe}).
+    \item[Transactions bancaires à rapprocher] Des transactions bancaires, importées ou saisies à la main, datées (date de comptabilisation bancaire) dans l'exercice, attendent leur rapprochement --- y compris celles que vous avez écartées des propositions. Lien~: \emph{Réconciliation bancaire} (\S\ref{sec:reconciliation})~; pour un compte PayPal, le lien \emph{Ouvrir la page PayPal}, à côté du compte, mène à la page PayPal (\S\ref{sec:comptes-paypal}), où ses transactions se rapprochent~; de même \emph{Ouvrir la page Stripe} pour un compte Stripe (\S\ref{sec:compte-stripe}), et \emph{Ouvrir la page Wise} pour un compte Wise (\S\ref{sec:comptes-wise}), où ses transactions se rapprochent de même.
     \item[Relevés bancaires de fin d'exercice] Pour chaque compte bancaire, le relevé qui \textbf{se termine au plus tard le dernier jour de l'exercice} est comparé aux livres~: relevé manquant, relevé arrêté trop tôt, ou écart entre le solde du relevé et le solde comptable à sa date. Lien~: \emph{Comptes bancaires}.
     \item[Factures en brouillon] Des factures client datées dans l'exercice n'ont jamais été validées~: elles ne sont pas en comptabilité. Lien~: la liste des factures, filtrée sur les brouillons de l'exercice.
     \item[Documents fournisseur à traiter] Des documents déposés dans le dossier d'import, avec ou sans QR-code, attendent qu'une facture en soit créée, ou d'être retirés de la liste (\S\ref{sec:import-factures}). Lien~: \emph{Ouvrir les documents à traiter}.
@@ -3478,6 +3560,89 @@ fichier ne signale pas une période déjà saisie à la main.
           \textbf{avant} le premier jour de la nouvelle.
 \end{itemize}
 
+\subsection{Comptes Wise}\label{sec:comptes-wise}
+
+Wise tient un \textbf{solde par devise}. Kesh tient chaque solde comme un compte bancaire~: \textbf{un compte bancaire par compte Wise et par devise}, lié au compte du plan de cette devise, comme pour PayPal (\S\ref{sec:comptes-paypal}). Les relevés ne s'importent pas par l'import bancaire, mais par la page \emph{Mensuel} → \emph{Wise}, ouverte aux comptables et aux administrateurs~; l'import n'écrit rien dans les livres.
+
+\paragraph{Créer les comptes.} \emph{Administration} → \emph{Comptes bancaires} → \emph{Nouveau compte bancaire}, type \emph{Compte bancaire}, case \emph{Compte Wise} cochée (elle exclut \emph{Compte PayPal} et \emph{Compte Stripe})~:
+\begin{itemize}
+    \item \textbf{Compte Wise}~: le libellé qui réunit les soldes d'un même compte Wise (par exemple «~Wise Pro~»), le \textbf{même} pour chacune de ses devises~; la casse et les accents ne distinguent pas deux libellés~; le champ propose les libellés déjà saisis~;
+    \item \textbf{Compte comptable lié}~: \textbf{obligatoire}~; sa devise est celle du solde. Un compte du plan en devise exige le multi-devises activé (\S\ref{sec:multi-devises}) et une devise posée sur le compte (\S\ref{sec:devise-compte})~; un seul compte bancaire par compte Wise et par devise~;
+    \item \textbf{Compte de frais}~: un compte de charge actif et imputable, en CHF ou dans la devise du compte lié, facultatif~; sans lui, un frais va «~à examiner~», et un paiement par carte qui porte un frais sur ce solde ne s'accepte pas. Un même compte de frais en CHF peut servir à vos comptes PayPal, Stripe et Wise (un compte de frais en devise ne sert que les soldes de sa devise)~;
+    \item l'\textbf{IBAN} est facultatif~; le QR-IBAN et la case \emph{Compte principal} disparaissent --- le compte principal ne peut pas être un compte Wise.
+\end{itemize}
+Une conversion entre deux devises étrangères passe par le \textbf{compte de conversion} de la société (\S\ref{sec:multi-devises-comptes})~: réglez-le avant de traiter les conversions. La liste des comptes bancaires montre sous le nom «~Wise · <compte> · <devise>~». Le libellé et le compte du plan d'un compte Wise ne changent plus dès qu'il porte une transaction~; le compte de frais, si.
+
+\paragraph{Importer les relevés.} Exportez de Wise les relevés comme le dit la section suivante (\S\ref{sec:wise-export}) --- format CSV, option des frais indiqués séparément \textbf{cochée}. Sur la page Wise, choisissez le compte Wise, puis \emph{Importer des relevés Wise (zip ou CSV)}~: donnez le zip téléchargé tel quel, ou plusieurs fichiers CSV d'un coup, un par devise. La consigne d'export est rappelée sous le bouton. Chaque relevé va au compte bancaire de sa devise~; une devise sans compte bancaire fait refuser tout l'envoi, qui nomme les devises à créer. Un refus n'importe \textbf{rien}, d'aucun fichier, et dit le fichier en cause~: un relevé refusé à sa lecture --- colonnes manquantes, lignes en erreur avec leur numéro et leur champ, solde courant qui ne se suit pas, relevé exporté sans les frais séparés (avec la consigne de l'exporter de nouveau, option cochée) --- est nommé avec le zip d'où il vient~; deux fichiers d'une même devise, par leurs deux noms~; un relevé déjà importé, par le nom sous lequel il l'a été~; un zip illisible ou sans relevé CSV, par son nom.
+
+Le compte rendu dit, \textbf{par fichier}~: son nom et le zip d'où il vient, sa devise, les transactions insérées et les doublons (une ligne déjà importée sur le même compte, dans le même sens, est ignorée et comptée~; un relevé qui chevauche le précédent s'importe donc sans risque), les soldes d'ouverture et de clôture du relevé, puis les entrées du zip non lues. Quand un relevé ne commence pas où finissait le précédent du même compte, un \textbf{avertissement} donne les deux soldes~: une période manque peut-être~; l'import passe. Un relevé déjà importé, seul ou dans son zip, est refusé comme déjà importé. Le compte rendu reste affiché jusqu'à l'import suivant ou au changement de compte.
+
+\paragraph{Le rapprochement.} Sous l'import, la page Wise montre la \textbf{revue} du compte Wise choisi sur l'\emph{exercice} choisi~: les propositions, les écarts et les lignes «~à examiner~». Kesh \textbf{propose}, vous \textbf{acceptez}~: rien n'est écrit à la lecture de la revue, et aucune proposition n'est cochée d'office. Les propositions forment une seule table, triée par date~; la colonne \emph{Genre} dit leur nature, la colonne \emph{Ce qui sera fait} ce que l'acceptation écrira~:
+\begin{itemize}
+    \item \emph{Frais}~: une ligne de frais de Wise (identifiant \texttt{FEE-\dots}), écrite au \textbf{compte de frais} du compte bancaire de son solde~;
+    \item \emph{Conversion}~: les deux moitiés d'une conversion (une dans le relevé de chaque solde, même identifiant), au \textbf{cours de Wise}, montants affichés~; une écriture si un côté est en francs, deux par le \textbf{compte de conversion} de la société entre deux devises étrangères (\S\ref{sec:multi-devises-comptes})~;
+    \item \emph{Rattachement}~: un virement ou un versement Stripe reçu dont l'autre côté est \textbf{déjà passé} --- une écriture déjà rapprochée d'une transaction d'un autre compte bancaire, de même montant, dans les cinq jours~: la ligne s'y rattache, \textbf{sans nouvelle écriture}~;
+    \item \emph{Règle}~: une règle d'affectation reconnaît la ligne (\S\ref{sec:comptes-paypal}, \emph{Règles et filtres}~; pour Wise, le filtre \emph{Type chez le prestataire} porte le préfixe de l'identifiant, \texttt{CARD}, \texttt{TRANSFER}\,\dots)~; jamais pour un versement Stripe~;
+    \item \emph{Paiement par carte}~: un paiement par carte \textbf{converti} --- Wise débite le solde en francs, puis convertit le reste depuis un solde en devise --- est écrit en \textbf{une} écriture~: la charge au montant du marchand, en francs, au compte de la règle qui reconnaît sa ligne principale (un compte en francs), chaque solde crédité de sa part, frais compris, le \textbf{frais} du paiement (ligne \texttt{FEE-CARD-\dots}) au débit du \textbf{compte de frais} du compte bancaire de son solde, au même cours, comme un frais isolé, et la seule différence de change sur le compte de perte ou de gain de change de la société. Sans compte de frais sur le solde qui porte le frais, le paiement ne se propose pas, et son acceptation est refusée sans rien écrire~: Kesh ne devine aucun compte. Ses lignes s'affichent sous la proposition~: la ligne principale, puis les autres, chacune avec sa date, son montant, sa devise et son identifiant Wise (\emph{frais} pour une ligne de frais du paiement).
+\end{itemize}
+Cochez les propositions voulues (\emph{Tout cocher} ne coche que des propositions), puis \emph{Accepter la sélection}~: elles partent dans l'ordre des dates, par paquets de 500. Le compte rendu dit combien ont été acceptées et combien refusées, et chaque refus par sa transaction et sa phrase~; la revue se relit ensuite, sans les propositions acceptées. Le compte rendu s'efface au changement de compte ou d'exercice.
+
+\textbf{Le cours mensuel retenu} de la société (\S\ref{sec:cours-retenu}) est exigé pour accepter un frais ou une règle sur un solde en devise, une conversion entre deux devises étrangères et la part en devise d'un paiement par carte~; sans lui, la proposition est refusée~: «~Aucun cours mensuel USD retenu pour 03.2020~: récupérez ou saisissez ce cours dans les cours de change, puis acceptez de nouveau.~» Récupérez ou saisissez le cours (\S\ref{sec:cours-de-change}), puis acceptez de nouveau. Une proposition dont la transaction, l'écriture, la règle ou les réglages ont changé depuis la revue est refusée~: rechargez la revue.
+
+\paragraph{À examiner, et quoi faire.} Chaque ligne dit son motif en une phrase~:
+\begin{itemize}
+    \item \emph{Déjà comptabilisée}~: une écriture déjà passée porte la ligne (ci-dessous, \emph{Écrite une seule fois})~; rattachez la ligne à cette écriture (lien \emph{Écriture déjà passée}, puis \emph{Rattacher à une écriture})~;
+    \item \emph{Frais sans compte de frais}~: réglez le compte de frais du compte bancaire du solde~;
+    \item \emph{Aucune règle}~: créez une règle d'affectation (filtre de type \texttt{CARD}, \texttt{TRANSFER}\,\dots), ou passez l'écriture à la main puis rattachez la ligne~;
+    \item \emph{Plusieurs écritures possibles} pour l'autre côté d'un virement (leurs numéros sont cités)~: rattachez la ligne à la bonne~;
+    \item \emph{Versement Stripe sans l'écriture de son versement}~: importez le rapport Stripe et acceptez le versement (\S\ref{sec:compte-stripe}), puis revenez à la page Wise~: la ligne se propose en \emph{Rattachement}~; ou passez l'écriture à la main puis rattachez la ligne. Aucune règle ne s'applique à un versement Stripe. Si la société a un compte Stripe, la ligne mène à la page Stripe~;
+    \item \emph{Paiement par carte sans règle}~: aucune règle ne donne un compte en francs au paiement (son montant est cité)~; créez-en une~;
+    \item \emph{Paiement par carte de forme inattendue} (une ligne qui n'est pas au débit, une conversion sans son montant en francs\,\dots)~: traitez chaque ligne à la main~;
+    \item \emph{Une ligne du paiement peut manquer}~: le relevé d'un solde (sa devise est citée) ne couvre pas la date du paiement~; importez-le, ou traitez les lignes à la main~;
+    \item \emph{Une ligne du paiement est déjà comptabilisée}~: une écriture déjà passée la porte~; rattachez-la à cette écriture (si le rattachement est refusé, voyez l'écriture), puis traitez les autres lignes à la main, en vérifiant d'abord ce que cette écriture couvre déjà~; la ligne mène aux écritures en cause (\emph{Voir l'écriture})~;
+    \item \emph{Paiement par carte avec un frais, sans compte de frais}~: le compte bancaire du solde qui porte le frais n'a pas de compte de frais~; réglez-le (\S\ref{sec:comptes-wise}), puis rechargez la revue~;
+    \item \emph{Une part du paiement est déjà rapprochée}~: annulez ce rapprochement puis acceptez le paiement entier, ou finissez à la main~; la ligne mène aux écritures en cause (\emph{Voir l'écriture}).
+\end{itemize}
+Les lignes d'un paiement par carte «~à examiner~» s'affichent sous lui, chacune avec son propre bouton \emph{Rattacher à une écriture}. Une ligne qui n'est pas proposée se traite \textbf{à la main}~: passez l'écriture (en devise pour un solde en devise, \S\ref{sec:ecritures-devise}), puis \emph{Rattacher à une écriture}.
+
+\paragraph{Les écarts.} \emph{L'autre moitié de cette conversion manque}~: importez le relevé de l'autre devise (ou elle est déjà rapprochée)~; \emph{Frais sans sa ligne d'origine} sur le même solde~: importez le relevé complet de la période~; \emph{le relevé ne commence pas où finissait le précédent}~: la phrase de l'avertissement de l'import, à la date du relevé, avec les deux soldes --- une période manque peut-être~: importez-la.
+
+\paragraph{Écrite une seule fois.} Une transaction Wise n'est \textbf{écrite qu'une fois}, par la même règle que les transactions PayPal et Stripe (\S\ref{sec:comptes-paypal})~: elle est \emph{déjà comptabilisée} quand une écriture non contre-passée porte son mouvement sur le compte de son solde, est rapprochée d'une transaction d'un autre compte, de sens contraire, \textbf{et nomme la transaction}~: son libellé porte son identifiant Wise (\texttt{TRANSFER-\dots}, \texttt{CARD-\dots}, celui qu'écrit l'acceptation). Elle passe alors \emph{à examiner} sous \emph{Déjà comptabilisée}, au lieu de toute proposition qui l'écrirait, et son acceptation est refusée sans rien écrire~; une ligne d'un paiement par carte groupé déjà comptabilisée retire le paiement des propositions, et ses autres lignes passent \emph{à examiner} sous \emph{Une ligne du paiement est déjà comptabilisée}~: rattachez cette ligne à son écriture, puis traitez les autres à la main. Typiquement, un virement de Wise vers votre banque, rattaché des deux côtés, puis annulé côté Wise~: l'annulation ne retire que son lien, et Kesh propose de le \emph{rattacher} de nouveau à son écriture, jamais une règle qui l'écrirait une seconde fois. Deux virements du même montant ne se confondent pas~: seul celui que l'écriture nomme est déjà comptabilisé, et Kesh ne propose jamais de rattacher un virement à l'écriture qui en nomme un autre, ni à une autre écriture que celle déjà passée qui le porte. Une écriture passée à la main, dont le libellé ne porte l'identifiant d'\textbf{aucun} virement --- aucun identifiant Wise, ou seulement celui d'une carte ---, rapprochée de la banque, son côté Wise libre, vaut par prudence pour tout virement de ce montant du solde~; si l'un d'eux n'a en réalité jamais été écrit, passez son écriture à la main. Si vous passez vous-même l'écriture d'une ligne Wise, mettez au libellé son identifiant Wise~: Kesh reconnaît alors cette seule ligne. Une écriture que vous avez passée à la main et pas encore rattachée n'est pas vue~: rattachez-la avant d'accepter la revue.
+
+\paragraph{Annuler un paiement par carte groupé.} Ses lignes sont rapprochées sur la \textbf{même} écriture~: annuler le rapprochement de l'une d'elles, depuis la réconciliation, contre-passe l'écriture et remet \textbf{toutes} les lignes du paiement en attente~; la proposition reparaît à la revue. L'écran d'annulation ne le dit pas encore.
+
+\paragraph{Limites.}
+\begin{itemize}
+    \item Les dates sont celles de l'export, sans conversion de fuseau horaire~; aucun code TVA~; pas de téléchargement automatique depuis Wise.
+    \item \textbf{Une facture fournisseur ne se paie pas depuis un compte Wise}~: réglez-la par un compte interne ou par une écriture à la main, puis rattachez la transaction.
+    \item Un compte Wise n'est proposé ni à l'import bancaire, ni à la saisie d'un relevé, ni au règlement d'une facture client, ni à l'écran de réconciliation. \textbf{Angle mort}~: par l'API, la réconciliation générale ne refuse pas un compte Wise \textbf{en francs}~; ne traitez ses lignes que par la page Wise, sans quoi une conversion ou des frais pourraient s'écrire deux fois.
+    \item \textbf{Continuité des relevés}~: Kesh tient pour complet l'intervalle entre deux relevés d'un solde quand l'ouverture du second égale la clôture du premier. Des lignes non importées qui s'annulent (une recharge et une dépense du même montant, ou un solde resté à zéro) n'y paraissent pas~: un paiement par carte se propose alors sans elles. Exportez chaque solde sur des périodes jointives, sans trou.
+    \item \textbf{Solde en devise peu utilisé}~: si ses relevés encadrent la date d'un paiement par carte sans se suivre (exports épars), \textbf{tout} paiement par carte daté entre eux passe «~à examiner~» (une ligne peut manquer), même sans rapport avec ce solde. Importez le relevé qui comble l'intervalle, ou traitez la ligne à la main.
+    \item \textbf{Part arrivée après coup}~: un paiement par carte dont une ligne de carte est déjà rapprochée passe «~à examiner~» (une part est déjà rapprochée). La ligne en francs d'un paiement importée après le paiement groupé de sa part en devise se propose seule par la règle~: deux écritures, aucun montant compté deux fois, leur somme celle de l'écriture unique. Un frais de carte passé seul ne bloque rien~: il va au compte de frais, comme dans le paiement groupé, et la conversion en deux morceaux peut ajouter un centime d'arrondi~; aucune écriture n'est fausse.
+\end{itemize}
+
+\subsection{Exporter les relevés de Wise}\label{sec:wise-export}
+
+Wise tient un \textbf{solde par devise}~; Kesh importe ses relevés au format \textbf{CSV}, un par solde, par la page \emph{Mensuel} → \emph{Wise} (\S\ref{sec:comptes-wise}) ou par la route d'import Wise de l'API (\texttt{POST /api/v1/wise-imports}, \texttt{docs/api-external.md}). Pour les obtenir, dans Wise~:
+
+\begin{enumerate}
+    \item ouvrez l'export des relevés, choisissez la \textbf{période} et le format \textbf{CSV}~;
+    \item \textbf{cochez} l'option «~Afficher les transactions dont les frais sont indiqués séparément~». Sans elle, Wise met dans le montant de chaque opération ses frais compris, et aucune ligne de frais à part~: Kesh ne pourrait ni passer ces frais en charge, ni retrouver le montant réel de l'opération. Un tel relevé est \textbf{refusé}, avec la consigne de l'exporter de nouveau en cochant l'option~;
+    \item téléchargez le fichier zip que Wise propose, et donnez-le à Kesh \textbf{tel quel}, sans le décompresser~: Kesh en lit les relevés CSV, un par solde, et chacun va au compte bancaire de sa devise. Vous pouvez aussi donner les fichiers CSV un à un.
+\end{enumerate}
+
+Ce qu'il faut savoir~:
+\begin{itemize}
+    \item Un relevé \textbf{sans aucun frais} sur la période est accepté, avec ou sans l'option~: les deux exports sont alors identiques.
+    \item Le contrôle des frais se fait \textbf{par fichier}. Une opération à frais dont la ligne de frais est restée hors de la période (elle la précède d'une milliseconde) est tolérée, une fois par fichier. Mais si c'est la \textbf{seule} opération à frais du relevé, le relevé est refusé alors même que l'option était cochée~: exportez-le de nouveau en élargissant la période d'un jour.
+    \item Dans le zip, Kesh ne lit que les fichiers \texttt{.csv} placés à la racine~; un dossier, un PDF, un fichier XML ou un zip imbriqué sont ignorés, et le compte rendu les nomme. Un zip sans aucun relevé CSV (un export CAMT ou PDF) est refusé~: exportez au format CSV.
+    \item Un zip démesuré (plus de 64~\textbf{entrées}, dossiers et fichiers ignorés compris, ou plus décompressé que la taille maximale d'un import bancaire), chiffré, ou dont un nom de fichier est un chemin (\texttt{..}, chemin absolu, barre oblique inverse, lettre de lecteur) est refusé.
+    \item Si deux entrées de l'archive portent le même nom, Kesh n'en lit qu'une, \textbf{sans le signaler}~; Wise n'en produit pas.
+    \item Une limite du contrôle des frais~: un relevé exporté \textbf{sans} l'option, mais qui contient une ligne de frais isolée (dont l'opération d'origine est hors période) et une seule opération à frais sans sa ligne de frais, est accepté, frais compris dans le montant. Wise n'a produit aucun tel relevé~; vérifiez que l'option était cochée.
+    \item \textbf{Un refus n'importe rien}~: ni le fichier en cause, ni les autres relevés du zip. Corrigez l'export, puis donnez de nouveau le zip entier.
+    \item Le compte rendu de l'import (fichier, zip d'origine, lignes lues, importées, ignorées comme doublons, soldes, entrées ignorées) n'est rendu qu'à l'envoi. Un relevé déjà importé, seul ou dans son zip, est refusé comme déjà importé.
+\end{itemize}
+
 \subsection{Détection des doublons}\label{sec:doublons-kesh}
 
 \keshscreenshot{import-doublons.png}{Avertissement de détection de doublons lors d'un ré-import de fichier bancaire.}  % TODO capture: ecran doublons
@@ -3564,7 +3729,7 @@ Cochez les propositions (\emph{Tout cocher} au besoin), puis \emph{Accepter la s
 
 \textbf{Les écarts} trouvent les erreurs des boutiques~: \emph{Encaissement sans vente} (aucune écriture ne porte l'identifiant), \emph{Vente sans encaissement} (une écriture porte un identifiant qu'aucune transaction PayPal ne porte), \emph{Montant ou devise différents} (attendu et trouvé, ou «~aucun débit trouvé~» quand l'écriture ne débite pas le compte PayPal), \emph{Vente déjà rattachée à une autre transaction} (l'écriture de même identifiant est déjà rattachée~: double import, ou rattachement fait à la main). \textbf{À examiner}~: plusieurs ventes portent la même TXN, compte de frais non réglé, conversion sans sa paire, retrait d'un solde en devise, aucune règle, \emph{déjà comptabilisée} (ci-dessous)~; la ligne montre le type PayPal, le nom et l'e-mail de la contrepartie, de quoi écrire une règle à filtres. Pour une telle ligne --- sauf \emph{Déjà comptabilisée}, qui se rattache à l'écriture existante sans en passer une autre ---, passez l'écriture à la main (en devise pour un solde en devise, \S\ref{sec:ecritures-devise}), puis \emph{Rattacher à une écriture}~: la fenêtre de rattachement (\S\ref{sec:rattacher-reglement}) montre, dans la devise de la transaction, les écritures passées sur le compte du plan.
 
-\paragraph{Règles et filtres.} Une règle d'affectation peut porter, en plus de son critère, trois \textbf{filtres facultatifs}~: \emph{Type PayPal (exact)}, \emph{E-mail exact} (l'e-mail de la contrepartie) et le \emph{Sens} (entrées, sorties, ou les deux). Elle ne s'applique qu'à une transaction qui satisfait le critère existant \textbf{et} chaque filtre posé~; le critère reste obligatoire. \textbf{Limite}~: deux règles actives ne peuvent pas porter le même critère et la même valeur, même avec des filtres différents. \textbf{La contrepartie} d'une règle peut être un compte en devise~: la règle ne vaut alors que pour les transactions de \textbf{cette devise} (ou, avec un compte en francs, pour toutes). À l'acceptation, une règle dont la contrepartie est tenue dans une autre devise que celle de la transaction est refusée, avec ce message~: «~Cette règle désigne un compte tenu en EUR~: elle ne s'applique qu'aux transactions en EUR\,\dots~» --- choisissez un compte en francs ou dans la devise de la transaction.
+\paragraph{Règles et filtres.} Une règle d'affectation peut porter, en plus de son critère, trois \textbf{filtres facultatifs}~: \emph{Type chez le prestataire (exact)} --- pour PayPal, le type tel qu'écrit dans le relevé (\emph{Website Payment}, \emph{General Payment}\,\dots)~; pour Wise, le préfixe de l'identifiant de la ligne (\texttt{TRANSFER}, \texttt{CARD}, \texttt{BALANCE}, \texttt{CONVERSION\_ORDER}, \texttt{FEE-TRANSFER}\,\dots) ---, \emph{E-mail exact} (l'e-mail de la contrepartie) et le \emph{Sens} (entrées, sorties, ou les deux). Elle ne s'applique qu'à une transaction qui satisfait le critère existant \textbf{et} chaque filtre posé~; le critère reste obligatoire. \textbf{Limite}~: deux règles actives ne peuvent pas porter le même critère et la même valeur, même avec des filtres différents. \textbf{La contrepartie} d'une règle peut être un compte en devise~: la règle ne vaut alors que pour les transactions de \textbf{cette devise} (ou, avec un compte en francs, pour toutes). À l'acceptation, une règle dont la contrepartie est tenue dans une autre devise que celle de la transaction est refusée, avec ce message~: «~Cette règle désigne un compte tenu en EUR~: elle ne s'applique qu'aux transactions en EUR\,\dots~» --- choisissez un compte en francs ou dans la devise de la transaction.
 
 \paragraph{Annuler.} Une transaction rapprochée par la page se dé-rapproche comme toute autre (\S\ref{sec:annuler-rapprochement}). Pour une conversion à \textbf{une} écriture, annuler un côté ne retire que son lien~; annuler le second contre-passe l'écriture. Pour une conversion à \textbf{deux} écritures, annulez \textbf{chacune} de ses deux transactions~: entre les deux, le compte de conversion n'est pas soldé. Une transaction n'est \textbf{écrite qu'une fois}~: annuler le côté PayPal d'un retrait, ou d'une règle dont la contrepartie est une autre banque ou une carte, dont l'autre côté est rattaché, ne retire que son lien --- l'écriture reste, rapprochée de l'autre côté. Kesh ne propose alors plus la transaction~: elle passe \emph{à examiner} sous \emph{Déjà comptabilisée} --- avant tout autre motif, même si sa règle ne la reconnaît plus ---, avec le lien \emph{Écriture déjà passée}, et son acceptation est refusée sans rien écrire. Rattachez-la à cette écriture (\emph{Rattacher à une écriture}). La règle vaut pour les règles, les conversions et les retraits~: une transaction est déjà comptabilisée quand une écriture non contre-passée porte son mouvement sur le compte PayPal de la devise, est rapprochée d'une transaction d'un autre compte, de sens contraire, \textbf{et nomme la transaction}~: son libellé porte son identifiant («~TXN \ldots~», celui qu'écrit l'acceptation), ou, pour l'autre moitié d'une conversion, l'écriture est rapprochée de sa paire. Deux transactions du même montant sur le même compte PayPal ne se confondent donc pas~: seule celle que l'écriture nomme est déjà comptabilisée, l'autre reste proposée. Une écriture qui nomme la transaction passe toujours avant les autres. Une écriture dont le libellé ne porte \textbf{aucun} identifiant (passée à la main, puis rattachée des deux côtés) ne dit pas quelle transaction elle porte~: si son côté PayPal est libre (la transaction qu'elle portait a été détachée), elle vaut, par prudence, pour toute transaction de ce montant du compte PayPal de cette devise, qui passe \emph{Déjà comptabilisée}~; si l'une d'elles n'a en réalité jamais été écrite, passez son écriture à la main. Une telle écriture encore rapprochée côté PayPal (le retrait d'un mois passé, du même montant) ne bloque rien. Les frais que Kesh écrit ne sont jamais déjà comptabilisés~: leur écriture n'est rapprochée d'aucun autre compte. Si vous avez rattaché par erreur l'autre transaction à cette écriture, la transaction nommée reste \emph{Déjà comptabilisée} et son rattachement est refusé~: annulez d'abord le rattachement erroné (il ne retire que son lien), puis rattachez la transaction nommée. Une écriture que vous avez passée à la main et pas encore rattachée n'est pas vue~: rattachez-la avant d'accepter la revue.
 
@@ -3630,11 +3795,11 @@ Cochez les propositions (ou \emph{Tout cocher}), puis \emph{Accepter la sélecti
     \item \emph{Vente sans charge}~: une écriture de vente porte un identifiant qu'aucune charge du rapport ne porte --- le rapport est incomplet, ou la vente est fausse~;
     \item \emph{Montant ou devise différents}~: la vente n'a pas le montant ou la devise de la charge (attendu et trouvé sont affichés)~; \emph{Vente déjà rattachée à une autre charge}~: double import, ou rattachement fait à la main~;
     \item \emph{Versement incomplet}~: les lignes importées du versement ne font pas son montant (typiquement un versement importé en deux fichiers)~: importez le rapport complet du versement~;
-    \item \emph{Versement sans réception}~: le versement est écrit, mais aucune transaction de votre banque ou de Wise n'est encore rattachée à son écriture. Importez le relevé du \textbf{compte de destination} du versement. Compte de banque ordinaire~: à la \emph{Réconciliation bancaire}, la ligne de la banque se signale «~déjà comptabilisée~» et se rattache à l'écriture (\S\ref{sec:rattacher-reglement})~; la ligne indique l'écriture du versement et mène à la réconciliation. Compte Wise~: la réconciliation bancaire n'offre pas ce compte~; la ligne dit seulement d'importer le relevé du compte de destination. La réception n'est \textbf{jamais} comptée deux fois~: ne passez pas d'autre écriture pour elle.
+    \item \emph{Versement sans réception}~: le versement est écrit, mais aucune transaction de votre banque ou de Wise n'est encore rattachée à son écriture. Importez le relevé du \textbf{compte de destination} du versement. Compte de banque ordinaire~: à la \emph{Réconciliation bancaire}, la ligne de la banque se signale «~déjà comptabilisée~» et se rattache à l'écriture (\S\ref{sec:rattacher-reglement})~; la ligne indique l'écriture du versement et mène à la réconciliation. Compte Wise~: la réconciliation bancaire n'offre pas ce compte~; la ligne dit d'importer le relevé du compte de destination, et mène à la page Wise, dont la revue propose de rattacher la réception à l'écriture du versement (\emph{Rattachement}, \S\ref{sec:comptes-wise}). La réception n'est \textbf{jamais} comptée deux fois~: ne passez pas d'autre écriture pour elle.
 \end{itemize}
 \textbf{À examiner}~: plusieurs ventes portent le même identifiant, compte de frais non réglé, versement sans compte de versement utilisable, versement qui porte un retour de versement, versement de montant positif ou nul, remboursement, autre catégorie Stripe (litige\,\dots), \emph{déjà comptabilisée} (ci-dessous)~; la ligne montre la catégorie Stripe et l'identifiant. Pour une telle ligne --- sauf \emph{Déjà comptabilisée}, qui se rattache à l'écriture existante sans en passer une autre ---, passez l'écriture à la main (en devise, \S\ref{sec:ecritures-devise}), puis \emph{Rattacher à une écriture}.
 
-\paragraph{Annuler.} Une transaction rapprochée par la page se dé-rapproche comme toute autre (\S\ref{sec:annuler-rapprochement}). Un versement n'est \textbf{écrit qu'une fois}, par la même règle que les transactions PayPal (\S\ref{sec:comptes-paypal})~: annuler le côté Stripe d'un versement dont la réception de la banque est rattachée ne retire que son lien --- l'écriture reste, rapprochée de la réception. Kesh ne propose alors plus le versement~: il passe \emph{à examiner} sous \emph{Déjà comptabilisée} --- avant tout autre motif, même si le compte de versement a changé ---, avec le lien \emph{Écriture déjà passée}, et son acceptation est refusée sans rien écrire. Rattachez-le à cette écriture (\emph{Rattacher à une écriture}). La règle vaut aussi pour les frais~: une transaction est déjà comptabilisée quand une écriture non contre-passée porte son mouvement sur le compte Stripe de la devise, est déjà rapprochée d'une transaction d'un autre compte, de sens contraire, \textbf{et nomme la transaction}~: pour un versement, son libellé porte l'identifiant du versement («~Versement Stripe po\_\dots{} \emph{montant} \emph{devise}~», celui qu'écrit l'acceptation). Deux versements du même montant sur le même compte Stripe ne se confondent donc pas~: seul celui que l'écriture nomme est déjà comptabilisé, l'autre reste proposé. Une écriture dont le libellé ne porte l'identifiant d'\textbf{aucun} versement (\texttt{po\_\dots}) --- aucun identifiant Stripe, ou seulement celui d'une charge (\texttt{ch\_\dots}, \texttt{py\_\dots}) ---, passée à la main puis rattachée des deux côtés, ne dit pas quel versement elle porte~: elle vaut par prudence pour tout versement de ce montant, si son côté Stripe est libre~; si l'un d'eux n'a en réalité jamais été écrit, passez son écriture à la main. Si vous passez vous-même l'écriture d'un versement, mettez au libellé l'identifiant du versement (\texttt{po\_\dots})~: Kesh reconnaît alors ce seul versement. Annuler un versement \emph{avant} que sa réception soit rattachée contre-passe son écriture~: il redevient proposable. Une écriture que vous avez passée à la main et pas encore rattachée n'est pas vue~: rattachez-la avant d'accepter la revue.
+\paragraph{Annuler.} Une transaction rapprochée par la page se dé-rapproche comme toute autre (\S\ref{sec:annuler-rapprochement}). Un versement n'est \textbf{écrit qu'une fois}, par la même règle que les transactions PayPal (\S\ref{sec:comptes-paypal})~: annuler le côté Stripe d'un versement dont la réception de la banque est rattachée ne retire que son lien --- l'écriture reste, rapprochée de la réception. Kesh ne propose alors plus le versement~: il passe \emph{à examiner} sous \emph{Déjà comptabilisée} --- avant tout autre motif, même si le compte de versement a changé ---, avec le lien \emph{Écriture déjà passée}, et son acceptation est refusée sans rien écrire. Rattachez-le à cette écriture (\emph{Rattacher à une écriture}). La règle vaut aussi pour les frais~: une transaction est déjà comptabilisée quand une écriture non contre-passée porte son mouvement sur le compte Stripe de la devise, est déjà rapprochée d'une transaction d'un autre compte, de sens contraire, \textbf{et nomme la transaction}~: pour un versement, son libellé porte l'identifiant du versement («~Versement Stripe po\_\dots{} \emph{montant} \emph{devise}~», celui qu'écrit l'acceptation). Deux versements du même montant sur le même compte Stripe ne se confondent donc pas~: seul celui que l'écriture nomme est déjà comptabilisé, l'autre reste proposé. Une écriture dont le libellé ne porte l'identifiant d'\textbf{aucun} versement (\texttt{po\_\dots}) --- aucun identifiant Stripe, ou seulement celui d'une charge (\texttt{ch\_\dots}, \texttt{py\_\dots}) ---, passée à la main puis rattachée des deux côtés, ne dit pas quel versement elle porte~: elle vaut par prudence pour tout versement de ce montant, si son côté Stripe est libre~; si l'un d'eux n'a en réalité jamais été écrit, passez son écriture à la main. Si vous passez vous-même l'écriture d'un versement, mettez au libellé l'identifiant du versement (\texttt{po\_\dots})~: Kesh reconnaît alors ce seul versement. \textbf{Citez le bon}~: un libellé saisi à la main qui porte le \texttt{po\_\dots} d'\textbf{un autre} versement fait de l'écriture celle de cet autre versement~; le versement détaché n'est alors plus reconnu comme déjà comptabilisé, et son acceptation l'écrirait une seconde fois. Mettez le \texttt{po\_\dots} du versement que l'écriture porte, ou aucun. Annuler un versement \emph{avant} que sa réception soit rattachée contre-passe son écriture~: il redevient proposable. Une écriture que vous avez passée à la main et pas encore rattachée n'est pas vue~: rattachez-la avant d'accepter la revue.
 
 \paragraph{Limites.}
 \begin{itemize}
@@ -3879,7 +4044,7 @@ Exemple : le loyer est prélevé chaque mois par la régie. Une règle «~Loyer~
 \begin{enumerate}
     \item \emph{Administration} → \emph{Règles d'affectation} → \emph{Nouvelle règle}.
     \item Saisir le \textbf{libellé} de la règle (ex. «~Loyer~»).
-    \item Choisir le \textbf{type} de correspondance --- \emph{Contrepartie contient}, \emph{Contrepartie exacte}, \emph{Référence contient} ou \emph{IBAN exact} --- et saisir la \textbf{valeur} cherchée. Une règle porte \textbf{une seule} condition, que restreignent au besoin trois \textbf{filtres facultatifs} --- \emph{Type PayPal (exact)}, \emph{E-mail exact} et \emph{Sens} (\S\ref{sec:comptes-paypal})~: la règle ne s'applique qu'à une transaction qui satisfait la condition \textbf{et} chaque filtre posé~; deux règles actives de même condition et même valeur sont refusées, même avec des filtres différents. Le type ne se choisit qu'à la création~: il ne se modifie plus ensuite. Une règle \emph{Contrepartie exacte} écrite sur un nom qu'une version antérieure à la~0.17.4 avait lu tronqué (un nom à «~\&~», par exemple «~Fils~» pour «~Dupont \& Fils~») ne reconnaît plus le nom désormais lu en entier~: corrigez sa valeur.
+    \item Choisir le \textbf{type} de correspondance --- \emph{Contrepartie contient}, \emph{Contrepartie exacte}, \emph{Référence contient} ou \emph{IBAN exact} --- et saisir la \textbf{valeur} cherchée. Une règle porte \textbf{une seule} condition, que restreignent au besoin trois \textbf{filtres facultatifs} --- \emph{Type chez le prestataire (exact)}, \emph{E-mail exact} et \emph{Sens} (\S\ref{sec:comptes-paypal}, \S\ref{sec:comptes-wise})~: la règle ne s'applique qu'à une transaction qui satisfait la condition \textbf{et} chaque filtre posé~; deux règles actives de même condition et même valeur sont refusées, même avec des filtres différents. Le type ne se choisit qu'à la création~: il ne se modifie plus ensuite. Une règle \emph{Contrepartie exacte} écrite sur un nom qu'une version antérieure à la~0.17.4 avait lu tronqué (un nom à «~\&~», par exemple «~Fils~» pour «~Dupont \& Fils~») ne reconnaît plus le nom désormais lu en entier~: corrigez sa valeur.
     \item Choisir le \textbf{compte de contrepartie}~: un compte de charge ou de produit, actif et imputable.
     \item Fixer la \textbf{priorité}, de 1 à 1000~: le \textbf{plus petit} nombre l'emporte.
     \item Au besoin, choisir un \textbf{compte analytique par défaut}.
@@ -4182,22 +4347,29 @@ au journal d'audit (\S\ref{sec:tracabilite}), avec son auteur.
 \keshscreenshot{rapport-bilan.png}{Bilan : actifs, passifs et capitaux propres à une date donnée.}  % TODO capture: rapport bilan
 
 \emph{Mensuel} → \emph{Rapports} → \emph{Bilan}. Affiche, à une date donnée, les comptes
-d'actif et de passif à solde non nul, \textbf{triés par numéro de compte}, avec les totaux
-Actifs, Passifs et Capitaux propres.
+d'actif et de passif à solde non nul, avec les totaux Actifs, Passifs et Capitaux propres.
+Par défaut, les comptes de chaque section se présentent \textbf{dans la hiérarchie de votre
+plan comptable}, groupes ouverts, chaque groupe avec son sous-total
+(\S\ref{sec:rapports-groupes})~; case \emph{Hiérarchie des groupes} décochée, le bilan est
+la liste à plat, \textbf{triée par numéro de compte}, des versions précédentes.
 
 \begin{keshwarning}[title=\faExclamationTriangle\ Le bilan n'est pas encore structuré selon l'art.~959a CO]
-Kesh ne regroupe pas les comptes en \textbf{actif circulant} et \textbf{actif immobilisé}, ni
-les dettes en \textbf{capitaux étrangers à court terme} et \textbf{à long terme}. Le plan
-comptable porte bien une hiérarchie de comptes, mais les rapports ne l'utilisent pas encore.
+Les groupes affichés sont ceux de \textbf{votre} plan comptable~: Kesh ne contrôle pas qu'ils
+suivent les rubriques de l'art.~959a CO (\textbf{actif circulant}, \textbf{actif immobilisé},
+\textbf{capitaux étrangers à court terme} et \textbf{à long terme}). Les sections légales du
+bilan restent, elles, toujours affichées~: Actifs, Passifs (les dettes), Capitaux propres. Un
+affichage replié --- au niveau~1 en particulier --- est un \textbf{affichage de travail}, non
+des comptes annuels.
 
 \medskip
-\noindent Seule la partition \textbf{capitaux propres / dettes} est faite, et elle l'est
+\noindent La partition \textbf{capitaux propres / dettes} est faite, et elle l'est
 correctement (voir ci-dessous). Pour des comptes annuels à remettre à un tiers --- fiduciaire,
-organe de révision, banque ---, la mise en forme normée reste donc à produire hors de Kesh, à
-partir des chiffres qu'il fournit.
+organe de révision, banque ---, la mise en forme normée reste donc à vérifier, et au besoin à
+produire hors de Kesh, à partir des chiffres qu'il fournit.
 \end{keshwarning}
 
-La section \emph{Capitaux propres} est présentée \textbf{séparément des dettes} et \textbf{regroupée par rôle} de compte (capital, autres fonds propres, bénéfice / perte reporté), dans l'ordre légal de l'Art. 959a CO. Kesh distingue nettement deux grandeurs qu'il ne faut jamais confondre :
+La section \emph{Capitaux propres} est présentée \textbf{séparément des dettes} et, dans
+l'affichage à plat, \textbf{regroupée par rôle} de compte (capital, autres fonds propres, bénéfice / perte reporté), dans l'ordre légal de l'Art. 959a CO. Kesh distingue nettement deux grandeurs qu'il ne faut jamais confondre :
 
 \begin{itemize}
     \item le \textbf{report d'ouverture physique} que vous avez saisi sur un compte (typiquement lors d'une reprise de comptabilité depuis un autre logiciel) — il apparaît sous son propre numéro de compte ;
@@ -4213,7 +4385,9 @@ Filtres : date de référence (par défaut fin d'exercice en cours), exercice à
 \keshscreenshot{rapport-resultat.png}{Compte de résultat : produits, charges et résultat de la période.}  % TODO capture: rapport compte de resultat
 
 \emph{Mensuel} → \emph{Rapports} → \emph{Compte de résultat}. Liste les comptes de produits
-et les comptes de charges à solde non nul, et le résultat de la période.
+et les comptes de charges à solde non nul, et le résultat de la période~; comme au bilan, par
+défaut dans la hiérarchie de votre plan (\S\ref{sec:rapports-groupes}), ou à plat, case
+\emph{Hiérarchie des groupes} décochée.
 
 \begin{keshwarning}[title=\faExclamationTriangle\ Le compte de résultat n'est pas encore structuré selon l'art.~959b CO]
 Kesh ne propose \textbf{pas} les présentations \emph{par nature} et \emph{par fonction}, et ne
@@ -4225,6 +4399,61 @@ net.
 \noindent Pour des comptes annuels destinés à un tiers, la mise en forme normée reste à
 produire hors de Kesh, à partir de ces chiffres.
 \end{keshwarning}
+
+\subsection{Bilan et compte de résultat par groupes}\label{sec:rapports-groupes}
+
+\keshscreenshot{rapport-bilan-groupes.png}{Bilan par groupes, sous-totaux en pied~: chaque groupe ouvert se clôt sur la ligne «~Total~» de son nom.}
+
+Au-dessus du bilan et du compte de résultat, une barre règle leur présentation~:
+
+\begin{itemize}
+    \item \textbf{Hiérarchie des groupes} --- cochée (par défaut), chaque compte s'affiche sous son
+          compte de groupe, en retrait, et chaque groupe porte le \textbf{sous-total} de ses comptes~;
+          décochée, la liste à plat, sous-titres de rôle des capitaux propres compris. Vos autres
+          choix sont gardés pendant que la hiérarchie est masquée.
+    \item \textbf{Niveau de détail} --- \emph{Niveau~1}, \emph{Niveau~2}\ldots{} jusqu'à
+          \emph{Tous les comptes}~: au niveau~1, seuls les groupes de premier rang sont montrés,
+          fermés sur leur sous-total~; au niveau~2, ils s'ouvrent sur leurs groupes de second rang,
+          et ainsi de suite. Le sélecteur ne propose que les niveaux que votre plan contient, et il
+          est inactif avant la première génération du rapport, pour un plan sans groupe ou un
+          rapport vide, et hiérarchie masquée. Son info-bulle le rappelle~: un
+          affichage replié est un affichage de travail, non des comptes annuels.
+    \item \textbf{Tout ouvrir}, \textbf{Tout fermer} --- reviennent à \emph{Tous les comptes} et au
+          niveau~1.
+    \item \textbf{Sous-totaux} --- \emph{sur le titre}~: le sous-total sur la ligne du groupe (par
+          défaut)~; \emph{en pied}~: une ligne «~Total \emph{nom du groupe}~» sous ses comptes. Un
+          groupe fermé porte toujours son sous-total sur sa ligne.
+\end{itemize}
+
+Hiérarchie masquée, \emph{Tout ouvrir}, \emph{Tout fermer} et \emph{Sous-totaux} sont inactifs
+eux aussi~: seule la case reste active.
+
+Chaque groupe s'ouvre et se ferme d'un clic sur sa flèche (ou au clavier, touche Entrée)~; le
+clic l'emporte sur le niveau, jusqu'au prochain changement de niveau, qui l'efface. Un compte de
+groupe qui porte lui-même des écritures montre son \textbf{solde propre} en première ligne du
+groupe, «~\emph{nom} (solde propre)~». Un groupe dont tous les comptes sont dans une même devise
+étrangère montre aussi son sous-total dans cette devise~; sinon, son sous-total est en CHF seul.
+Un groupe fermé par le niveau dont le sous-total est nul n'est pas montré --- son zéro reste
+dans le groupe au-dessus. Un groupe dont les comptes tombent dans deux sections (au bilan, un
+groupe \emph{Passifs} qui porte à la fois des dettes et des capitaux propres~; au compte de
+résultat, un groupe qui mêle produits et charges) n'est montré dans aucune~: ses sous-groupes
+remontent d'un rang dans chaque section. Les totaux des sections, les lignes calculées du bilan
+et le résultat ne changent pas avec la présentation.
+
+Chaque changement redemande le rapport au serveur, même pendant une génération en cours~: seule
+la réponse à la dernière demande s'affiche, et l'écran revient toujours à la présentation que la
+barre indique --- si vous revenez sur un rapport pendant la génération d'un autre, dès la fin de
+celle-ci. Si une demande échoue, le message d'erreur s'affiche et l'écran garde la présentation
+précédente~; \emph{Générer} la redemande. Changer la présentation d'un rapport pendant le chargement
+d'un autre rapport interrompt ce chargement~: il faut le relancer avec \emph{Générer}. Chaque demande est inscrite au journal
+d'audit, comme un changement de période. Le navigateur \textbf{retient votre présentation}, pour
+chaque société et chaque rapport~: en revenant sur la page, vous retrouvez la hiérarchie, le
+niveau, la place des sous-totaux et les groupes ouverts ou fermés à la main --- dans la mesure où
+le navigateur le permet (en navigation privée, ou si le stockage du site est refusé, la
+présentation par défaut revient, sans erreur). Un groupe disparu du plan depuis est oublié.
+
+Les boutons d'export PDF et CSV reprennent la présentation affichée
+(\S\ref{sec:rapports-exports}).
 
 \subsection{Balance des comptes}
 
@@ -4257,6 +4486,38 @@ d'ouverture}, les \textbf{mouvements} débit et crédit, et le \textbf{solde de 
 \end{itemize}
 
 Seul filtre : la période.
+
+\paragraph{La balance par groupes.} La balance a la même barre de présentation que le bilan
+(\S\ref{sec:rapports-groupes}) --- hiérarchie des groupes, niveau de détail, \emph{Tout ouvrir},
+\emph{Tout fermer}, place des sous-totaux, flèche de chaque groupe ---, avec sa propre mémoire~:
+la présentation du bilan ne change pas celle de la balance. Par défaut, la hiérarchie est montrée,
+tous les groupes ouverts, les sous-totaux sur le titre. Chaque groupe porte, dans chacune des quatre
+colonnes, la somme de ses comptes~; un groupe dont tous les comptes non nuls sont dans une même
+devise étrangère a, comme un compte, sa seconde ligne dans cette devise. La ligne
+«~Résultat reporté (calculé)~» vient après les groupes, hors d'eux~; le total des débits et celui
+des crédits, et les deux contrôles, ne changent pas avec la présentation. Hiérarchie masquée, la
+balance redevient la liste à plat décrite ci-dessus.
+
+Trois règles propres à la balance, qui n'a pas de sections~:
+\begin{itemize}
+    \item \textbf{Un groupe ne totalise que des comptes de même nature.} Un groupe qui mêle des
+          comptes de nature débitrice (actifs, charges) et créditrice (passifs, produits) n'est pas
+          montré dès que des comptes \textbf{des deux natures} y portent un montant non nul~: ses
+          sous-groupes et ses comptes remontent d'un rang. Au plan PME, ce sont les classes
+          \emph{6}, \emph{7} et \emph{8}, et leurs groupes \emph{70} et \emph{80}~; un compte à
+          zéro ne dissout rien.
+    \item \textbf{\emph{2~Passifs} reste un groupe} à la balance (au bilan, il n'est pas montré dès
+          qu'un compte de capitaux propres a un solde, ses dettes et ses fonds propres tombant dans deux
+          sections), puisque dettes et fonds propres sont tous
+          de nature créditrice.
+    \item \textbf{Un compte de groupe sans solde ni mouvement n'a pas de ligne propre}~: le groupe
+          est montré par son titre. Un groupe qui n'est pas montré et dont le compte est à zéro
+          --- au plan PME, \emph{6}, \emph{7}, \emph{70}, \emph{8} et \emph{80} --- ne paraît donc
+          pas du tout.
+\end{itemize}
+
+Les boutons d'export PDF et CSV reprennent la présentation affichée
+(\S\ref{sec:rapports-exports}).
 
 \subsection{Grand livre}\label{sec:grand-livre}
 
@@ -4455,16 +4716,67 @@ Tous les rapports se \textbf{consultent à l'écran}. Pour les emporter :
 
 \begin{keshnote}
 Le PDF est paginé et destiné à être présenté ou archivé ; le CSV est destiné à être repris dans
-un tableur. Aucun des deux ne perd de ligne, même quand l'écran en limite le nombre~; le PDF abrège
-seulement, d'un «~…~», les textes qui dépassent un nombre fixe de caractères (intitulé de compte de la balance,
-pièce, journal, libellé et contreparties du grand livre, nom d'un compte en devise au bilan et au
-compte de résultat). Dans le PDF, les montants sont \textbf{alignés à droite} dans leur colonne,
+un tableur. Exporté \textbf{à plat} (sans groupes), aucun des deux ne perd de ligne, même quand
+l'écran en limite le nombre~; exporté \textbf{par groupes} (ci-dessous), un groupe fermé n'a qu'une
+ligne, qui porte la somme de ses comptes. Le PDF abrège seulement, d'un «~…~», les textes qui
+dépassent un nombre fixe de caractères (intitulé de compte de la balance, pièce, journal, libellé et
+contreparties du grand livre, nom d'un compte en devise au bilan et au compte de résultat, et, par
+groupes, tout libellé de plus de 48~caractères au premier niveau (47 au deuxième, 45 au troisième, 44 au quatrième,
+42 au cinquième, 40 au plus profond~; sur une ligne en devise, 34 au premier niveau et moins en retrait), même celui d'un compte que l'export à plat n'abrège pas~;
+à la balance par groupes, l'intitulé garde sa colonne~: 22~caractères au premier niveau, comme à plat, 21 au deuxième,
+19 au troisième, 18 au quatrième, 16 au cinquième, 14 au plus profond~; un sous-total («~Total~\ldots~»), qui n'a pas de numéro,
+commence dans la colonne du numéro et dispose de 30~caractères au premier niveau, 29 au deuxième, 27 au troisième,
+26 au quatrième, 24 au cinquième, 22 au plus profond). Dans le PDF, les montants sont \textbf{alignés à droite} dans leur colonne,
 les décimales l'une sous l'autre, totaux compris~; au bilan et au compte de résultat, le solde en
 devise («~USD 1'233.57~») l'est dans sa propre colonne. Les secondes lignes en petit du grand livre
 et de la balance, qui sont des phrases, restent alignées à gauche.
 Le titre du rapport, dans les propriétés du fichier PDF, garde ses accents («~Compte de
 résultat~», «~Décompte TVA~»).
 \end{keshnote}
+
+\paragraph{Le bilan, le compte de résultat et la balance par groupes.} L'export du bilan, du
+compte de résultat et de la balance \textbf{suit l'écran}~: même niveau de détail, mêmes groupes ouverts ou fermés, mêmes
+sous-totaux, sur la ligne du titre ou en pied. Case \textbf{Hiérarchie des groupes} décochée, il reste à
+plat, tel qu'avant. Par l'API, un export qui ne précise rien rend la même chose que l'écran à sa première
+visite --- tous les comptes, colonnes \texttt{Niveau} et \texttt{TypeLigne} au CSV ---, et l'export à plat se
+demande par \texttt{detailLevel=flat} (guide de l'API, \texttt{docs/api-external.md}). Depuis l'écran, l'export suit la hiérarchie affichée, avec les colonnes
+\texttt{Niveau} et \texttt{TypeLigne} et les sous-totaux. Le CSV groupé (bilan, compte de résultat ou balance) ne s'additionne pas tel quel~: le titre d'un groupe (en pied, sa ligne de sous-total) répète les montants de ses comptes, et un groupe fermé n'y porte que son sous-total. Chaque section du bilan et du compte de résultat porte sa ligne de total, la balance sa ligne \texttt{Total}~; pour additionner les montants dans un tableur, décochez «~Hiérarchie des groupes~» pour l'export à plat d'avant, qui porte lui aussi ses lignes de total (à filtrer par \texttt{Section} au bilan et au compte de résultat, à écarter à la balance~: ligne \texttt{Total}) et n'a pas de colonne \texttt{TypeLigne}. Les montants, groupés ou à plat, sont arrondis au centime.
+\begin{itemize}
+    \item \textbf{PDF} --- sous la période, une ligne dit le niveau imprimé («~Niveau~2~», ou
+          «~Tous les comptes~»), suivie de «~, détail ajusté à la main~» si vous avez ouvert ou
+          fermé des groupes vous-même (un groupe que vous ramenez à l'état que lui donne le niveau ne
+          compte plus)~; les groupes ouverts ou fermés se voient dans le corps, où
+          un groupe fermé porte sa somme sans ses comptes. Chaque ligne est décalée selon sa
+          profondeur dans le plan~; un groupe et sa ligne de sous-total («~Total Liquidités~») sont
+          en gras~; un compte de groupe qui porte lui-même des écritures a sa ligne
+          «~(solde propre)~», suffixe qui reste entier quand le nom est abrégé (sauf à partir de la profondeur~6 de la balance, dont la colonne est alors plus étroite que lui). Le titre d'un groupe ouvert ne reste pas seul en bas de page. Les
+          sous-titres de rôle des capitaux propres (\emph{Capital}, \emph{Autres fonds
+          propres}\ldots) ne s'impriment qu'à plat~: par groupes, les fonds propres suivent le plan.
+          Les totaux de section, les lignes calculées et l'équation du bilan ne changent pas.
+    \item \textbf{CSV} --- deux colonnes de plus après \texttt{Section}~: \texttt{Niveau} (la
+          profondeur dans le plan) et \texttt{TypeLigne} (\texttt{groupe}, \texttt{compte},
+          \texttt{propre}, \texttt{soustotal}), une ligne par ligne de l'écran~; le solde du titre
+          d'un groupe ouvert dont le sous-total est en pied est vide, sa ligne \texttt{soustotal}
+          le porte.
+    \item \textbf{La balance} --- au PDF, les mêmes lignes, sur ses quatre colonnes (ouverture,
+          débit, crédit, clôture)~; un groupe en devise unique a, comme un compte, sa seconde ligne en
+          petit dans sa devise. Au CSV, \texttt{Niveau} et \texttt{TypeLigne} viennent \textbf{en
+          tête} de chaque ligne, puisque la balance n'a pas de colonne \texttt{Section}~; un groupe
+          en devise unique remplit les colonnes en devise comme un compte. Le résultat reporté, le
+          total des mouvements et le contrôle d'ouverture restent sous les groupes, comme à plat.
+\end{itemize}
+Les montants s'arrondissent au centime au moment de s'écrire. Un sous-total est l'arrondi de la
+somme exacte de ses comptes, \textbf{non la somme de leurs montants arrondis}~: deux comptes à
+10.005 et 5.006 s'impriment 10.01 et 5.01, et leur groupe 15.01. L'écart d'un centime avec
+l'addition des lignes est voulu~; les totaux de section suivent la même règle.
+
+\begin{keshwarning}
+Un bilan ou un compte de résultat imprimé à un niveau qui replie les comptes --- le niveau~1 en
+particulier --- est un \textbf{affichage de travail}, utile pour lire ou discuter les chiffres, et
+\textbf{non des comptes annuels}~: la conformité à l'art.~959a CO tient aux sections légales, que
+les groupes ne changent pas. Pour la remise de comptes annuels, préférez l'export à plat (case «~Hiérarchie des groupes~» décochée), ou au
+niveau «~Tous les comptes~».
+\end{keshwarning}
 
 \paragraph{Les cellules de texte du CSV.} Pour qu'un tableur lise toujours un libellé comme du
 texte, et jamais comme une formule, une cellule de texte d'un export CSV de rapport --- libellé

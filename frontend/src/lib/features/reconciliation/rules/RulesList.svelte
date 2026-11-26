@@ -56,13 +56,13 @@
 
 	/**
 	 * Story 38-11d (AC-2) — les filtres posés d'une règle, à côté du libellé de
-	 * son critère : « Type PayPal = … », « E-mail = … », « Entrées » / « Sorties ».
+	 * son critère : « Type = … » (PayPal, Wise : Story 39-11d), « E-mail = … », « Entrées » / « Sorties ».
 	 */
 	function filterLabels(r: ReconciliationRule): string[] {
 		const out: string[] = [];
 		if (r.providerType) {
 			out.push(
-				i18nMsg('reconciliation-rules-filter-provider-type', 'Type PayPal = { $value }', {
+				i18nMsg('reconciliation-rules-filter-provider-type', 'Type = { $value }', {
 					value: r.providerType,
 				}),
 			);

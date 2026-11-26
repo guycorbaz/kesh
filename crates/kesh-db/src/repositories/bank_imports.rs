@@ -408,6 +408,137 @@ where
     .map_err(map_db_error)
 }
 
+/// Écart de continuité entre un relevé et le relevé à solde qui le précède —
+/// Story 39-11b (AC-5) : la clôture du relevé précédent (`expected`) diffère du
+/// solde d'ouverture du relevé jugé (`found`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatementGap {
+    /// L'entrée `bank_imports` du relevé précédent.
+    pub previous_import_id: i64,
+    /// Sa clôture : le solde d'ouverture attendu.
+    pub expected: rust_decimal::Decimal,
+    /// Le solde d'ouverture du relevé jugé.
+    pub found: rust_decimal::Decimal,
+}
+
+/// Story 39-11b (AC-5) — **la** règle de continuité d'un relevé avec le
+/// précédent du même compte, servie par l'import Wise (à l'instant de
+/// l'import) et par la revue des écarts de la Story 39-11c (sur l'état présent
+/// des relevés, rien n'est stocké). Jugée sur le **premier jour** du relevé
+/// seul :
+///
+/// 1. si un relevé du compte (saisi ou importé, hors `exclude_import_id` — le
+///    relevé jugé lui-même, à la revue) couvre `first_date`
+///    ([`overlapping_statements`] sur `[first_date, first_date]`), le relevé
+///    **prolonge par chevauchement** : aucun écart ;
+/// 2. sinon, le relevé à solde le plus tardif dont `period_to < first_date`
+///    ([`previous_statement_closing`]) : si sa clôture diffère de
+///    `opening_balance`, écart ; s'il n'y en a aucun, rien.
+///
+/// Jamais le chevauchement de toute la période : un relevé postérieur qui
+/// chevauche la fin masquerait l'écart du début. Lectures sans verrou :
+/// l'écart est un avertissement, non une garde.
+pub async fn continuity_gap(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    bank_account_id: i64,
+    first_date: chrono::NaiveDate,
+    opening_balance: rust_decimal::Decimal,
+    exclude_import_id: Option<i64>,
+) -> Result<Option<StatementGap>, DbError> {
+    let covering = overlapping_statements(
+        &mut *conn,
+        company_id,
+        bank_account_id,
+        first_date,
+        first_date,
+    )
+    .await?;
+    if covering.iter().any(|s| Some(s.id) != exclude_import_id) {
+        return Ok(None);
+    }
+    let previous =
+        previous_statement_closing(&mut *conn, company_id, bank_account_id, first_date).await?;
+    Ok(previous.and_then(|(id, _, closing)| {
+        (closing != opening_balance).then_some(StatementGap {
+            previous_import_id: id,
+            expected: closing,
+            found: opening_balance,
+        })
+    }))
+}
+
+/// Ce que les relevés importés d'un compte disent d'une date — Story 39-11c
+/// (revue de code P2, M2) : la garde du paiement par carte groupé
+/// (`routes::wise`) en déduit qu'une ligne du paiement manque ou non.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DateCoverage {
+    /// Un relevé couvre la date ([`overlapping_statements`] sur `[date,
+    /// date]`), ou le premier relevé postérieur prolonge **sans écart** le
+    /// relevé à solde qui précède la date (sa clôture égale le solde
+    /// d'ouverture du suivant) : aucune ligne n'a été sautée.
+    Covered,
+    /// Un relevé postérieur existe et un relevé à solde précède la date, mais
+    /// les soldes ne se suivent pas (ou le relevé postérieur n'a pas de solde
+    /// d'ouverture) : une ligne a pu être sautée, celle de la date comprise.
+    Gap,
+    /// Un relevé postérieur existe, mais aucun relevé à solde ne précède la
+    /// date : rien n'atteste ce qui s'est passé avant le premier relevé.
+    NoPrevious,
+    /// Aucun relevé du compte n'atteint la date (`period_to >= date`) : rien
+    /// n'est encore importé au-delà.
+    NothingAfter,
+}
+
+/// Story 39-11c (revue de code P2, M2) — la couverture de `date` par les
+/// relevés du compte (voir [`DateCoverage`]). La période d'un relevé importé
+/// va de sa première à sa dernière **transaction** : un jour sans mouvement,
+/// après la dernière ligne d'un fichier ou entre deux fichiers, n'est couvert
+/// par aucun — c'est la continuité des soldes (la règle de
+/// [`continuity_gap`]) qui atteste alors qu'aucune ligne n'y manque. Lectures
+/// ordinaires, sans verrou.
+pub async fn date_coverage(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    bank_account_id: i64,
+    date: chrono::NaiveDate,
+) -> Result<DateCoverage, DbError> {
+    if !overlapping_statements(&mut *conn, company_id, bank_account_id, date, date)
+        .await?
+        .is_empty()
+    {
+        return Ok(DateCoverage::Covered);
+    }
+    // Aucun relevé ne couvre la date : un relevé atteignant la date commence
+    // donc après elle. Le premier d'entre eux.
+    let next: Option<(chrono::NaiveDate, Option<rust_decimal::Decimal>)> = sqlx::query_as(
+        "SELECT period_from, opening_balance FROM bank_imports \
+         WHERE company_id = ? AND bank_account_id = ? AND period_from > ? \
+         ORDER BY period_from, imported_at, id LIMIT 1",
+    )
+    .bind(company_id)
+    .bind(bank_account_id)
+    .bind(date)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    let Some((next_from, opening)) = next else {
+        return Ok(DateCoverage::NothingAfter);
+    };
+    let Some(opening) = opening else {
+        return Ok(DateCoverage::Gap);
+    };
+    let previous =
+        previous_statement_closing(&mut *conn, company_id, bank_account_id, next_from).await?;
+    Ok(match previous {
+        None => DateCoverage::NoPrevious,
+        Some((_, period_to, closing)) if period_to < date && closing == opening => {
+            DateCoverage::Covered
+        }
+        Some(_) => DateCoverage::Gap,
+    })
+}
+
 /// Issue de [`delete_unreconciled_in_tx`] (Story 27-1, #632).
 #[derive(Debug)]
 pub enum DeleteBankImportOutcome {

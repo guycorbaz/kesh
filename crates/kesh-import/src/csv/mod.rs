@@ -22,6 +22,7 @@ pub mod parser;
 pub mod profile;
 
 pub use amount::{parse_api_amount, parse_dot_decimal_amount};
+pub(crate) use by_name::read_records;
 pub use by_name::{ColumnsByName, HeaderByNameError};
 pub use encoding::{DetectedEncoding, detect_encoding};
 pub use parser::{

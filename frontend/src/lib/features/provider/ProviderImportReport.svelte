@@ -8,6 +8,9 @@
 
   `testid` préfixe les identifiants de test (« paypal-import-report »,
   « stripe-import-report », « paypal-download-report »…).
+
+  `main` remplace les lignes par devise (Wise, Story 39-11d : compte rendu par
+  fichier, sans `currencies`) ; le titre et `children` restent.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -17,17 +20,22 @@
 	interface Props {
 		report: ProviderImportResponseBase;
 		testid: string;
+		/** Ce qui remplace les lignes par devise (Wise : le compte rendu par fichier). */
+		main?: Snippet;
 		/** Ce qui est propre au prestataire, sous les lignes par devise. */
 		children?: Snippet;
 	}
 
-	let { report, testid, children }: Props = $props();
+	let { report, testid, main, children }: Props = $props();
 </script>
 
 <section class="mt-4 rounded border border-border bg-surface-alt p-3 text-sm" data-testid={testid}>
 	<h2 class="font-semibold">{i18nMsg('provider-import-report-title', 'Compte rendu de l’import')}</h2>
+	{#if main}
+		{@render main()}
+	{:else}
 	<ul class="mt-2 list-disc pl-5">
-		{#each report.currencies as c (c.currency)}
+		{#each report.currencies ?? [] as c (c.currency)}
 			<li data-testid="{testid}-{c.currency}">
 				{i18nMsg('provider-import-report-currency', '{ $currency } : { $inserted } transaction(s) insérée(s), { $duplicates } doublon(s)', {
 					currency: c.currency,
@@ -37,5 +45,6 @@
 			</li>
 		{/each}
 	</ul>
+	{/if}
 	{@render children?.()}
 </section>
