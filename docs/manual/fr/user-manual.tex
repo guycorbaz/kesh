@@ -4479,8 +4479,8 @@ la réponse à la dernière demande s'affiche, et l'écran revient toujours à l
 barre indique --- si vous revenez sur un rapport pendant la génération d'un autre, dès la fin de
 celle-ci. Si une demande échoue, le message d'erreur s'affiche et l'écran garde la présentation
 précédente~; pour la redemander, changez de nouveau la présentation, ou quittez l'onglet et revenez-y.
-Changer la présentation d'un rapport pendant le chargement d'un autre rapport interrompt ce chargement, comme le fait l'arrivée sur un rapport
-par le retour arrière ou par un lien (\S\ref{sec:rapports-exports})~: revenir
+Changer la présentation d'un rapport pendant le chargement d'un autre rapport interrompt ce chargement, comme le fait l'arrivée par le retour arrière ou
+par un lien sur un rapport qui n'est pas déjà affiché dans cette présentation (\S\ref{sec:rapports-exports})~: revenir
 sur son onglet le relance. Chaque demande est inscrite au journal
 d'audit, comme un changement de période. Le navigateur \textbf{retient votre présentation}, pour
 chaque société et chaque rapport~: en revenant sur la page, vous retrouvez la hiérarchie, le
@@ -4490,7 +4490,7 @@ présentation par défaut revient, sans erreur). Un groupe disparu du plan depui
 L'\textbf{adresse de la page porte aussi la présentation affichée}~; elle prime sur celle que
 retient le navigateur~: ouvrir un lien vers un rapport, ou y revenir par le retour arrière, l'affiche
 dans la présentation de l'adresse, qui devient la présentation retenue. Une adresse sans présentation
-prend celle que retient le navigateur. L'adresse change à la réponse du serveur, non au geste~: tant
+prend la présentation en cours (celle que retient le navigateur, à l'arrivée sur la page). L'adresse change à la réponse du serveur, non au geste~: tant
 que le rapport redemandé n'est pas affiché, elle reste celle du rapport à l'écran.
 
 Les boutons d'export PDF et CSV reprennent la présentation affichée
