@@ -13,8 +13,8 @@
 //!
 //! # Règles de validation (`validate_template`)
 //!
-//! - Caractères autorisés : `[A-Za-z0-9\-_/.#\s{}:]`.
-//! - Longueur du template ≤ 64.
+//! - Caractères autorisés : lettres ASCII, chiffres, `- _ / . # : { }`, espace, tabulation.
+//! - Longueur du template ≤ 64 octets.
 //! - Au moins 1 placeholder reconnu présent.
 //! - Pour chaque `{SEQ:NN}` : 1 ≤ NN ≤ 10.
 //! - Longueur du rendu maximal ≤ 64 (cas worst-case `seq = 10^NN - 1`).
@@ -24,7 +24,10 @@ use std::fmt;
 
 /// Longueur max du template et du rendu final.
 pub const MAX_TEMPLATE_LEN: usize = 64;
-/// Longueur max du rendu final (identique à la VARCHAR(64) DB).
+/// Longueur max du rendu final, en **octets** (`String::len`). La colonne `VARCHAR(64)`
+/// compte des caractères : la borne est plus stricte, jamais plus lâche — un choix de
+/// prudence (#1122), non une exigence de la QR-facture, dont le message est tronqué à
+/// 140 caractères et la charge gardée à part.
 pub const MAX_RENDERED_LEN: usize = 64;
 /// Borne haute du padding `{SEQ:NN}`.
 pub const MAX_SEQ_PADDING: u32 = 10;
@@ -91,7 +94,7 @@ impl fmt::Display for FormatError {
             ),
             Self::RenderedTooLong(n) => write!(
                 f,
-                "Le format générerait un numéro de {n} caractères (max {MAX_RENDERED_LEN})"
+                "Le format générerait un numéro de {n} octets (max {MAX_RENDERED_LEN})"
             ),
             Self::UnmatchedBrace => write!(f, "Accolade non appariée dans le format"),
             Self::NotNumberingShape => write!(
@@ -342,9 +345,12 @@ pub fn supplier_invoice_long_label(
 /// - [`FormatError::FiscalYearNameBrace`] : le nom de l'exercice porte une
 ///   accolade et le format le reprend (`{FY}`) ;
 /// - [`FormatError::RenderedTooLong`] : le rendu dépasse
-///   [`MAX_RENDERED_LEN`] **octets** — borne en octets, non en caractères, parce
-///   que la QR-facture borne sa charge en octets (C-e351-7) ; un nom d'exercice
-///   accentué l'atteint avant 64 caractères.
+///   [`MAX_RENDERED_LEN`] **octets** — borne en octets, non en caractères, par
+///   prudence (C-e351-7) : plus stricte que la colonne `VARCHAR(64)`, qui compte des
+///   caractères, jamais plus lâche. Ce n'est pas la QR-facture qui l'impose : son
+///   message non structuré est tronqué à 140 caractères et sa charge est gardée
+///   par un contrôle à part. Un nom d'exercice à lettres accentuées (deux octets),
+///   « – » ou « € » (trois) l'atteint avant 64 caractères.
 pub fn render(template: &str, year: i32, fy_name: &str, seq: i64) -> Result<String, FormatError> {
     // Review P14 : DB CHECK `next_number >= 1` devrait garantir seq ≥ 1,
     // mais défense en profondeur si un caller contourne le repository.

@@ -5,7 +5,7 @@
 //!   seulement s'il **change** : un format déjà enregistré sans compteur, renvoyé
 //!   à l'identique ou omis, ne bloque pas l'enregistrement d'autre chose (D2) ;
 //! - **AC3** : un numéro que le format enregistré ne peut pas rendre (plus de 64
-//!   caractères, accolade dans le nom de l'exercice) ne finit plus en `500` : la
+//!   octets, accolade dans le nom de l'exercice) ne finit plus en `500` : la
 //!   validation d'une facture et la création d'un avoir rendent **400
 //!   `NUMBER_FORMAT_UNRENDERABLE`**, `details { document, cause }`, rien n'est
 //!   écrit, le compteur n'avance pas (D4) ;
@@ -857,13 +857,7 @@ async fn ac4_default_format_collides_on_two_fiscal_years_starting_the_same_year(
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac4_duplicate_from_a_previous_format(pool: MySqlPool) {
     let (app, seeded, contact) = setup(&pool).await;
-    set_format(
-        &pool,
-        seeded.company_id,
-        "invoice_number_format",
-        "X{SEQ}2",
-    )
-    .await;
+    set_format(&pool, seeded.company_id, "invoice_number_format", "X{SEQ}2").await;
     let first = draft_invoice(&app, contact, "2026-06-15").await;
     let (status, body) = app.validate(first).await;
     assert_eq!(status, 200, "première : {body}");

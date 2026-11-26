@@ -2492,7 +2492,7 @@ fn number_format_unrenderable_response(
         C::TooLong => t_args(
             "error-number-format-unrenderable-too-long",
             &format!(
-                "Le format « {format} », avec le nom de l’exercice « {fiscal_year_name} », donne un numéro trop long (plus de 64 octets ; une lettre accentuée en compte deux) : un administrateur doit raccourcir le format dans Administration → Facturation, ou le nom de l’exercice."
+                "Le format « {format} » donne, dans l’exercice « {fiscal_year_name} », un numéro trop long (plus de 64 octets ; une lettre accentuée en compte deux, « – » ou « € » trois, un emoji quatre) : un administrateur doit raccourcir le format dans Administration → Facturation, et le nom de l’exercice s’il reprend {{FY}}."
             ),
             &args,
         ),
@@ -2506,7 +2506,7 @@ fn number_format_unrenderable_response(
         C::Duplicate => t_args(
             "error-number-format-unrenderable-duplicate",
             &format!(
-                "Le format « {format} » produit, dans l’exercice « {fiscal_year_name} », un numéro déjà attribué : il doit distinguer chaque pièce — un compteur ({{SEQ}}), qui repart à chaque exercice, et l’exercice ({{FY}}) ; l’année ({{YEAR}}) ne suffit pas si deux exercices commencent la même année. Un administrateur doit le corriger dans Administration → Facturation."
+                "Le format « {format} » produit, dans l’exercice « {fiscal_year_name} », un numéro déjà attribué dans la société — dans cet exercice, dans un autre, ou sous un format précédent : chaque pièce doit avoir un numéro distinct. Un compteur ({{SEQ}}) repart à chaque exercice ; pour distinguer les exercices il faut {{FY}}, ou {{YEAR}} si deux exercices ne commencent jamais la même année. Un administrateur doit le corriger dans Administration → Facturation."
             ),
             &args,
         ),
