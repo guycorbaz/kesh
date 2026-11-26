@@ -80,7 +80,11 @@ async function fillEntry(page: Page, label: string): Promise<void> {
 }
 
 const submit = (page: Page) => page.getByTestId('journal-entry-submit');
-const fields = (page: Page) => page.getByTestId('journal-entry-fields');
+/**
+ * Un contrôle de la saisie, pour juger du gel : Playwright ne tient pas un `<fieldset>`
+ * lui-même pour désactivé, mais ses descendants le sont (`toBeDisabled` / `toBeEnabled`).
+ */
+const fields = (page: Page) => page.locator('#entry-description');
 
 test('saisie coupée après l’écriture : J6, puis la reprise sans requête, puis le doublon (J5), puis la confirmation', async ({
 	page,
