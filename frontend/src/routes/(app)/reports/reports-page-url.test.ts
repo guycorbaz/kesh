@@ -304,6 +304,25 @@ describe('Retour et Suivant (AC-1, AC-2, AC-13)', () => {
 		expect(onglet(r, 'Grand livre').getAttribute('aria-selected')).toBe('true');
 		expect(appels(m.getGeneralLedger)).toBe(1);
 	});
+
+	it('Story 55-4 (L2) — grand livre de tous les comptes : « Du » tapé sans Générer, aller-retour par un onglet : la date tapée reste, 0 requête', async () => {
+		// Le clic sur l'onglet du grand livre (tous les comptes, qui garde *Générer*) écrit la clé AFFICHÉE, non celle
+		// des champs (`urlForTab`) : la page ne doit pas réappliquer l'adresse qu'elle vient d'écrire.
+		// Mutation tuée : `writeUrl` qui ne pose pas `lastHandledKey` (« clé écrite non enregistrée ») → l'effet
+		// réapplique l'adresse du clic, « Du » revient au 2026-01-01, rouge.
+		const r = await monter('/reports?tab=general-ledger&from=2026-01-01&to=2026-06-30');
+		const lDu = () => r.getByTestId('ledger-from') as HTMLInputElement;
+		expect(appels(m.getGeneralLedger)).toBe(1);
+		await fireEvent.input(lDu(), { target: { value: '2026-03-01' } });
+		await fireEvent.click(onglet(r, 'Bilan'));
+		await pause();
+		await fireEvent.click(onglet(r, 'Grand livre'));
+		await tick();
+		await pause();
+		expect(rechercheCourante()).toBe('tab=general-ledger&from=2026-01-01&to=2026-06-30');
+		expect(lDu().value).toBe('2026-03-01');
+		expect(appels(m.getGeneralLedger)).toBe(1);
+	});
 });
 
 describe('le chargement sans Générer (D16, AC-20 à AC-26)', () => {

@@ -385,6 +385,28 @@ describe('TVA — les comptes désignés, lus au premier affichage du décompte 
 		expect(r.queryByRole('alert')).toBeNull();
 	});
 
+	it('Story 55-4 (L8) — réglages en échec, puis retour sur l’onglet : relus une fois, la ligne paraît ; aucune lecture de plus', async () => {
+		m.getInvoiceSettings.mockRejectedValueOnce(new Error('réseau'));
+		const r = await monter('/reports?tab=vat&fy=2&from=2026-01-01&to=2026-12-31');
+		await r.findByTestId('vat-total-vat-due');
+		await pause();
+		expect(appels(m.getInvoiceSettings)).toBe(1);
+		expect(r.queryByTestId('vat-accounts')).toBeNull();
+		// Rouge sans le correctif : aucune relecture, la ligne reste omise jusqu'au rechargement de la page.
+		await fireEvent.click(onglet(r, 'Bilan'));
+		await pause();
+		await fireEvent.click(onglet(r, 'TVA'));
+		const ligne = await r.findByTestId('vat-accounts');
+		expect([...ligne.querySelectorAll('a')].map((a) => a.textContent)).toEqual(['2200', '1170']);
+		expect(appels(m.getInvoiceSettings)).toBe(2);
+		// Lue avec succès : plus de relecture (pas de boucle).
+		await fireEvent.click(onglet(r, 'Bilan'));
+		await pause();
+		await fireEvent.click(onglet(r, 'TVA'));
+		await pause();
+		expect(appels(m.getInvoiceSettings)).toBe(2);
+	});
+
 	it('compte désigné absent de la liste des comptes : sa paire est omise', async () => {
 		m.getInvoiceSettings.mockResolvedValue({ defaultVatPayableAccountId: 999, defaultVatRecoverableAccountId: 11 });
 		const r = await monter('/reports?tab=vat&fy=2&from=2026-01-01&to=2026-12-31');

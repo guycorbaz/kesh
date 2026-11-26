@@ -179,8 +179,10 @@
 
 	// Story 55-2 (AC-6, D7) — les comptes de TVA désignés (réglages de facturation, tout rôle), lus UNE fois,
 	// au premier affichage d'un décompte TVA (génération, adresse, Retour, clic sur l'onglet qui le montre) ;
-	// aucune lecture tant qu'aucun décompte n'est affiché. En échec : silence, la ligne des comptes est omise
-	// (pas de retentative : l'effet reboucherait).
+	// aucune lecture tant qu'aucun décompte n'est affiché. En échec : silence, la ligne des comptes est omise,
+	// et la lecture se refait au PROCHAIN affichage (retour sur l'onglet, nouveau décompte ; Story 55-4, L8) —
+	// jamais en boucle : `vatSettingsRequested` n'est pas un `$state`, sa remise à faux dans le `catch`, hors de
+	// l'effet, ne le relance pas ; seul un changement de ses dépendances le fait.
 	let vatSettings = $state<InvoiceSettingsResponse | null>(null);
 	let vatSettingsRequested = false;
 	$effect(() => {
@@ -188,7 +190,10 @@
 		vatSettingsRequested = true;
 		getInvoiceSettings()
 			.then((s) => (vatSettings = s))
-			.catch(() => (vatSettings = null));
+			.catch(() => {
+				vatSettings = null;
+				vatSettingsRequested = false;
+			});
 	});
 	/** Un compte désigné résolu par la liste des comptes ; non désigné ou absent de la liste : `null`. */
 	function accountRefOf(id: number | null | undefined): AccountRef | null {
