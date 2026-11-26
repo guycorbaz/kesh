@@ -1,6 +1,6 @@
 # Story 55-3a : les justificatifs d'une écriture dans la réponse du journal et du grand livre (serveur)
 
-Status: ready-for-dev
+Status: in-progress
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 (Q1), D10, D12 (afficher n'est pas figer :
 sans aperçu dans l'Epic 55), D14 (fiche de la facture, Q8). Issue : #1607 (`enhancement`, **P4**, Q5 ; point c,
@@ -680,3 +680,59 @@ de code.
   `crates/kesh-api/src/errors.rs` ; § *Modules* : « taille de la version récrite avant l'aperçu », trois AC de contrat et
   un constat). Tendance depuis les décisions du 2026-11-25 : Pv2p5 Opus 0/0/2/8 → Pv2p6 Sonnet 0/0/0/4 → (décisions du
   2026-11-26) Pv2p7 Opus 0/0/0/5. La P8 reste en réserve.
+- 2026-11-26 — **T0 du développement** (base `epic/55-navigation`, tête `2d078aadd` : PR 46 reprise, Epics 37 à 40
+  dessous ; 55-1a, 55-1b, 55-2 en `review`). La fiche n'a pas de point R-n (le seul `R-2` cité est celui de la 55-3b) ;
+  points tranchés, ligne lue citée :
+  - **Q1, D9, D10, D12, D14** relus au fichier d'epic (§ *Décisions*, l. 235-262) : appliqués tels quels ; aperçu et marque
+    hors périmètre (section reportée non livrée).
+  - **Avoir `cancelled`** : `grep "UPDATE credit_notes" crates/` ne rend rien ; le seul `INSERT` écrit `'issued'`
+    (`crates/kesh-db/src/repositories/credit_notes.rs:785`, `VALUES (?, ?, ?, ?, 'issued', …)`). Règle `cn.status <> 'draft'`
+    gardée : un avoir annulé futur reste un justificatif (son écriture existe), un brouillon non.
+  - **Lignes SQL directes de l'AC-4 contre les contraintes** (`crates/kesh-db/test-schema/0001_schema_squash.sql`) : avoir
+    `draft` avec écriture — `chk_credit_notes_issued_has_je` (`:612`, « `status <> 'issued' or …` ») ne contraint que
+    `issued` : admis ; document `discarded` ou `to_complete` lié à une facture fournisseur — `chk_imported_si_status` (`:754`)
+    ne lie pas le statut au lien : admis ; facture `draft` avec écriture — `chk_invoices_validated_has_je` (`:919`) ne vise
+    que `validated` : admis ; lignes d'une société B pointant une écriture de A (facture, règlement, avoir, facture
+    fournisseur, document) — les clés étrangères ne visent que `journal_entries(id)` (`fk_invoices_journal_entry`,
+    `fk_invoice_settlements_entry`, `fk_credit_notes_journal_entry`, `fk_supplier_invoices_purchase_je`,
+    `fk_supplier_invoices_settlement_je`) : admises. **Aucun filtre « non éprouvable »** : chacun a sa ligne
+    (`tests/documents.rs`, `ac4_les_filtres_ecartent_ce_que_le_schema_admet`). Une facture `validated` sans écriture est,
+    elle, refusée (`:919`) : la facture de A d'un règlement de B porte la sienne.
+  - **Littéraux** relevés sur la base (`git grep -nE "JournalEntryRow \{|LedgerLine \{" crates/`) : production
+    `journal_report.rs:232`, `general_ledger.rs:901` ; tests et banc `general_ledger.rs:1022`, `csv.rs:1754,1930,2148`,
+    `pdf.rs:2855,3497,3558`, `benches/export.rs:155` — une ligne `has_documents: false,` chacun, rien d'autre ; aucun
+    littéral hors de `kesh-report` (l'outil MCP recopie champ par champ, `mcp/outils/grand_livre.rs:187-201`).
+  - **Boucle du grand livre** : `for acc in accounts` est à `general_ledger.rs:825` (inchangé) ; l'appel se place avant.
+  - **Vv2p1-10, Vv2p2-3** — lignes de `docs/api-external.md` relevées : table des routes ouvertes aux clés `:234`
+    (« `| Écritures comptables | GET /journal-entries, GET /journal-entries/{id} |` ») ; grand livre `:312` (« **Le Grand
+    livre et les fins d'exercice** », `:310` à `1e23edb55`) ; journal `:1284` (« **Les rapports en devise** », `:1164` à
+    `1e23edb55`). Décision : un paragraphe neuf *Les justificatifs des écritures* juste après `:312`, qui couvre le journal
+    et le grand livre (une seule phrase des deux, DRY), et une section neuve pour la route, à côté du document d'une facture
+    fournisseur (`:1250`) ; `:1284` inchangé (il ne parle que des champs en devise).
+  - **Vv2p2-1** — gate : la liste des binaires est indicative ; joué ici plus large (nextest du **workspace** à la clôture).
+  - **Vv2p2-2, Vv2p2-4** — manuel et 55-3b : hors de cette story (le manuel change à la 55-3b). Aucune ligne du manuel ici.
+  - **Vv2p2-5** — service au motif R1 à R3 (`crates/kesh-api/src/services/mod.rs:32-44`) : `(&ContexteAcces, &Lecture,
+    id)`, `acces.exiger(EXIGENCE_JUSTIFICATIFS)?` d'abord, `company_for_ids` avant `find_by_id` (patron de `detail`,
+    `services/ecritures.rs:238-246`), portée MCP **`None`** (défaut de la fiche : aucun outil ne sert la liste). Types de
+    règlement : la branche ne filtre pas le type ; un cas chacun pour `bank_transfer`, `internal_account`, `write_off`.
+  - **Pv2p7-1** — course inverse : écrite à la note de l'API (règlement annulé, dévalidation puis revalidation, ou
+    restauration d'avant le gel ; « relisez la liste avant de lire le PDF »).
+  - **Pv2p7-2** — la dévalidation refusée à une facture envoyée se lit à `crates/kesh-db/src/errors.rs:443-448`
+    (`UnvalidationBlocker::Emailed`, « Refus sec, non levable par confirmation ») et `crates/kesh-db/src/repositories/invoices.rs:1733`
+    (`if current.emailed_at.is_some() {`) ; la dévalidation vide l'écriture à `invoices.rs:1782`
+    (`UPDATE invoices SET status = 'draft', journal_entry_id = NULL`). Sans effet sur le code : la 55-3a ne lit ni
+    `emailed_at` ni l'audit (cas AC-10 « envoyée non figée » : `notFrozen`).
+  - **Pv2p7-3** — pour une facture figée, `get_or_freeze` sert `serve_frozen` avant tout contrôle de statut
+    (`crates/kesh-api/src/routes/issued_invoice_pdf.rs:104-106`, `if is_frozen(&invoice) { return serve_frozen(…) }`) :
+    seuls `410` et `500` restent ; écrit à la note de l'API, non dans les *Règles de rattachement* (texte de fiche hors des
+    zones que le développement modifie).
+  - **Pv2p7-4** — recopie dans la section reportée : non faite ici (contenu de la fiche de l'epic « PDF marqués », pas de
+    cette story) ; versée aux *Issues à ouvrir* comme point de la fiche à venir.
+  - **Pv2p7-5** — le constat de l'AC-9 couvre aussi `crates/kesh-i18n/` et `crates/kesh-api/src/errors.rs` (Dev Agent
+    Record).
+  - **V5-1 à V5-3** (version d'avant la réécriture du 2026-11-25, Q7) : caducs — la réécriture a retiré l'alternative
+    « Q7 refusée » ; la règle des factures (`validated`, ou `cancelled` figée) est celle des *Règles de rattachement*.
+  - **Vv2p4-1 à Vv2p4-4, Pv2p6-1, Pv2p6-3, Pv2p6-4** : portent sur l'aperçu, reporté ; suivent la section reportée.
+    **Pv2p6-2** : même lecture que Pv2p7-2.
+  - Journal des mutations : `kesh-gate-logs/s55-dev/55-3a/mutations/` (la fiche disait `kesh-gate-logs/s55-3a/` ; consignes
+    communes de l'epic : `s55-dev/<story>/`).
