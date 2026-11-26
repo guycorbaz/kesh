@@ -12,7 +12,7 @@ Règles et décisions en vigueur pour travailler sur Kesh. Ce fichier ne porte n
 - **Les décomptes** (migrations, tests, stories, issues) ne s'écrivent pas ici : ils vont à la PR de release, au journal `kesh-gate-logs/rel<version>/` et à la rétrospective. Ils se recomptent depuis la source :
   - migrations : `ls crates/kesh-db/migrations/*.sql | wc -l` ;
   - stories livrées : clés de `development_status:` de `sprint-status.yaml` au statut `done`, hors `epic-N` et `*-retrospective`, lues par un parseur YAML ; epics : clés `epic-<entier>` ; un epic est ouvert s'il porte une story `backlog`, `ready-for-dev`, `in-progress` ou `review` ;
-  - issues ouvertes : `gh issue list --state open --limit 600 --json number --jq length` ; bugs : commande de § *Priorités des défauts* ; au tag passé, reconstituer depuis `createdAt`/`closedAt`.
+  - issues ouvertes : `gh issue list --state open --limit 1000 --json number --jq length` ; bugs : commande de § *Priorités des défauts* ; au tag passé, reconstituer depuis `createdAt`/`closedAt`.
 
 ### Ce qu'impose la production
 
@@ -247,7 +247,7 @@ Chaque défaut ouvert porte sa priorité dès sa création, et c'est elle qui or
 
 1. **Le nombre de bugs baisse.** Bug = issue ouverte portant `bug` ou `known-failure`, comptée au kickoff et à la rétrospective :
    ```sh
-   gh issue list --state open --limit 600 --json labels \
+   gh issue list --state open --limit 1000 --json labels \
      --jq '[.[]|select([.labels[].name]|any(.=="bug" or .=="known-failure"))]|length'
    ```
 2. **Tout P1 ouvert est traité en priorité dans la release suivante**, quitte à une release dédiée ; celui qui reste est nommé à la rétrospective, avec sa raison.
@@ -283,7 +283,7 @@ Les anciennes rétrospectives classent la dette en **A** (vraie dette), **B** (l
 
 - **Titre d'une KF : `[KF-NNN] description`.** Le numéro se lit **depuis GitHub** avant d'être attribué, sur le seul préfixe :
   ```sh
-  gh issue list --state all --limit 600 --json title --jq '.[].title' \
+  gh issue list --state all --limit 1000 --json title --jq '.[].title' \
     | grep -oE '^\[KF-[0-9]{3}\]' | grep -oE '[0-9]{3}' | sort -n | tail -1
   ```
 - **Quand créer** : un bug reproduit hors de la story en cours (un bug trouvé dans la story se corrige dans la story, au Change Log) ; une KF détectée hors du travail courant ; un CR **avant** tout changement de périmètre d'une story validée.
