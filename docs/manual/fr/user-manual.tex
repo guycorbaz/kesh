@@ -500,6 +500,79 @@ C'est pourquoi Kesh \textbf{refuse le changement au premier essai} et vous indiq
 
 \paragraph{Un compte lié à un compte bancaire ou à une carte.} Un compte du plan lié à un compte bancaire \textbf{non archivé} ne change pas de type vers un type que ce lien n'admet plus : un compte bancaire se lie à un actif ou à un passif, une carte de crédit à un \textbf{passif} seulement (\S\ref{sec:carte-credit}). Le refus nomme le compte bancaire (\texttt{ACCOUNT\_LINKED\_\allowbreak TO\_BANK\_ACCOUNT}) et aucune confirmation ne le lève : changez d'abord le compte lié du compte bancaire, sur la page \emph{Comptes bancaires}. Un compte lié à un compte bancaire \textbf{archivé} se retype comme les autres.
 
+\subsection{Créer des groupes d'après les numéros}\label{sec:creer-groupes}
+
+Pour structurer un plan existant --- une banque par groupe, puis les liquidités ---, le bouton
+\textbf{Créer des groupes} de l'écran du plan (rôles Comptable et Administrateur) ouvre une page en
+trois zones. \textbf{Rien n'est créé ni déplacé avant votre confirmation.}
+
+\begin{enumerate}
+    \item \textbf{Choisir les comptes} : cochez les comptes à ranger (\emph{Tout le plan} et
+    \emph{Aucun} sont des raccourcis). Les comptes de groupe --- ceux qui ont un sous-compte actif,
+    en gras --- ne se cochent pas : ils servent de parent.
+    \item \textbf{Propositions} : Kesh propose les groupes selon l'un de deux modes.
+    \begin{itemize}
+        \item \emph{Un groupe par numéro sans son dernier chiffre} (par défaut) : 1170 et 1171
+        vont au groupe 117. Un numéro qui ne réunit qu'un seul compte coché ne donne aucune
+        proposition --- sauf s'il est déjà un compte de groupe, auquel cas le compte y est rattaché ;
+        la page rappelle ces comptes seuls de leur préfixe.
+        \item \emph{Un seul groupe pour la sélection} : un groupe pour tous les comptes cochés, de
+        numéro leur plus long préfixe commun ; si ce préfixe est le numéro de leur parent commun
+        (10), Kesh propose 100, s'il est libre.
+    \end{itemize}
+    Chaque proposition se modifie : numéro, et pour un groupe à créer, nom (les mots communs aux
+    noms des comptes, «~Banque A~») et parent (le parent commun des comptes ; à choisir s'ils
+    n'en ont pas ; la racine est permise, avec un avertissement). Les comptes d'une proposition se
+    décochent un par un. Quand le numéro est déjà pris, trois cas :
+    \begin{itemize}
+        \item c'est un \textbf{compte de groupe} : les comptes y sont \textbf{rattachés}, rien n'est créé ;
+        \item c'est un compte \textbf{sans écriture} ni sous-compte : il peut devenir le groupe, si vous
+        cochez \emph{Réutiliser ce compte comme groupe} --- il ne sera plus imputable ;
+        \item c'est un compte qui \textbf{porte des écritures}, ou un compte archivé : refus, saisissez un
+        autre numéro.
+    \end{itemize}
+    Un groupe ne réunit que des comptes \textbf{d'un même type} : des types mêlés sont refusés ;
+    décochez les comptes d'un type pour lever le refus. Kesh signale aussi, sans bloquer, des devises
+    mêlées (le groupe s'affiche en CHF), les comptes de même préfixe non cochés et deux banques
+    réunies sous un même préfixe (un bloc de dix qui chevauche une dizaine).
+
+    Chaque proposition est \emph{en attente} à l'ouverture. \textbf{Accepter} la retient (le bouton
+    est inactif tant qu'elle porte une erreur), \textbf{Écarter} la désactive --- elle n'entre ni dans
+    l'aperçu ni dans la confirmation, et ses erreurs ne bloquent rien ---, \textbf{Revenir} la remet
+    en attente. Changer de sélection recalcule les propositions en gardant vos choix sur
+    celles qui restent : ce que vous avez modifié (numéro, nom, parent, comptes décochés, état) est
+    gardé, le reste suit la nouvelle sélection. Changer de mode affiche les propositions de l'autre
+    mode, avec les choix que vous y aviez faits ; ceux du premier mode vous attendent si vous y
+    revenez. Une proposition acceptée dont un changement de la
+    \textbf{sélection} modifie les comptes \textbf{repasse en attente} : acceptez-la de nouveau. Si la
+    sélection revient exactement aux comptes acceptés, elle \textbf{redevient acceptée} d'elle-même,
+    sans nouveau clic, avec les champs tels que vous les avez laissés --- l'aperçu et le pied de page
+    montrent cet état. Décocher un compte \emph{dans la proposition} ne la remet pas en attente : elle
+    reste acceptée, avec un compte de moins. Un parent choisi qui devient l'un des comptes
+    de la proposition est remis \emph{à choisir}.
+    \item \textbf{Aperçu de l'arbre} : le plan tel qu'il sera après confirmation, avec les marques
+    \emph{nouveau}, \emph{déplacé} et \emph{devient groupe} ; \emph{Montrer seulement les branches
+    modifiées} réduit l'arbre aux groupes touchés.
+\end{enumerate}
+
+Le pied de page compte les groupes à créer, les comptes réutilisés, les comptes à déplacer et les
+propositions sans réponse. \textbf{Confirmer} est inactif tant qu'aucune proposition n'est acceptée
+ou qu'une acceptée porte une erreur. La confirmation est \textbf{tout ou rien} : tous les groupes
+sont créés et tous les comptes rangés en une fois, avec une entrée du journal d'audit par compte
+créé ou déplacé --- ou, si Kesh refuse une étape, \textbf{rien n'est écrit}. Le message dit alors
+quelle proposition et quel compte sont en cause ; la page garde votre sélection et vos
+propositions. \textbf{Recharger le plan}, offert après tout refus, relit les comptes sans rien perdre
+de vos choix : c'est le geste à faire si un compte a été modifié, archivé, supprimé ou a reçu une
+écriture entre-temps.
+
+\paragraph{Ranger sur deux niveaux.} Pour obtenir 10, puis 100 Liquidités sous 10, puis 103 Banque A sous 100 et ses comptes sous 103,
+créez d'abord le groupe des liquidités en mode \emph{un seul groupe} (100 sous 10), confirmez,
+puis revenez créer les groupes par banque, dont le parent commun est alors 100 : un compte de
+groupe ne se range pas dans la même confirmation que ses comptes («~un niveau à la fois~»).
+
+Déplacer un groupe existant reste un geste de \emph{Modifier le compte}
+(\S\ref{sec:modification-compte}). Cette fonction n'est pas ouverte aux clés d'API.
+
 \subsection{Suppression d'un compte}
 
 Un compte ne peut être supprimé que s'il n'a aucune écriture ni sous-compte. Sinon, vous pouvez l'\textbf{archiver} (le compte reste visible dans les écritures historiques mais n'est plus proposé à la saisie).

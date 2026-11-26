@@ -588,6 +588,13 @@ pub fn build_router_avec_registre(
     // saisie d'écritures en partie double
     let comptable_routes = Router::new()
         .route("/api/v1/accounts", post(routes::accounts::create_account))
+        // Story 46-5a — créer des groupes et y ranger des comptes, tout ou
+        // rien. Administrateur et Comptable ; fermée à toute clé d'API (le
+        // handler refuse une clé `read-write`, `API_KEY_OPERATION_FORBIDDEN`).
+        .route(
+            "/api/v1/accounts/groups",
+            post(routes::accounts::apply_groups),
+        )
         .route(
             "/api/v1/accounts/{id}",
             put(routes::accounts::update_account),

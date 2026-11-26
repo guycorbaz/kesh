@@ -161,7 +161,7 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **trente-cinq routes `SansEcritureAuJournal` sont rejouées quand
+//! - **(vi)** **trente-six routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `fiscal_years::update_fiscal_year` (enveloppe `DbError`, opération
 //!   `fiscal_years::update_name`, Story 34-7, #945 : le renommage tient l'exercice
 //!   puis son homonyme par la lecture de doublon, alors que la clôture tient ses
@@ -374,8 +374,22 @@
 //!   la sentinelle `companies` en exclusif puis demande une de ces lignes ;
 //!   tenue par `import_rejoue_un_interblocage_avec_un_geste_de_compte`
 //!   (`paypal_import_e2e.rs`).
+//!   Et — Story 46-5a — `accounts::apply_groups` (enveloppe `AppError`
+//!   `crate::retry::retry_app_on_deadlock`, opération `accounts::apply_groups`,
+//!   appelée par son corps `apply_groups_checked`, comme
+//!   `exchange_rates::acknowledge_notices` par `acquitter`) : la route groupée
+//!   du plan n'écrit rien au journal, mais elle verrouille tous les comptes de
+//!   la demande `FOR UPDATE`, les numéros des groupes à créer (verrou
+//!   d'intervalle d'un numéro absent) puis les parents et leurs ancêtres —
+//!   deux demandes sur des numéros voisins, ou des déplacements croisés,
+//!   peuvent s'interbloquer ; tenue par sa revue, **aucune preuve dynamique du
+//!   rejeu**.
 //!
-//!   **Décompte : trente-cinq**, recompté le 2026-11-24 à la reprise de `main` dans
+//!   **Décompte : trente-six**, recompté le 2026-11-26 à l'ajout de la Story 46-5
+//!   à la branche de PR de l'Epic 46, additionné et non recompté en entier :
+//!   trente-cinq, plus `accounts::apply_groups` (Story 46-5a, trente-trois sur sa
+//!   branche le 2026-11-22, recompté là depuis la table et le corps de chaque route).
+//!   Trente-cinq le 2026-11-24, à la reprise de `main` dans
 //!   epic/50, additionné et non recompté en entier : trente-quatre à la Story 48-12a
 //!   (recompté le 2026-11-19), plus `paypal_imports::create` (Story 38-11c1, trente-trois
 //!   le 2026-11-20) : trente-deux handlers
@@ -529,6 +543,10 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("post", "companies::unlock_company_books", Traced, SansEcritureAuJournal),
     ("post", "onboarding::reset", Traced, SansEcritureAuJournal),
     ("post", "accounts::create_account", Traced, SansEcritureAuJournal),
+    // Story 46-5a : créer des groupes et y ranger des comptes, tout ou rien —
+    // `account.created` par groupe créé et `account.updated` par compte déplacé,
+    // écrites par `create_in_tx` et `update_in_tx` ; aucune écriture comptable.
+    ("post", "accounts::apply_groups", Traced, SansEcritureAuJournal),
     ("put", "accounts::update_account", Traced, SansEcritureAuJournal),
     ("put", "accounts::archive_account", Traced, SansEcritureAuJournal),
     ("put", "accounts::reactivate_account", Traced, SansEcritureAuJournal),
@@ -1158,8 +1176,8 @@ fn the_registry_partition_is_what_the_story_declares() {
 
     assert_eq!(
         LIB_ROUTES.len(),
-        163,
-        "l'inventaire porte sur 163 routes (+ 1 : le téléchargement par l'API Stripe, 40-8b ; + 1 : l'acceptation de la revue Stripe, 40-7c ; + 1 : l'import du rapport Stripe, 40-7b ; + 1 : l'acceptation de la revue PayPal, 38-11c2 ; + 1 : le téléchargement par l'API PayPal, 38-12a ; + 1 : l'import du CSV PayPal, 38-11b ; + 1 : le changement de compte analytique d'une facture, 36-16a ; + 1 : le nom de la société, v0190-nom-societe ; + 2 : l'aperçu et la passation de la réévaluation de fin d'exercice, 37-5 ; + 1 : la conversion entre devises, 37-3b ; + 5 : la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections et les genres d'un exercice, 37-2 ; + 1 : le réglage multi-devises de la société, 37-1 ; + 1 : le solde d'ouverture d'un compte bancaire existant, 34-2 ; + 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
+        164,
+        "l'inventaire porte sur 164 routes (+ 1 : la création de groupes du plan, 46-5a ; + 1 : le téléchargement par l'API Stripe, 40-8b ; + 1 : l'acceptation de la revue Stripe, 40-7c ; + 1 : l'import du rapport Stripe, 40-7b ; + 1 : l'acceptation de la revue PayPal, 38-11c2 ; + 1 : le téléchargement par l'API PayPal, 38-12a ; + 1 : l'import du CSV PayPal, 38-11b ; + 1 : le changement de compte analytique d'une facture, 36-16a ; + 1 : le nom de la société, v0190-nom-societe ; + 2 : l'aperçu et la passation de la réévaluation de fin d'exercice, 37-5 ; + 1 : la conversion entre devises, 37-3b ; + 5 : la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections et les genres d'un exercice, 37-2 ; + 1 : le réglage multi-devises de la société, 37-1 ; + 1 : le solde d'ouverture d'un compte bancaire existant, 34-2 ; + 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
          envoi MCP, 32-8b ; + 5 : les routes mutantes des prompts du serveur MCP, 32-10a-iii ; \
          + 1 : le rattachement d'une transaction à une écriture, v017-3a ; + 2 : l'aperçu et \
          la création d'un relevé saisi à la main, v016-2a ; + 4 : le `PUT`, le `DELETE`, la \
@@ -1205,8 +1223,10 @@ fn the_registry_partition_is_what_the_story_declares() {
     // tracée par `provider.proposal_accepted` et les traces des écritures).
     // Story 40-8b (Epic 40, phase 2) : 154 → 155 (le téléchargement par l'API
     // Stripe, tracé par `bank_import.created` et `stripe_download.created`).
+    // Story 46-5a (Epic 46, ajoutée à la branche de PR le 2026-11-26) : 155 → 156
+    // (la création de groupes du plan, tracée par `account.created` et `account.updated`).
     assert_eq!(
-        traced, 155,
+        traced, 156,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -1241,7 +1261,7 @@ fn the_registry_partition_is_what_the_story_declares() {
          facture (36-16a, refs #1167), plus l'import du CSV PayPal (38-11b), plus le \
          téléchargement par l'API PayPal (38-12a) et l'acceptation de la revue PayPal \
          (38-11c2), plus l'import du rapport Stripe (40-7b) et l'acceptation de la revue \
-         Stripe (40-7c), plus le téléchargement par l'API Stripe (40-8b)"
+         Stripe (40-7c), plus le téléchargement par l'API Stripe (40-8b), plus la création de groupes du plan (46-5a)"
     );
     assert_eq!(
         exempt, 4,
@@ -1257,7 +1277,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     assert_eq!(
         // 40-7b et 38-11c2, unies par la 40-7c : 164 → 165 ; 40-7c : 166 ; 40-8b : 167.
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        167,
+        168,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -1672,8 +1692,8 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 132,
-        "130 routes de lib.rs (40-8b : + 1 — le téléchargement par l'API Stripe) — 129 avant (40-7b : + 1 — l'import du rapport Stripe) — 128 avant (38-12a : + 1 — le téléchargement par l'API PayPal) — 127 avant (38-11b : + 1 — l'import du CSV PayPal) — 126 avant (v0190-nom-societe : + 1 — le nom de la société, unie à l'Epic 37 par l'intégration de la 0.19.0) — 125 avant (37-5 : + 1 — l'aperçu de la réévaluation de fin d'exercice) — 124 avant (37-2 : + 5 — la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections, les genres d'un exercice) — 119 avant (37-1 : + 1 — le réglage multi-devises de la société) — 118 avant (34-2 : − 1 — la création d'un compte bancaire, reclassée \
+        sans_ecriture, 133,
+        "131 routes de lib.rs (46-5a : + 1 — la création de groupes du plan) — 130 avant (40-8b : + 1 — le téléchargement par l'API Stripe) — 129 avant (40-7b : + 1 — l'import du rapport Stripe) — 128 avant (38-12a : + 1 — le téléchargement par l'API PayPal) — 127 avant (38-11b : + 1 — l'import du CSV PayPal) — 126 avant (v0190-nom-societe : + 1 — le nom de la société, unie à l'Epic 37 par l'intégration de la 0.19.0) — 125 avant (37-5 : + 1 — l'aperçu de la réévaluation de fin d'exercice) — 124 avant (37-2 : + 5 — la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections, les genres d'un exercice) — 119 avant (37-1 : + 1 — le réglage multi-devises de la société) — 118 avant (34-2 : − 1 — la création d'un compte bancaire, reclassée \
          `Rejouee`) — 119 avant (33-5 : + 1 — l'adresse de la société ; v0172-session : + 2 — le réglage de la durée d'inactivité \
          et le battement d'activité ; v017-4a : + 4 — la saisie fournisseur et la complétion \
          d'import reclassées, le `PUT` et le `DELETE` d'un brouillon) — 112 avant \
@@ -1713,7 +1733,9 @@ fn the_replay_partition_is_what_the_story_declares() {
     // Story 40-7c (Epic 40) : 165 → 166 (l'acceptation de la revue Stripe).
     // Story 40-8b (Epic 40, phase 2) : 166 → 167 (le téléchargement par l'API
     // Stripe).
-    assert_eq!(tout.len(), 167);
+    // Story 46-5a (Epic 46, ajoutée à la branche de PR le 2026-11-26) : 167 → 168
+    // (la création de groupes du plan).
+    assert_eq!(tout.len(), 168);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

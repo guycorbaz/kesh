@@ -4,8 +4,11 @@ Status: done
 
 *Décision du mainteneur du 2026-11-24, appliquée à l'Epic 46 avant sa PR : **l'export des rapports par l'API doit
 rendre la même chose que l'export lancé depuis l'écran**. La présentation groupée devient le défaut de l'export, avec
-les colonnes `Niveau;TypeLigne` au CSV ; l'ancien export à l'octet près n'est plus rendu sans paramètre. L'API n'est pas
-encore utilisée en production ; le changement se fait dans la v1 et s'annonce comme une évolution. Branche
+les colonnes `Niveau;TypeLigne` au CSV ; l'ancien export à l'octet près n'est plus rendu sans paramètre. Le mainteneur a une
+clé d'API REST en service : le changement se fait dans la v1, sans nouvelle version de l'API, et s'annonce par un ⚠️ en
+tête des notes de version de la v0.20.0, sous `/api/v1` (décision du mainteneur du 2026-11-26, qui accepte le nouveau
+défaut). *(Annoté le 2026-11-26 : cette phrase disait « L'API n'est pas encore utilisée en production », ce qui est
+faux.)* Branche
 `story/46-export-api-groupe`, partie de `pr/46-rapports-groupes` (`511e61d54`). Aucune migration.*
 
 ## Prémisse, vérifiée au code (`511e61d54`)
@@ -77,12 +80,21 @@ encore utilisée en production ; le changement se fait dans la v1 et s'annonce c
 
 ## Note de version
 
+⚠️ **En tête des notes de version de la v0.20.0, sous `/api/v1`** (décision du mainteneur du 2026-11-26 : défaut
+accepté, sans nouvelle version de l'API ; une clé d'API REST est en service chez le mainteneur) :
+
+> ⚠️ **`/api/v1` — l'export des rapports change de défaut.** `GET /reports/balance-sheet/export`,
+> `/reports/income-statement/export` et `/reports/trial-balance/export` rendent désormais, **sans paramètre**, la
+> présentation par groupes de comptes (CSV avec les colonnes `Niveau;TypeLigne`), et non plus le rapport à plat. Un
+> script qui lit le CSV à plat ajoute **`detailLevel=flat`** à sa requête pour retrouver l'export d'avant. Les routes
+> JSON et les outils MCP ne changent pas. Pas de nouvelle version de l'API : le changement se fait dans la v1.
+
 - **Changed (API)** — L'export du bilan, du compte de résultat et de la balance par l'API
   (`GET /reports/…/export`) rend désormais, sans paramètre, la même chose que l'export lancé depuis l'écran : la
   présentation par groupes de comptes, tous les groupes ouverts, sous-totaux sur la ligne du titre, avec au CSV les
   colonnes `Niveau;TypeLigne`. L'export à plat d'avant se demande par `detailLevel=flat` (à l'octet près l'ancien
   export sans paramètre). `subtotalPosition`, `open` et `closed` sans `detailLevel`, refusés jusqu'ici, sont acceptés
-  à l'export. Les routes JSON et les outils MCP ne changent pas. Évolution de la v1 de l'API.
+  à l'export. Les routes JSON et les outils MCP ne changent pas. Évolution de la v1 de l'API, annoncée par le ⚠️ ci-dessus.
 
 ## Dev Agent Record
 
@@ -142,3 +154,8 @@ La section `sec:maj-epic-47` n'existe plus : son paragraphe est versé, sous le 
 la section unique « Passer à la 0.20.0 » (`sec:maj-0-20-0`) du manuel d'administration, avec la précision que
 l'export à plat arrondit désormais au centime (Story 48-11, déjà dans `main`) ; même précision dans
 `docs/api-external.md`.
+
+### 2026-11-26 — Décision du mainteneur, note de version
+Le nouveau défaut de l'export est accepté. La note de version gagne son ⚠️ de tête pour la v0.20.0, sous `/api/v1`,
+sans nouvelle version de l'API ; la phrase d'en-tête qui disait l'API inutilisée en production est corrigée (le
+mainteneur a une clé d'API REST en service). Aucune ligne de code.

@@ -6,7 +6,7 @@
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { toast } from 'svelte-sonner';
-	import { Plus, Pencil, Archive, RotateCcw } from '@lucide/svelte';
+	import { Plus, Pencil, Archive, RotateCcw, FolderTree } from '@lucide/svelte';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import {
 		fetchAccounts,
@@ -564,6 +564,11 @@
 			{i18nMsg('accounts-show-archived', 'Afficher les archivés')}
 		</label>
 		{#if canModify()}
+			<!-- Story 46-5b (AC-1) : l'aide à la création des groupes, aux mêmes rôles. -->
+			<Button variant="outline" href="/accounts/groups" data-testid="account-groups-button">
+				<FolderTree class="mr-2 h-4 w-4" aria-hidden="true" />
+				{i18nMsg('accounts-groups-button', 'Créer des groupes')}
+			</Button>
 			<Button onclick={openCreate} data-testid="account-create-button">
 				<Plus class="mr-2 h-4 w-4" aria-hidden="true" />
 				{i18nMsg('accounts-add', 'Nouveau compte')}

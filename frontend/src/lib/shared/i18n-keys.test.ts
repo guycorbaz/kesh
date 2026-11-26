@@ -1245,7 +1245,13 @@ const ATTENDU = {
 	// côtés gardés ; 3746 (pr/40, base 3677) + 25 (main, 3677 → 3702) = **3771**, confirmé par la garde (`kesh-gate-logs/s40-m2d/compteurs-3.log`).
 	// Epic 46 reposé sur main à a914c4823 (branche pr/46-rapports-groupes-v2, 2026-11-25) : les deux côtés
 	// gardés ; 3771 (main) + 18 (Epic 46 : 3508 → 3526) = **3789**, confirmé par la garde (`kesh-gate-logs/s46-pr/front-vitest-a.log`).
-	sitesTotal: 3789,
+	// Story 46-5b (2026-11-22) : **3517 → 3599**, relevé par la garde (« expected 3599 to be 3517 »,
+	// `kesh-gate-logs/s46-5b/front-test-unit.log` au gate) — l'écran « Créer des groupes »
+	// (`accounts/groups/+page.svelte`, ses messages `accounts/groups/messages.ts`, bloc
+	// `accounts-groups-*`) et le bouton de l'écran du plan.
+	// Story 46-5 ajoutée à la branche pr/46-rapports-groupes-v2 (2026-11-26) : les deux côtés gardés ;
+	// 3789 + 82 (46-5b : 3517 → 3599) = **3871**, provisoire, à confirmer par la garde.
+	sitesTotal: 3871,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

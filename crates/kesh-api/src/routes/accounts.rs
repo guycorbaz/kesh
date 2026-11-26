@@ -5,15 +5,16 @@
 //! d'accès ; les mutations restent ici.
 
 use axum::extract::{Path, Query, State};
+use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 use kesh_db::entities::account::{
-    Account, AccountRole, AccountType, AccountUpdate, CurrencyChange, NewAccount, OwnFxAccounts,
-    OwnFxAccountsChange, ParentChange,
+    Account, AccountRole, AccountType, AccountUpdate, CurrencyChange, GroupKind, GroupMember,
+    GroupProposal, NewAccount, OwnFxAccounts, OwnFxAccountsChange, ParentChange,
 };
-use kesh_db::errors::{DbError, FxAccountField, FxAccountReason, map_db_error};
+use kesh_db::errors::{DbError, FxAccountField, FxAccountReason, GroupStepError, map_db_error};
 use kesh_db::repositories::{accounts, letterings};
 
 use crate::AppState;
@@ -83,6 +84,39 @@ async fn check_parent_in_company(
         Some(p) if !p.active => Err(AppError::Validation("parent account is archived".into())),
         Some(_) => Ok(()),
     }
+}
+
+/// Le nom d'un compte, `trim`é, non vide et de 255 octets au plus — contrôle
+/// commun de la création, de la modification et de la route groupée (Story
+/// 46-5a, AC-4). Sinon `400 VALIDATION_ERROR`.
+fn checked_name(name: &str) -> Result<String, AppError> {
+    let trimmed = name.trim().to_string();
+    if trimmed.is_empty() {
+        return Err(AppError::Validation("name must not be empty".into()));
+    }
+    if trimmed.len() > 255 {
+        return Err(AppError::Validation(
+            "name must not exceed 255 characters".into(),
+        ));
+    }
+    Ok(trimmed)
+}
+
+/// Le numéro et le nom d'un compte à créer, `trim`és : numéro non vide et de 10
+/// octets au plus, puis le nom par [`checked_name`] — contrôle commun de
+/// `POST /accounts` et de la création d'un groupe par `POST /accounts/groups`
+/// (Story 46-5a, AC-4). Sinon `400 VALIDATION_ERROR`.
+fn checked_number_and_name(number: &str, name: &str) -> Result<(String, String), AppError> {
+    let trimmed_number = number.trim().to_string();
+    if trimmed_number.is_empty() {
+        return Err(AppError::Validation("number must not be empty".into()));
+    }
+    if trimmed_number.len() > 10 {
+        return Err(AppError::Validation(
+            "number must not exceed 10 characters".into(),
+        ));
+    }
+    Ok((trimmed_number, checked_name(name)?))
 }
 
 /// Normalise une devise reçue (Story 37-1, AC-4) : `trim`, majuscules ASCII,
@@ -267,6 +301,62 @@ pub struct ReactivateAccountRequest {
     pub clear_role: bool,
 }
 
+/// Un compte à ranger d'une proposition de `POST /accounts/groups` (Story
+/// 46-5a), avec la `version` lue à l'aperçu.
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupMemberRequest {
+    pub id: i64,
+    pub version: i32,
+}
+
+/// Une proposition de `POST /accounts/groups` (Story 46-5a, contrat commun de
+/// la fiche `46-5-aide-groupes-plan.md`) : `kind` dit ce que devient le compte
+/// de groupe — créé, rattaché (groupe existant) ou réutilisé (compte sans
+/// sous-compte qui devient groupe).
+#[derive(Deserialize, Clone)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum GroupRequest {
+    Create {
+        number: String,
+        name: String,
+        /// Parent du groupe ; absent ou `null` = racine.
+        #[serde(default)]
+        parent_id: Option<i64>,
+        accounts: Vec<GroupMemberRequest>,
+    },
+    Attach {
+        account_id: i64,
+        accounts: Vec<GroupMemberRequest>,
+    },
+    Reuse {
+        account_id: i64,
+        accounts: Vec<GroupMemberRequest>,
+    },
+}
+
+/// Corps de `POST /accounts/groups` (Story 46-5a).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyGroupsRequest {
+    pub groups: Vec<GroupRequest>,
+}
+
+/// Réponse de `POST /accounts/groups` (Story 46-5a) : les groupes créés, les
+/// comptes réutilisés comme groupe et les comptes réellement déplacés, au
+/// format de `GET /accounts`.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyGroupsResponse {
+    pub created: Vec<AccountResponse>,
+    pub reused: Vec<AccountResponse>,
+    pub moved: Vec<AccountResponse>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountResponse {
@@ -377,25 +467,7 @@ pub async fn create_account(
 ) -> Result<(axum::http::StatusCode, Json<AccountResponse>), AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
 
-    let trimmed_number = req.number.trim().to_string();
-    let trimmed_name = req.name.trim().to_string();
-
-    if trimmed_number.is_empty() {
-        return Err(AppError::Validation("number must not be empty".into()));
-    }
-    if trimmed_number.len() > 10 {
-        return Err(AppError::Validation(
-            "number must not exceed 10 characters".into(),
-        ));
-    }
-    if trimmed_name.is_empty() {
-        return Err(AppError::Validation("name must not be empty".into()));
-    }
-    if trimmed_name.len() > 255 {
-        return Err(AppError::Validation(
-            "name must not exceed 255 characters".into(),
-        ));
-    }
+    let (trimmed_number, trimmed_name) = checked_number_and_name(&req.number, &req.name)?;
 
     // Story 37-1 (AC-4, AC-4 bis) — forme, avant la transaction : devise
     // normalisée (`CHF` → CHF, code inconnu → `CURRENCY_UNKNOWN`), puis la
@@ -467,15 +539,7 @@ pub async fn update_account(
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
 
-    let trimmed_name = req.name.trim().to_string();
-    if trimmed_name.is_empty() {
-        return Err(AppError::Validation("name must not be empty".into()));
-    }
-    if trimmed_name.len() > 255 {
-        return Err(AppError::Validation(
-            "name must not exceed 255 characters".into(),
-        ));
-    }
+    let trimmed_name = checked_name(&req.name)?;
 
     // Contrat full-replace : les deux champs doivent être présents — `role`
     // peut valoir `null` (retire le rôle), mais son absence est une erreur.
@@ -548,6 +612,189 @@ pub async fn update_account(
     })
     .await?;
     Ok(Json(response(&state, account).await?))
+}
+
+/// POST /api/v1/accounts/groups — crée des comptes de groupe et y range des
+/// comptes, **en une seule opération, tout ou rien** (Story 46-5a ; contrat
+/// commun de `46-5-aide-groupes-plan.md`).
+///
+/// **Réservée à l'interface web** : toute clé d'API est refusée, `403
+/// API_KEY_OPERATION_FORBIDDEN` pour une clé `read-write` (en tête du handler ;
+/// une clé `read` est arrêtée avant, `API_KEY_READ_ONLY`, par la couche
+/// d'authentification) — décision du 2026-11-22, Q9. Rôles : Administrateur
+/// et Comptable (`comptable_routes`).
+///
+/// Ordre des refus avant la transaction : clé d'API → `groups` vide (`400
+/// VALIDATION_ERROR`) → forme de la demande (`400 ACCOUNT_GROUP_INVALID`,
+/// [`accounts::check_groups_shape`]) → proposition par proposition, numéro et
+/// nom d'une création ([`checked_number_and_name`], comme `POST /accounts`)
+/// puis son `parentId` ([`check_parent_in_company`]) — ces deux-là en `400
+/// VALIDATION_ERROR` avec `details.groupStep`. Puis, sous verrou, ceux de
+/// [`accounts::apply_groups`] : une erreur existante de la création ou de la
+/// modification garde son code et ses `details`, augmentés de `groupStep:
+/// { groupIndex, accountId? }` ([`group_step_refusal`]).
+///
+/// ⚠️ **Rejouée sur interblocage** (opération `accounts::apply_groups`) : la
+/// transaction entière à chaque tentative (verrous de numéros voisins,
+/// déplacements croisés). Ce n'est **pas** le motif `{ accepted, failed }` des
+/// lots (`CLAUDE.md` § *Pattern batch*), et c'est voulu : un plan à moitié rangé
+/// ferait mentir l'aperçu.
+pub async fn apply_groups(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Json(req): Json<ApplyGroupsRequest>,
+) -> Response {
+    match apply_groups_checked(&state, &current_user, req).await {
+        Ok(body) => Json(body).into_response(),
+        Err(err) => group_step_refusal(err).await,
+    }
+}
+
+/// Le corps de [`apply_groups`], qui rend une [`AppError`] (l'étape est portée
+/// par [`AppError::AccountGroupStep`], rendue par [`group_step_refusal`]).
+async fn apply_groups_checked(
+    state: &AppState,
+    current_user: &CurrentUser,
+    req: ApplyGroupsRequest,
+) -> Result<ApplyGroupsResponse, AppError> {
+    // Décision du 2026-11-22 (Q9) : aucune clé d'API ne range le plan par
+    // groupes. Une clé `read` est arrêtée avant, par la couche d'authentification.
+    if current_user.api_key_id.is_some() {
+        return Err(AppError::ApiKeyOperationForbidden);
+    }
+    let company = get_company_for(current_user, &state.pool).await?;
+
+    if req.groups.is_empty() {
+        return Err(AppError::Validation("groups must not be empty".into()));
+    }
+    let step = |i: usize, error: AppError| AppError::AccountGroupStep {
+        group_index: i,
+        account_id: None,
+        error: Box::new(error),
+    };
+    let mut groups = Vec::with_capacity(req.groups.len());
+    for g in req.groups {
+        let (kind, members) = match g {
+            GroupRequest::Create {
+                number,
+                name,
+                parent_id,
+                accounts,
+            } => (
+                GroupKind::Create {
+                    number,
+                    name,
+                    parent_id,
+                },
+                accounts,
+            ),
+            GroupRequest::Attach {
+                account_id,
+                accounts,
+            } => (GroupKind::Attach { account_id }, accounts),
+            GroupRequest::Reuse {
+                account_id,
+                accounts,
+            } => (GroupKind::Reuse { account_id }, accounts),
+        };
+        groups.push(GroupProposal {
+            kind,
+            members: members
+                .into_iter()
+                .map(|m| GroupMember {
+                    id: m.id,
+                    version: m.version,
+                })
+                .collect(),
+        });
+    }
+    accounts::check_groups_shape(&groups)?;
+    for (i, g) in groups.iter_mut().enumerate() {
+        if let GroupKind::Create {
+            number,
+            name,
+            parent_id,
+        } = &mut g.kind
+        {
+            let (n, nm) = checked_number_and_name(number, name).map_err(|e| step(i, e))?;
+            (*number, *name) = (n, nm);
+            if let Some(pid) = *parent_id {
+                check_parent_in_company(state, pid, company.id)
+                    .await
+                    .map_err(|e| step(i, e))?;
+            }
+        }
+    }
+
+    let (company_id, user_id) = (company.id, current_user.user_id);
+    let outcome = crate::retry::retry_app_on_deadlock("accounts::apply_groups", || {
+        let pool = state.pool.clone();
+        let groups = groups.clone();
+        async move {
+            accounts::apply_groups(&pool, company_id, user_id, &groups)
+                .await
+                .map_err(group_step_error)
+        }
+    })
+    .await?;
+
+    // Lettrabilité et devise verrouillée en une requête chacune pour toute la
+    // réponse, non par compte.
+    let mut conn = state.pool.acquire().await.map_err(map_db_error)?;
+    let letterable = letterings::letterable_account_ids(&mut conn, company_id).await?;
+    let locked = accounts::currency_locked_account_ids(&mut conn, company_id).await?;
+    let to_response = |list: Vec<Account>| -> Vec<AccountResponse> {
+        list.into_iter()
+            .map(|a| {
+                let (l, c) = (letterable.contains(&a.id), locked.contains(&a.id));
+                AccountResponse::new(a, l, c)
+            })
+            .collect()
+    };
+    Ok(ApplyGroupsResponse {
+        created: to_response(outcome.created),
+        reused: to_response(outcome.reused),
+        moved: to_response(outcome.moved),
+    })
+}
+
+/// L'erreur d'une tentative de [`accounts::apply_groups`], pour le rejeu : un
+/// interblocage reste `AppError::Database` (que `is_app_deadlock` reconnaît et
+/// rejoue) ; une erreur rattachée à une proposition devient
+/// [`AppError::AccountGroupStep`] ; une autre est rendue telle quelle (dont
+/// `ACCOUNT_GROUP_INVALID`, qui porte déjà `groupIndex`).
+fn group_step_error(err: GroupStepError) -> AppError {
+    if kesh_db::retry::is_deadlock_error(&err.source) {
+        return AppError::Database(err.source);
+    }
+    match err.group_index {
+        Some(group_index) => AppError::AccountGroupStep {
+            group_index,
+            account_id: err.account_id,
+            error: Box::new(AppError::from(err.source)),
+        },
+        None => AppError::from(err.source),
+    }
+}
+
+/// La réponse d'un refus de [`apply_groups`] : celle de l'erreur, à laquelle un
+/// refus rattaché à une proposition ajoute `details.groupStep: { groupIndex,
+/// accountId? }` par le mécanisme commun [`crate::errors::refus_avec_detail`]
+/// (les autres `details` du code sont gardés ; `details` est créé s'il manque).
+async fn group_step_refusal(err: AppError) -> Response {
+    let AppError::AccountGroupStep {
+        group_index,
+        account_id,
+        error,
+    } = err
+    else {
+        return err.into_response();
+    };
+    let mut group_step = serde_json::json!({ "groupIndex": group_index });
+    if let Some(id) = account_id {
+        group_step["accountId"] = serde_json::json!(id);
+    }
+    crate::errors::refus_avec_detail(*error, "groupStep", group_step).await
 }
 
 /// PUT /api/v1/accounts/{id}/archive — archive un compte.
