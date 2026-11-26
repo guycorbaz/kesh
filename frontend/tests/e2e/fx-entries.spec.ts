@@ -562,7 +562,10 @@ test('10 — la conversion ne passe pas deux fois : réponse perdue (K6), repris
 	await expect(page.getByTestId('conversion-unknown-outcome-text')).toHaveText(
 		'La conversion a peut-être été passée. Vérifiez dans le journal si ses deux écritures existent avant de la passer de nouveau.',
 	);
-	await expect(page.getByText('n’a pas pu être passée')).toHaveCount(0);
+	// Aucun message d'échec (le faux « n'a pas pu être passée » de l'ancien écran) : ni erreur globale ni de colonne.
+	await expect(page.getByTestId('conversion-global-error')).toHaveCount(0);
+	await expect(page.getByTestId('conversion-debit-error')).toHaveCount(0);
+	await expect(page.getByTestId('conversion-credit-error')).toHaveCount(0);
 	const link = page.getByTestId('conversion-unknown-outcome-link');
 	await expect(link).toHaveAttribute('href', `/journal-entries?dateFrom=${D1}&dateTo=${D2}`);
 	await expect(link).toHaveAttribute('target', '_blank');
