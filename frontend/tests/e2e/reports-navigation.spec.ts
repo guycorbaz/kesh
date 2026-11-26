@@ -348,9 +348,9 @@ async function preparer552(page: Page): Promise<Donnees552> {
 			expect(x, `compte ${re}`).toBeTruthy();
 			return { id: x!.id, number: x!.number };
 		};
-		const a = choisir(/^10[0-9]{2}$/);
+		const a = choisir(/^1[0-9]{3}$/);
 		const b = choisir(/^3[0-9]{3}$/);
-		const c = choisir(/^6[0-9]{3}$/);
+		const c = choisir(/^[4-6][0-9]{3}$/);
 		// a/b (un produit) et c/a (une charge) : trois sections au grand livre de tous les comptes.
 		for (const [debit, credit, montant] of [
 			[a, b, '700.00'],
@@ -382,6 +382,7 @@ const periodeDe = (d: Donnees552) => `fy=${d.fy.id}&from=${d.fy.startDate}&to=${
 test('55-2 AC-3, AC-7 — Journal : le numéro d’une ligne ouvre le grand livre du compte, Retour ramène au Journal ; axe peuplé', async ({ page }) => {
 	await seedTestState('with-company');
 	await page.goto('/login');
+	await expect(page.locator('#username')).toBeVisible();
 	await capture552(page, '9-connexion-lien-souligne');
 	await login(page);
 	const d = await preparer552(page);

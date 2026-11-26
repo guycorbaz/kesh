@@ -240,7 +240,9 @@ test('reports page generates VAT décompte with TVA due end-to-end (Story 18-1f 
 	// dès qu'un solde existe en base (l'E2E du solde en crée un).
 	await expect(tabpanel.getByRole('columnheader', { name: 'TVA due', exact: true })).toBeVisible();
 	await expect(tabpanel.getByText('81.00').first()).toBeVisible({ timeout: 5000 });
-	await expect(tabpanel.getByText(/TVA récupérable/i)).toBeVisible();
+	// Story 55-2 (AC-6) — la ligne « Comptes au grand livre » répète l'étiquette : la ligne du décompte se vise
+	// par sa cellule.
+	await expect(tabpanel.getByRole('cell', { name: /TVA récupérable/i })).toBeVisible();
 	await expect(tabpanel.getByTestId('vat-balance')).toBeVisible();
 	// Pas d'erreur backend rendue.
 	await expect(page.getByRole('alert')).toHaveCount(0);
