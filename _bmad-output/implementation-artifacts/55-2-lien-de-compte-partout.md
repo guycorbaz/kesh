@@ -36,6 +36,11 @@ le tranche avant toute ligne de code, ligne lue et décision citées au Change L
   (*Générer* du Grand livre) et l'AC-16 (balayage) contre la 55-1a telle que livrée (AC-20 à AC-26), et récrire dans le
   sens de D16 les tests et l'E2E de ce bloc qui cliquent *Générer* sur un Grand livre filtré ; ligne lue citée au
   Change Log.
+- **R-7 (DE-12, MEDIUM, passe ciblée D16 et D17, `kesh-gate-logs/s55-56-decisions/epic-55-d16-d17-validation.md`)** — `LINK_CLASS` sur le lien des postes ouverts
+  (`GeneralLedgerView.svelte:251`, déjà `text-primary underline`) en change la couleur et allège le soulignement, contre
+  « aucune couleur neuve » et « les liens déjà soulignés restent » de l'AC-16 ; les liens d'`AgedReceivablesView` ne sont
+  pas traités. Au T0 : une seule règle pour les liens des Rapports (couleur gardée, ou `LINK_CLASS` partout) et
+  l'inventaire complété. LOW : voir le rapport.
 - **R-2 (P7, V7-1, MEDIUM) — Gardes Rust des textes. Tranché le 2026-11-26** par le mainteneur (resserrement de la
   dérogation Q6, fichier d'epic § *Dérogation*) dans le sens du défaut ci-dessous : § *Gates* et T5 le portent. La story, « purement écran », modifie `messages.ftl` et le manuel,
   gardés par des tests Rust (`parity_between_locales`, `textes_coherents`) qui ne tourneraient qu'en fin d'epic. Défaut :
@@ -418,3 +423,4 @@ onglet. Tous les liens sont soulignés d'un trait léger, pour se voir sans la c
   d'aujourd'hui et soulignement léger — par `LINK_CLASS` et `LINK_UNDERLINE_CLASS` (`lib/shared/navigation/link-class.ts`),
   `AccountLink` (AC-1 amendé) et un balayage clos des liens non soulignés au repos (AC-16, T2bis). **Au-delà du plafond** :
   une passe ciblée hors décompte, sans remédiation, ses points au T0 (R-6, puis R-7 et suivants).
+- 2026-11-26 (soir) — Passe ciblée D16 et D17 (Opus), hors décompte : 0/0/1/3 ; aucune remédiation : R-7 au T0.

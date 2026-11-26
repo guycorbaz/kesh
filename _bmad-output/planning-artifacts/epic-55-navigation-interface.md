@@ -458,6 +458,13 @@ les relit, hors décompte, et ses points au-dessus de LOW vont au **T0** (journa
   mécanique », revue fichier par fichier). Les liens déjà soulignés en plein (`text-primary underline`, une trentaine)
   sont conformes et restent tels quels ; les passer au soulignement léger serait une harmonisation à part. *Défaut* :
   non, dans cet epic.
+- **Passe ciblée D16 et D17 du 2026-11-26 au soir** (Opus, `kesh-gate-logs/s55-56-decisions/epic-55-d16-d17-validation.md`, fichier d'epic 0/0/1/1, 55-1a 0/1/9/5, 55-2
+  0/0/1/3, 55-1b et sprint-status 0/0/0/0, 55-3b 0/0/0/1), aucune remédiation, points au T0 (55-1a R-16 à R-26, 55-2 R-7).
+  **À trancher par vous avant le T0 de la 55-1a** : (a) le HIGH R-16 — annuler les requêtes demande de toucher
+  `lib/shared/utils/api-client.ts` (un sixième module, au-delà de la borne) ; *défaut* proposé : se contenter de périmer
+  la réponse (`invalidateInFlight`), sans annulation réseau ; (b) le Grand livre ne reçoit pas les dates tapées sur un
+  onglet classique (R-21) ; (c) relancer un chargement en erreur (R-25) ; (d) la multiplication des traces d'audit et le
+  chargement par les flèches (R-24). La liste des choix de D16 est à réunir en une seule (R-26, DE-11).
 
 - **Sélecteur d'exercice, version de l'utilisateur et de l'UX : d'accord ?** (D15 ; 55-1a AC-14 à AC-19, 55-2 AC-11 ;
   démonstration et captures : `kesh-gate-logs/s55-selecteur/selecteur-exercice-demo.html`). Avec, à confirmer en même

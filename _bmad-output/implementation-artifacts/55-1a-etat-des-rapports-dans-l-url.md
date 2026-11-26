@@ -74,6 +74,38 @@ décision. Le correctif proposé par la passe est la résolution par défaut.
   *Questions au mainteneur*) : Grand livre filtré chargé au choix du compte et de « comptes sans mouvement » ; balance
   âgée chargée à l'arrivée ; rapports par compte analytique gardant *Générer* ; ancien rapport retiré sur « Plusieurs »
   ou « Hors exercice » ; exports du rapport affiché ; message de période invalide (`reports-nav-period-invalid`).
+- **R-16 à R-26 (passe ciblée D16 et D17 du 2026-11-26 au soir, Opus, `kesh-gate-logs/s55-56-decisions/epic-55-d16-d17-validation.md`, 0/1/9/5, aucune remédiation)** — à
+  trancher au T0 **avant le code**, ligne lue citée au Change Log ; le rapport donne preuves et correctifs proposés :
+  - **R-16 (DE-1, HIGH)** — L'annulation de l'AC-21 est impossible avec le client d'aujourd'hui : `apiClient.get` ne prend
+    pas de `signal`, et `fetchWithTimeout` pose le sien (`lib/shared/utils/api-client.ts:342-350`) ; une annulation
+    sortirait en `TIMEOUT`, rejouée et signalée « service dégradé ». Il faut toucher `api-client.ts` (sixième module,
+    au-delà de la borne, à poser au mainteneur) ou se contenter de la péremption (`invalidateInFlight`) sans annuler ; le
+    Vitest prévu, `reports.api` simulé, serait muet.
+  - **R-17 (DE-2)** — Revenir aux dates du rapport affiché pendant qu'une autre demande est en vol : la réponse en vol
+    remplace le rapport ; la périmer.
+  - **R-18 (DE-3)** — `ReportSelector` désactive menu et dates pendant `loading` : focus perdu, clic perdu pendant un
+    premier chargement ; trancher (ne plus désactiver).
+  - **R-19 (DE-4)** — Sous Safari, un clic ne donne pas le focus à un `<button>` d'onglet : `relatedTarget` nul, l'onglet
+    quitté se charge. Ne pas décider la sortie par le seul `relatedTarget` (p. ex. différer d'une tâche et vérifier qu'un
+    clic d'onglet n'a pas suivi).
+  - **R-20 (DE-5)** — Export cliqué après des dates tapées : le rechargement part, l'export reste actif et sort l'ancienne
+    période ; désactiver l'export pendant un rechargement, et refaire le constat de l'AC-25.
+  - **R-21 (DE-6)** — Le Grand livre a ses propres dates (55-2, AC-12) : des dates tapées sur un onglet classique ne lui
+    passent pas, contrairement à la décision ; à poser au mainteneur.
+  - **R-22 (DE-7)** — Sites que D16 contredit, oubliés par R-14 : `/reports` « aucun rapport demandé », point 3 « URL
+    incomplète : invite », lien du menu *Rapports* sans requête (AC-8), balance âgée à 0 requête (AC-7), *Où l'URL
+    s'écrit* ; liste complète au rapport.
+  - **R-23 (DE-8)** — Le manuel n'a aucune phrase « cliquez sur Générer » ; celles que D16 rend fausses sont de l'Epic 46
+    (`user-manual.tex:4271-4277` sur la PR 46) : les nommer à l'AC-11, l'AC-19 et dans la 55-1b (R-4).
+  - **R-24 (DE-9)** — Chaque rapport demandé écrit une trace d'audit (`services/rapports.rs`), même annulé : le
+    chargement seul les multiplie (onglets, flèches, sorties des dates) ; le dire, et poser au mainteneur le chargement
+    par les flèches.
+  - **R-25 (DE-10)** — Sans *Générer*, rien ne relance un chargement en erreur : un bouton « Réessayer » dans l'avis
+    d'erreur, ou autre, à poser au mainteneur.
+  - **R-26 (DE-11)** — Choix non alignés : R-15 en liste six, les *Questions* cinq, D16 quatre ; le message de période
+    invalide est compté dans les dix clés comme décidé ; d'autres choix ne sont posés nulle part (`relatedTarget` nul,
+    annulation entre onglets, flèches, date vide). Une seule liste, posée au mainteneur.
+  - LOW : DE-13 à DE-20 (voir le rapport).
 - **R-6 (décision Q6 du mainteneur, 2026-11-25, versée sans passe : plafond atteint)** — § *Gates* aligné sur la
   *Dérogation* du fichier d'epic (story purement écran : specs des Rapports et de la navigation à la story, E2E complet et
   `gate-ci.sh` en fin d'epic) ; le T0 relit la phrase contre le fichier d'epic et le cite au Change Log.
@@ -818,3 +850,5 @@ se recharge ; seul le Grand livre de tous les comptes garde un bouton. Les expor
   AC-2, AC-3, AC-7, AC-13, AC-15, AC-16, C-55-1-4, C-55-1-8 et le tableau des gestes annotés ; C-55-1-10, R-14, R-15 ;
   note de version récrite ; l'issue « export d'une autre période » retirée (AC-25). **Au-delà du plafond de huit
   passes** : une passe ciblée hors décompte, sans remédiation, ses points au T0 (R-16 et suivants).
+- 2026-11-26 (soir) — Passe ciblée D16 et D17 (Opus), hors décompte : 0/1/9/5 pour cette fiche ; **aucune remédiation**
+  (fiche au plafond) : R-16 à R-26 au T0, le HIGH R-16 à trancher avant toute ligne de code.
