@@ -1,6 +1,6 @@
 # Story 53-3 : L'ouverture ne se passe pas sur un compte de résultat — le contrôle des types, sous verrou (#513)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-25 (Sonnet 5.5), worktree `kesh-53-3`, branche `story/53-3-ouverture-sous-verrou` partie de
 `origin/epic/53-ecritures-justes` à `4d540a6ea`, par le workflow `bmad-create-story`, en autonomie. Epic 53 « Écritures justes »,
@@ -149,8 +149,8 @@ contrôle ne peut être visé par une requête déjà lancée (identifiant incon
   le demande aujourd'hui (entre les deux, `books_locked_through` et `find_later_closed` sont des lectures ordinaires, le second
   `fiscal_years FOR UPDATE` est ré-entrant, `validate_taggable_in_tx` sort tôt sans projet : `projects.rs:94-96`) ; `count_by_company` est
   une lecture non verrouillante. L'arête `{companies X, fiscal_years X} → accounts S` existe donc déjà : la story la **déplace** de
-  quelques instructions, sans la créer. Les gestes qui **modifient** un compte existant prennent `companies` en partage d'abord (`update` `:1132`,
-  `archive_guarded` `:1453`, `reactivate` `:1640`, complément `opening_complement.rs:454-457`) ; `create` (`:199`) aussi ; les créations en lot (`bulk_create`, `bulk_create_from_chart`) n'insèrent que
+  quelques instructions, sans la créer. Les gestes qui **modifient** un compte existant prennent `companies` d'abord, en partage — ou en `FOR UPDATE` quand ils changent les comptes en devise propres (`own_fx_accounts`, `accounts.rs:1148-1152` pour `update`, `:195-197` pour `create`) : `update` (`accounts.rs:1134`),
+  `archive_guarded` (verrou `:1474`), `reactivate` (verrou `:1661`), complément `opening_complement.rs:454-457` ; `create` aussi ; les créations en lot (`bulk_create`, `bulk_create_from_chart`) n'insèrent que
   des comptes neufs, sans verrou de société (angle mort assumé : un compte neuf n'est dans aucune requête déjà lancée) : aucun cycle avec le sentinelle exclusif.
 - **D6 — pas de migration.** Aucun schéma, aucune donnée. `kesh_version_min_required` inchangé ; P5–P8 du § *Migration breaking policy* sans
   objet. Release `c` si elle partait seule ; elle sort dans la release de l'Epic 53 (v0.21.0 au fichier d'epic ; `b` si la 53-2 porte sa migration).
@@ -343,13 +343,13 @@ d'un verrou (`innodb_lock_wait_timeout`, hors périmètre).
 
 ## Notes de version (pour l'assemblage du CHANGELOG)
 
-**v0.21.0 — Corrigé.** *Soldes de départ* : le contrôle qui refuse un compte de produits ou de charges dans le bilan d'ouverture se fait
-désormais **au moment même de l'écriture**, sous verrou, et non avant ; un compte retypé par un autre utilisateur pendant la génération ne
-peut plus recevoir une ligne d'ouverture. Aucun changement pour l'utilisateur dans le cas courant : même message de refus.
-**⚠️ Pour un client de l'API** (`POST /api/v1/opening-balances`) : une requête qui porte **à la fois** un compte de résultat **et** un
-déséquilibre rend désormais `ENTRY_UNBALANCED` (au lieu de `VALIDATION_ERROR`), et une partie en devise jugée invalide par la validation de
-l'écriture (cours **et** débit ou crédit CHF fournis) rend son code `FX_*` ; le statut reste 400, la précédence de ces refus n'était pas documentée. Aucune
-migration. `refs #513`.
+**⚠️ v0.21.0 — Pour un client de l'API** (`POST /api/v1/opening-balances`, clé REST) : la **précédence des refus** change. Une requête qui porte **à la fois** un compte de
+produits ou de charges **et** un déséquilibre rend désormais `ENTRY_UNBALANCED` (au lieu de `VALIDATION_ERROR`), et une partie en devise jugée invalide par la validation de
+l'écriture (cours **et** débit ou crédit CHF fournis) rend son code `FX_*` ; le statut reste 400, et la précédence de ces refus n'était pas documentée (`docs/api-external.md`).
+
+**v0.21.0 — Corrigé.** *Soldes de départ* : le contrôle qui refuse un compte de produits ou de charges dans le bilan d'ouverture se fait désormais **au moment même de
+l'écriture**, sous verrou, et non avant ; un compte retypé par un autre utilisateur pendant la génération ne peut plus recevoir une ligne d'ouverture. Aucun changement pour
+l'utilisateur dans le cas courant : même message de refus. Aucune migration. `refs #513`.
 
 ## Décisions du Project Lead (2026-11-25) et issues
 
@@ -366,6 +366,20 @@ migration. `refs #513`.
   de l'écriture d'ouverture (comment la reconnaître : journal OD à la date de début du premier exercice, description de la langue comptable ?),
   ou maintenir la limite et la garder au manuel. Hors de la story 53-3 (`refs #513`), qui ne ferme que la fenêtre entre contrôle et
   écriture de la **génération**.
+
+## Issues à ouvrir (revue de code P2, LOW ; textes prêts, l'orchestrateur les ouvre)
+
+1. **P2-1 — `documentation`, P4.** Titre : `Le doc-comment de create_opening_entry dit « en partage » pour des gestes qui prennent companies FOR UPDATE`.
+   Corps : `crates/kesh-db/src/repositories/journal_entries.rs` (§ « Verrous, dans l'ordre » de `create_opening_entry`) écrit que `update`, `archive_guarded` et `reactivate` prennent
+   `companies` « en partage d'abord ». `accounts::update` (`accounts.rs:1148-1152`) et `accounts::create` (`:195-197`) prennent `CompanyLock::ForUpdate` quand `own_fx_accounts` change. La
+   conclusion (exclusion au sentinelle de `create_opening_entry`) tient, seul le mode décrit est inexact. Correction : « d'abord (en partage, ou en `FOR UPDATE` quand le geste change les
+   comptes en devise propres) ». Hors de la story 53-3 (`refs #513`).
+2. **P2-3 — `technical-debt`, P4.** Titre : `La garde lexicale d'ordre de la lecture des types compare des positions textuelles, non le flux`.
+   Corps : `crates/kesh-db/tests/opening_types_sous_verrou_lexical.rs`, `la_lecture_des_types_precede_le_recensement` compare la position de `lock_types_by_ids_in_tx(` à celle de
+   `count_by_company(` dans le corps masqué de `create_opening_entry`. Une lecture placée sous une branche ou avant un retour anticipé passerait la garde sans s'exécuter sur tous les
+   chemins. Le cas n'existe pas dans le code actuel (une occurrence de chaque). La doc du test dit « les noms des deux appels » mais pas cette limite de flux. Correction : une phrase à la doc
+   du test (ordre textuel, non ordre d'exécution), ou une garde de flux. Hors de la story 53-3 (`refs #513`).
+3. Déjà prêtes : plan de `validate_lines_accounts_in_tx` (`kesh-gate-logs/e533/issue-plan-validate.md`) ; W10 (§ *Décisions du Project Lead*).
 
 ## Dérogation règle de splitting
 
@@ -466,6 +480,7 @@ Voir § T0. Lecture citée : requête neuve `type = range`, `key = PRIMARY`, `ro
   mapping, quatre locales, aucun site périmé. Manuel (PDF aplati) : « jamais les comptes de produits ou de charges » (`user-manual.tex:1051`) reste vrai ; **aucune modification de manuel**.
 - Mots-clés de fermeture dans les commits de la branche : aucun (`refs #513` seulement).
 - Recoupements déclarés : `journal_entries.rs` avec la 53-1 (fonctions distinctes), `accounts.rs` et `fiscal_years.rs` non déclarés au fichier d'epic (ligne à ajouter par l'orchestrateur, § Dev Notes).
+- **Second rouge incident de M10** (revue P2, P2-2) : sous la mutation M10, la sonde `sonde_negative_l_appel_deplace_apres_le_recensement_rougit` rougit aussi, mais pour une **précondition** (`assert_ne!` « la sonde n'a rien déplacé » : le texte muté place déjà l'appel là où la sonde le déplace), non pour l'ordre ; M10 meurt par `la_lecture_des_types_precede_le_recensement`, seul vrai rouge d'ordre (`M10-apres-revue-db.log`, 27 tests, 25 passés, 2 échoués). Sur le code réel la sonde est verte.
 - Limite : AC-3 et AC-4 prouvent la fermeture sur MariaDB 10.11 ; le comportement sous ≥ 11.6 (`ER_CHECKREAD`) n'est pas observable ici : la place de la lecture est gardée par la garde lexicale d'ordre (voir § *Revue de code P1*), qui ne connaît que les noms des deux appels.
 
 
@@ -490,17 +505,17 @@ Voir § T0. Lecture citée : requête neuve `type = range`, `key = PRIMARY`, `ro
 
 ## Change Log
 
-- 2026-11-25 — **validation terminée** (entrée unique, CLAUDE.md § *Review Iteration Rule* ; rapports `kesh-gate-logs/e533/validation-p1.md` à `-p4.md`).
-  **Tendance** (CRITICAL/HIGH/MEDIUM/LOW) : P1 0/0/3/8 → P2 0/0/4/8 → P3 0/0/3/5 → P4 0/0/0/6 ; arrêt sur la P4 (aucun finding au-dessus de LOW ; la
-  dernière remédiation ne touche que la fiche, sans passe ciblée). **Modèles** : P1 Opus, P2 Sonnet, P3 Opus, P4 Sonnet. **Reclassements** : aucun.
-  **Remédiations** — P1 : AC-5 au niveau du dépôt et M6-bis (V1-1), AC-5 « hors D3 » (V1-2), lecture verrouillante placée avant `count_by_company`
-  (V1-3 ; D1, D5, P6, M10, #669), V1-4 à V1-11 (citations, mesures de AC-6, W10/W11, Q2 → #1580, ligne d'epic) ; P2 : D3 exacte sur les **codes** (V2-1),
-  `FORCE INDEX (PRIMARY)` d'emblée et réemploi de `lock_designated_accounts_in_tx` écarté par écrit (V2-2), assistant partagé
-  `test_fixtures::attendre_une_requete_en_cours` (V2-3), raisons (α) et (β) de P6 (V2-4), V2-5 à V2-12 ; P3 : Q1 tranchée « oui » et branche « non » retirée
-  (V3-1), refus de `accounting::validate` seuls modifiés (V3-2), AC-6 aligné sur D2 (V3-3), V3-4 à V3-8 ; P4 : V4-1 (D3 : plage `routes/journal_entries.rs:790-846`,
-  « gardent leur code »), V4-2 (Notes de version : « cours **et** débit ou crédit CHF fournis »), V4-3 (T1 porte le rouge de AC-5 (e) avant T4 ; M12), V4-4
-  (M11 : motifs dans les littéraux, non le texte masqué), V4-5 (AC-1 : contrôle par AC-8), V4-6 (D6 : « dans la release de l'Epic 53 »).
-  **Signal de recyclage** levé en P2 et P3 (défauts nés des correctifs, tous de précision de texte) ; dérogation au splitting : § *Dérogation règle de splitting*.
-- 2026-11-25 — fiche rédigée (Sonnet 5.5). Prémisses P1-P4 lues au code ; P5 (sérialisation par la société) déduite des verrous puis **mesurée à T0** (Dev Agent Record).
-- 2026-11-25 — **développement : T0 exécuté, aucune prémisse démentie** (Dev Agent Record § *T0*) ; statut `in-progress`.
-- 2026-11-26 — **développement terminé** : correctif, tests, mutations (M10 vivante, angle mort écrit), gates et E2E verts (Dev Agent Record) ; statut `review`. Revue de code P1 : prompt versionné `53-3-ouverture-sous-verrou-code-review-prompt-p1.md`.
+- 2026-11-26 — **story close** (une entrée finale, CLAUDE.md § *Review Iteration Rule*). Fiche rédigée le 2026-11-25 (Sonnet 5.5) ; prémisses P1-P4 lues au code, P5 mesurée à T0.
+  **Validation** (rapports `kesh-gate-logs/e533/validation-p1.md` à `-p4.md`) — tendance CRITICAL/HIGH/MEDIUM/LOW : P1 (Opus) 0/0/3/8 → P2 (Sonnet) 0/0/4/8 → P3 (Opus) 0/0/3/5 → P4 (Sonnet) 0/0/0/6 ;
+  arrêt sur la P4 (aucun finding au-dessus de LOW). Remédiations : P1 : AC-5 au niveau du dépôt et M6-bis (V1-1), AC-5 « hors D3 » (V1-2), lecture verrouillante avant `count_by_company` (V1-3 ; D1, D5, P6,
+  M10, #669), V1-4 à V1-11 ; P2 : D3 exacte sur les **codes** (V2-1), `FORCE INDEX (PRIMARY)` d'emblée (V2-2), assistant partagé `test_fixtures::attendre_une_requete_en_cours` (V2-3), raisons (α) et (β)
+  de P6 (V2-4), V2-5 à V2-12 ; P3 : Q1 tranchée « oui », branche « non » retirée (V3-1), refus de `accounting::validate` seuls modifiés (V3-2), V3-3 à V3-8 ; P4 : V4-1 à V4-6.
+  **Signal de recyclage** levé en P2 et P3 (défauts de précision de texte nés des correctifs), dérogation au splitting (§ *Dérogation règle de splitting*). **Développement** : T0 mesuré sans prémisse démentie ;
+  tests rouges au code de base (6 sur 19, 3 sur 35) ; mutations M1 à M12 (M10 vivante à `607fb31e8`, tuée après la revue) ; gates verts (`test-fast --ci` 6580 puis 6721 puis 6723 ; `gate-ci` 6599 ;
+  frontend 5261 ; E2E 527 passés, 20 ignorés, 7 échecs, les sept de la KF-029). **Revue de code P1** (Opus) : **0/0/1/6** (R7-1 MEDIUM : M10 sans garde d'ordre ; R7-2, R5-1, R5-2, R2-1, R4-1, R12-1 LOW),
+  remédiés en un commit (`371cd4ac7`). **Revue de code P2, ciblée** (Haiku) : **0/0/0/4** (P2-1 à P2-4) : P2-2 et P2-4 corrigés à la fiche, P2-1 et P2-3 renvoyés en issues (§ *Issues à ouvrir*).
+  Tendance de la revue : P1 0/0/1/6 → P2 0/0/0/4. **Modèles** : Opus (validations P1, P3 ; revue P1), Sonnet (fiche, validations P2, P4, développement), Haiku (revue P2 ciblée). **Reclassements** : aucun.
+  **Incidents** : (1) le premier pilote de mutations a tronqué `journal_entries.rs` (motif périmé, fichier ouvert avant le calcul) — restauré, rien de commité muté ; (2) la restauration de M10 par `git checkout`
+  a effacé des doc-comments non commités de `journal_entries.rs`, réécrits ensuite (le gate complet a donc tourné sans eux ; fmt, clippy et gate ciblé couvrent la réécriture). Retenu : restaurer une mutation par copie du
+  fichier, jamais par `git checkout` sur un fichier portant du travail non commité ; commiter avant de lancer un pilote qui modifie le worktree. **Issues** : #1580 (Q2, assistant d'attente) ; à ouvrir : plan de
+  `validate_lines_accounts_in_tx`, W10, P2-1, P2-3.

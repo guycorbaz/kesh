@@ -28,10 +28,10 @@ Cinq stories, story de solde comprise : la borne de six tient. Si la 53-1 se dé
   `frontend/src/lib/features/journal-entries/` (`JournalEntryForm.svelte`, `ConversionAssistant.svelte`). Motif de
   référence : 48-12a et 48-12b (Epic 50).
 - 53-2 : `kesh-db/src/repositories/credit_notes.rs`, `invoice_settlements_write.rs` ; migration éventuelle.
-- 53-3 : `kesh-api/src/routes/opening_balances.rs`, `kesh-db/src/repositories/journal_entries.rs`.
+- 53-3 : `kesh-api/src/routes/opening_balances.rs` ; `kesh-db/src/repositories/journal_entries.rs` (`create_opening_entry`), `accounts.rs` (lecture des types), `fiscal_years.rs` (clé d'erreur) ; tests `kesh-db` et `kesh-api`.
 - 53-4 : `frontend/src/routes/onboarding/+page.svelte`, `kesh-api/src/routes/onboarding.rs`.
 
-Recoupements : `journal_entries.rs` avec l'Epic 51 (48-2) et l'Epic 47 d'un contributeur ; `onboarding.rs` avec l'Epic 50
+Recoupements : `journal_entries.rs` avec l'Epic 51 (48-2) et l'Epic 47 d'un contributeur, et **53-1 et 53-3 sur `journal_entries.rs` (fonctions distinctes)** ; `onboarding.rs` avec l'Epic 50
 (aucun site commun connu).
 
 ## Dépendances

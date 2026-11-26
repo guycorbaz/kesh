@@ -1255,7 +1255,7 @@ development_status:
   epic-53: in-progress  # « Écritures justes » — lancé le 2026-11-23 (kickoff ; stories dès le 2026-11-24, ordre 53-1, 53-3, 53-4, 53-2 après l'entrée de l'Epic 49) ; v0.21.0, vendredi 2026-12-04 (Guy, 2026-11-24) ; fichier epic-53-ecritures-justes.md
   53-1-ecriture-pas-deux-fois: backlog  # #1355, #1365 (P1) ; même philosophie que la 48-12a (refus serveur, issue inconnue figée à l'écran)
   53-2-tva-sur-compte-de-la-vente: backlog  # #525, #1198 (P1) ; migration probable (b monte, de préférence un vendredi)
-  53-3-ouverture-sous-verrou: review  # #513 (P1) ; fiche rédigée le 2026-11-25 (aucune migration) ; validation P1 (Opus 0/0/3/8) et P2 (Sonnet 0/0/4/8) remédiées ; P3 (Opus 0/0/3/5) remédiée, Q1 tranchée, story unique par dérogation ; P4 (Sonnet 0/0/0/6) remédiée ; développement terminé le 2026-11-26 (mutations, gates et E2E verts) ; revue de code P1 (Opus) à lancer
+  53-3-ouverture-sous-verrou: done  # #513 (P1) ; fiche rédigée le 2026-11-25 (aucune migration) ; validation P1 (Opus 0/0/3/8) et P2 (Sonnet 0/0/4/8) remédiées ; P3 (Opus 0/0/3/5) remédiée, Q1 tranchée, story unique par dérogation ; P4 (Sonnet 0/0/0/6) remédiée ; développement terminé le 2026-11-26 (mutations, gates et E2E verts) ; revue de code P1 (Opus 0/0/1/6) remédiée, P2 ciblée (Haiku 0/0/0/4) : boucle close le 2026-11-26
   53-4-assistant-compte-bancaire: backlog  # #1004 (P1)
   53-5-solde-dette-epic: backlog  # story de solde ; plafond de trois issues (décision de Guy du 2026-11-23)
   epic-53-retrospective: optional
