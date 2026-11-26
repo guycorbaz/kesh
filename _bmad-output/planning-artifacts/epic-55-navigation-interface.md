@@ -319,6 +319,16 @@ Chaque story écrit en section *Issues à ouvrir* de son Dev Agent Record les po
 site, texte) : c'est la source de la story de solde (55-4). Chaque issue ouverte de ces sections porte dans son corps
 « Epic 55, story 55-x ».
 
+### Gates de fin d'epic, après les revues de code (2026-11-26)
+
+Joués au dernier commit de code de l'epic (`5a3242d80`), à la tête `3aeeff468` (même code, plus la documentation), après
+la fusion de la PR de l'Epic 46 (`c8fe4d0ac`) et les correctifs des revues : `scripts/gate-ci.sh` **7004** passés, 0
+échec, 23 ignorés ; E2E complet (`fr_CH.UTF-8`) **556** passés, **7 échecs, les sept de la KF-029** (#97), 20 ignorés ;
+frontend (`check`, `lint-i18n-ownership`, `build`) vert, Vitest **5765** (329 fichiers) ; `cargo fmt --check` et
+`clippy -D warnings` verts (aucun fichier Rust touché depuis la fusion). Journaux : `kesh-gate-logs/s55-revue/fin/`.
+Les gates de la fusion seule (`d539e8a47`) : gate-ci 7004/0/23, E2E 556 passés et les sept de la KF-029,
+`kesh-gate-logs/s55-revue/fusion/` et `fin/gate-ci-1.log`.
+
 **Revue du code d'intégration** (`CLAUDE.md` § *Fusions et fichiers communs*) : avant la PR de l'epic vers `main`, et
 après chaque reprise de la PR 46 ou de `main`, une revue relit les commits de fusion en diff combiné et cherche les
 interactions sans conflit de texte ; journal **à produire** dans `kesh-gate-logs/s55-integration/`, avec sa propre section
