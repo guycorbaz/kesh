@@ -1296,7 +1296,7 @@ development_status:
 
   # 2026-11-26 — Epic 58 : nettoyage (premier « epic de nettoyage », une par release ; décision de Guy du 2026-11-26), visé pour la release qui suit la 0.20.0. Six stories, chacune 8 à 10 issues P3/P4 peu coûteuses d'un même module, les plus anciennes d'abord ; ni règle métier, ni migration, ni changement d'API (58-1 change des phrases de refus, sans code ni champ : « pas de changement d'API », Guy 2026-11-26). Fichier d'epic : planning-artifacts/epic-58-nettoyage.md.
   epic-58: in-progress
-  58-1-numero-facture-textes-tests: backlog  # 8 issues (#1115, #1117-#1120, #1122-#1124) ; usage réel du Project Lead
+  58-1-numero-facture-textes-tests: drafted  # fiche rédigée le 2026-11-26, validation P1 à lancer ; 8 issues (#1115, #1117-#1120, #1122-#1124) ; usage réel du Project Lead
   58-2-comptes-designes-tests-revue: backlog  # 10 issues (#592, #732, #736, #1060-#1066, #1127, #1433)
   58-3-manuel-guide-api-ecarts: backlog  # 10 issues ; documentation seule
   58-4-textes-interface-i18n: backlog  # 10 issues ; catalogues des quatre locales
