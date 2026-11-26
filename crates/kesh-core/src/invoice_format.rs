@@ -516,6 +516,41 @@ mod tests {
         ));
     }
 
+    /// Story 58-1 (#1120) — seuls l'espace et la tabulation sont des blancs admis ;
+    /// l'écran (`invoice-number-format.ts`) juge de même.
+    #[test]
+    fn validates_template_only_space_and_tab_are_blanks() {
+        for blank in ['\u{a0}', '\u{2003}', '\n'] {
+            assert_eq!(
+                validate_template(&format!("F-{{YEAR}}-{{SEQ}}{blank}x")),
+                Err(FormatError::IllegalCharacter(blank)),
+                "{blank:?}"
+            );
+        }
+        assert!(validate_template("F-{YEAR}\t-{SEQ}").is_ok());
+        assert!(validate_template("F-{YEAR} -{SEQ}").is_ok());
+    }
+
+    /// Story 58-1 (#1119) — le serveur admet `{SEQ:+4}` (`u32::from_str` accepte un
+    /// `+`), que l'écran refuse par « caractères non autorisés » : l'écart est connu
+    /// et fixé des deux côtés. Si ce test rougit parce que le serveur se resserre, le
+    /// miroir TypeScript (`invoice-number-format.ts`, `ALLOWED_CHAR_RE`) est à mettre à
+    /// jour.
+    #[test]
+    fn validates_template_signed_padding_is_accepted_by_the_server() {
+        assert!(validate_template("F-{SEQ:+4}").is_ok());
+        assert_eq!(render("F-{SEQ:+4}", 2026, "2026", 42).unwrap(), "F-0042");
+    }
+
+    /// Story 58-1 (#1118) — la borne se compte en octets : le message le dit.
+    #[test]
+    fn rendered_too_long_display_speaks_of_bytes() {
+        let msg = FormatError::RenderedTooLong(65).to_string();
+        assert!(msg.contains("octets"), "{msg}");
+        assert!(!msg.contains("caractères"), "{msg}");
+        assert!(msg.contains("65"), "{msg}");
+    }
+
     #[test]
     fn test_padding_nn_zero_rejected() {
         assert_eq!(

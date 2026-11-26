@@ -154,3 +154,47 @@ describe('validateFormatTemplate, refus de forme avant le compteur', () => {
 		expect(validateFormatTemplate('F-{YEAR}-{SEQ:4}')).toEqual({ ok: true });
 	});
 });
+
+// Story 58-1 (#1119) — le miroir juge aussi les caractères à l'intérieur des accolades
+// (`ALLOWED_CHAR_RE` s'applique à tout le gabarit), que `parse` (Rust) saute : `{SEQ:+4}`,
+// admis du serveur (`u32::from_str` accepte un `+`), est refusé ici, par « caractères non
+// autorisés », sans jamais atteindre le contrôle `^\d+$`. Le jour où le serveur se resserre,
+// ce test appelle la mise à jour du miroir.
+describe('validateFormatTemplate, écart connu : {SEQ:+4} (#1119)', () => {
+	it('refuse {SEQ:+4} par « caractères non autorisés », sans code', () => {
+		const r = validateFormatTemplate('F-{YEAR}-{SEQ:+4}');
+		expect(r.ok).toBe(false);
+		expect(r.code).toBeUndefined();
+		expect(r.error).toContain('caractères non autorisés');
+	});
+});
+
+// Story 58-1 (#1120) — les seuls blancs admis sont l'espace et la tabulation, comme
+// `is_allowed_char` (Rust) ; la longueur se compte en octets UTF-8, comme `template.len()`.
+describe('validateFormatTemplate, blancs et longueur (#1120)', () => {
+	for (const [nom, blanc] of [
+		['U+00A0', ' '],
+		['U+2003', ' '],
+		['saut de ligne', '\n'],
+	] as const) {
+		it(`refuse ${nom} : caractères non autorisés`, () => {
+			const r = validateFormatTemplate(`F-{YEAR}-{SEQ}${blanc}x`);
+			expect(r.ok).toBe(false);
+			expect(r.error).toContain('caractères non autorisés');
+		});
+	}
+	it('refuse U+00A0 aussi au numéro interne', () => {
+		const r = validateFormatTemplate('FF-{YEAR} -{SEQ:03}', { numbering: true });
+		expect(r.ok).toBe(false);
+		expect(r.error).toContain('caractères non autorisés');
+	});
+	it('accepte la tabulation', () => {
+		expect(validateFormatTemplate('F-{YEAR}\t-{SEQ}').ok).toBe(true);
+	});
+	it('compte en octets : 33 « é » + {SEQ} = 71 octets, trop long', () => {
+		const r = validateFormatTemplate('é'.repeat(33) + '{SEQ}');
+		expect(r.ok).toBe(false);
+		expect(r.error).toContain('71');
+		expect(r.error).toContain('octets');
+	});
+});

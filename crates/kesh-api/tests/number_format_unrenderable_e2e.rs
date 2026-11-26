@@ -580,29 +580,43 @@ async fn ac3_brace_in_fiscal_year_name_refuses_the_credit_note(pool: MySqlPool) 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac3_unreadable_stored_format_is_a_typed_refusal(pool: MySqlPool) {
     let (app, seeded, contact) = setup(&pool).await;
+    // Un premier numéro tiré au format par défaut : le compteur existe, à 2 (#1124).
+    validated_invoice(&app, contact, "2026-06-15").await;
+    let before = counter(&pool, "invoice_number_sequences", seeded.fiscal_year_id).await;
+    assert_eq!(before, Some(2));
     let format = "F-}{SEQ}";
     set_format(&pool, seeded.company_id, "invoice_number_format", format).await;
-    let id = draft_invoice(&app, contact, "2026-06-15").await;
+    let id = draft_invoice(&app, contact, "2026-06-16").await;
 
     let (status, body) = app.validate(id).await;
     assert_unrenderable(status, &body, "invoice", "invalid_format", format);
     assert_still_draft(&app, id).await;
+    assert_eq!(
+        counter(&pool, "invoice_number_sequences", seeded.fiscal_year_id).await,
+        before,
+        "le compteur n'a pas avancé"
+    );
 }
 
-/// AC3 (revue P1, E1, C-e351-7) — la borne de 64 se compte en **octets** (la
-/// QR-facture borne sa charge en octets) : un nom d'exercice de 50 caractères
-/// dont 10 accentués (60 octets) sous `{FY}-{SEQ:04}` donne 55 caractères mais
-/// 65 octets → refusé, et le message parle d'octets, non de caractères.
+/// AC3 (revue P1, E1, C-e351-7 ; #1122) — la borne de 64 se compte en **octets**,
+/// par prudence (plus stricte que la colonne `VARCHAR(64)`, qui compte des
+/// caractères, jamais plus lâche) : un nom d'exercice de 50 caractères dont 10
+/// accentués (60 octets) sous `{FY}-{SEQ:04}` donne 55 caractères mais 65 octets →
+/// refusé, et le message parle d'octets, non de caractères. Le compteur n'a pas
+/// avancé (#1124).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac3_multibyte_fiscal_year_name_counts_bytes(pool: MySqlPool) {
     let (app, seeded, contact) = setup(&pool).await;
+    validated_invoice(&app, contact, "2026-06-15").await;
+    let before = counter(&pool, "invoice_number_sequences", seeded.fiscal_year_id).await;
+    assert_eq!(before, Some(2));
     let name = format!("{}{}", "é".repeat(10), "x".repeat(40));
     assert_eq!(name.chars().count(), 50);
     assert_eq!(name.len(), 60);
     rename_fiscal_year(&pool, seeded.fiscal_year_id, &name).await;
     let format = "{FY}-{SEQ:04}";
     set_format(&pool, seeded.company_id, "invoice_number_format", format).await;
-    let id = draft_invoice(&app, contact, "2026-06-15").await;
+    let id = draft_invoice(&app, contact, "2026-06-16").await;
 
     let (status, body) = app.validate(id).await;
     assert_unrenderable(status, &body, "invoice", "too_long", format);
@@ -614,6 +628,70 @@ async fn ac3_multibyte_fiscal_year_name_counts_bytes(pool: MySqlPool) {
     assert!(
         !message.contains("64 caractères"),
         "le message ne chiffre pas la borne en caractères : {message}"
+    );
+    assert_still_draft(&app, id).await;
+    assert_eq!(
+        counter(&pool, "invoice_number_sequences", seeded.fiscal_year_id).await,
+        before,
+        "le compteur n'a pas avancé"
+    );
+}
+
+/// AC7 (#1123) — un nom d'exercice fait de 22 « – » (tiret demi-cadratin : 22
+/// caractères, 66 octets) sous `{FY}-{SEQ:04}` : refusé `too_long`, car un caractère
+/// de trois octets pèse trois ; le message dit le poids de tout caractère. Le
+/// compteur n'a pas avancé (#1124).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac3_three_byte_fiscal_year_name_counts_bytes(pool: MySqlPool) {
+    let (app, seeded, contact) = setup(&pool).await;
+    validated_invoice(&app, contact, "2026-06-15").await;
+    let before = counter(&pool, "invoice_number_sequences", seeded.fiscal_year_id).await;
+    assert_eq!(before, Some(2));
+    let name = "–".repeat(22);
+    assert_eq!(name.chars().count(), 22);
+    assert_eq!(name.len(), 66);
+    rename_fiscal_year(&pool, seeded.fiscal_year_id, &name).await;
+    let format = "{FY}-{SEQ:04}";
+    set_format(&pool, seeded.company_id, "invoice_number_format", format).await;
+    let id = draft_invoice(&app, contact, "2026-06-16").await;
+
+    let (status, body) = app.validate(id).await;
+    assert_unrenderable(status, &body, "invoice", "too_long", format);
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("trois, un emoji quatre"),
+        "le message dit le poids de tout caractère : {message}"
+    );
+    assert_still_draft(&app, id).await;
+    assert_eq!(
+        counter(&pool, "invoice_number_sequences", seeded.fiscal_year_id).await,
+        before,
+        "le compteur n'a pas avancé"
+    );
+}
+
+/// AC1 (#1115) — un format trop long **sans** `{FY}` (posé par SQL : `x`×55 +
+/// `{SEQ:10}`, 63 caractères dans la colonne, rendu 65 octets) : le refus ne
+/// prescrit pas de raccourcir le nom de l'exercice, qui n'entre pas dans le numéro ;
+/// il le conditionne à `{FY}`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac3_too_long_without_fiscal_year_token_conditions_the_fiscal_year_advice(pool: MySqlPool) {
+    let (app, seeded, contact) = setup(&pool).await;
+    let format = format!("{}{{SEQ:10}}", "x".repeat(55));
+    assert_eq!(format.chars().count(), 63);
+    set_format(&pool, seeded.company_id, "invoice_number_format", &format).await;
+    let id = draft_invoice(&app, contact, "2026-06-15").await;
+
+    let (status, body) = app.validate(id).await;
+    assert_unrenderable(status, &body, "invoice", "too_long", &format);
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("Administration → Facturation"),
+        "sonde : le texte lu est celui de la cause `too_long` : {message}"
+    );
+    assert!(
+        message.contains("s’il reprend"),
+        "le nom de l'exercice n'est conseillé que si le format reprend {{FY}} : {message}"
     );
     assert_still_draft(&app, id).await;
 }
@@ -645,6 +723,10 @@ async fn ac4_invoice_duplicate_number_is_a_typed_refusal(pool: MySqlPool) {
     assert!(
         message.contains("Un administrateur doit le corriger"),
         "le message dit qui corrige (E4) : {message}"
+    );
+    assert!(
+        message.contains("format précédent"),
+        "le message nomme le cas d'un numéro attribué sous un format précédent (#1115) : {message}"
     );
     assert_still_draft(&app, second).await;
     assert_eq!(
@@ -715,4 +797,89 @@ async fn ac4_format_without_fiscal_year_collides_on_second_fiscal_year(pool: MyS
     let (status, body) = app.validate(second).await;
     assert_unrenderable(status, &body, "invoice", "duplicate", format);
     assert_still_draft(&app, second).await;
+}
+
+/// AC2 (#1117) — le format **par défaut** `F-{YEAR}-{SEQ:04}` (sans `set_format`) sur
+/// deux exercices qui commencent la même année civile : `{YEAR}` est l'année de
+/// **début** de l'exercice et le compteur repart à 1, donc la première facture du
+/// second exercice rend `F-2026-0001`, déjà attribué → 400 `duplicate`. Le refus est
+/// celui que le manuel documente ; ce test le fixe, il ne dit pas qu'il est voulu.
+///
+/// Montage : l'exercice semé (2020-2030) couvrirait les deux périodes et la recherche
+/// de l'exercice ouvert est un `LIMIT 1` sans `ORDER BY` : on le réduit par SQL, puis on
+/// insère le second par SQL (la route refuserait un chevauchement, il n'y en a pas).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac4_default_format_collides_on_two_fiscal_years_starting_the_same_year(pool: MySqlPool) {
+    let (app, seeded, contact) = setup(&pool).await;
+    let format = "F-{YEAR}-{SEQ:04}";
+    assert_eq!(
+        stored_format(&pool, seeded.company_id, "invoice_number_format").await,
+        format,
+        "le format par défaut, non posé par le test"
+    );
+    sqlx::query(
+        "UPDATE fiscal_years SET start_date = '2026-01-01', end_date = '2026-06-30' WHERE id = ?",
+    )
+    .bind(seeded.fiscal_year_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let second_fy = sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+         VALUES (?, 'Exercice 2026-2027', '2026-07-01', '2027-06-30', 'Open')",
+    )
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+
+    let first = draft_invoice(&app, contact, "2026-03-15").await;
+    let (status, body) = app.validate(first).await;
+    assert_eq!(status, 200, "premier exercice : {body}");
+    assert_eq!(body["invoiceNumber"], "F-2026-0001", "{body}");
+
+    let second = draft_invoice(&app, contact, "2026-08-15").await;
+    let (status, body) = app.validate(second).await;
+    assert_unrenderable(status, &body, "invoice", "duplicate", format);
+    assert_still_draft(&app, second).await;
+    assert_eq!(
+        counter(&pool, "invoice_number_sequences", second_fy).await,
+        None,
+        "le compteur du second exercice, créé par le tirage, est annulé avec la transaction"
+    );
+}
+
+/// AC1 (#1115, cause) — le doublon peut venir d'un numéro attribué sous un **format
+/// précédent** : `X{SEQ}2` attribue `X12` (compteur à 2), puis `X1{SEQ}` rend `X12` à
+/// la facture suivante → 400 `duplicate`. Prouve que la cause nommée par le texte
+/// existe.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac4_duplicate_from_a_previous_format(pool: MySqlPool) {
+    let (app, seeded, contact) = setup(&pool).await;
+    set_format(
+        &pool,
+        seeded.company_id,
+        "invoice_number_format",
+        "X{SEQ}2",
+    )
+    .await;
+    let first = draft_invoice(&app, contact, "2026-06-15").await;
+    let (status, body) = app.validate(first).await;
+    assert_eq!(status, 200, "première : {body}");
+    assert_eq!(body["invoiceNumber"], "X12", "{body}");
+    let before = counter(&pool, "invoice_number_sequences", seeded.fiscal_year_id).await;
+    assert_eq!(before, Some(2));
+
+    let format = "X1{SEQ}";
+    set_format(&pool, seeded.company_id, "invoice_number_format", format).await;
+    let second = draft_invoice(&app, contact, "2026-06-16").await;
+    let (status, body) = app.validate(second).await;
+    assert_unrenderable(status, &body, "invoice", "duplicate", format);
+    assert_still_draft(&app, second).await;
+    assert_eq!(
+        counter(&pool, "invoice_number_sequences", seeded.fiscal_year_id).await,
+        before,
+        "le compteur n'a pas avancé"
+    );
 }
