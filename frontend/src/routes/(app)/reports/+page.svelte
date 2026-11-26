@@ -1564,7 +1564,7 @@
 						type="button"
 						class="rounded border border-border px-3 py-1 text-sm disabled:opacity-50"
 						onclick={exportPdf}
-						disabled={exporting || !hasProjectReport || activeBusy}
+						disabled={exporting || !hasProjectReport || activeBusy || hiddenByMenu}
 						data-testid="project-report-export-pdf"
 					>
 						PDF
@@ -1573,7 +1573,7 @@
 						type="button"
 						class="rounded border border-border px-3 py-1 text-sm disabled:opacity-50"
 						onclick={exportCsv}
-						disabled={exporting || !hasProjectReport || activeBusy}
+						disabled={exporting || !hasProjectReport || activeBusy || hiddenByMenu}
 						data-testid="project-report-export-csv"
 					>
 						CSV

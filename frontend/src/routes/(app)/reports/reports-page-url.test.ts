@@ -603,6 +603,9 @@ describe('exercice et rapports par compte analytique (R-8, R-10, AC-9)', () => {
 		expect(r.queryByTestId('report-content')).toBeNull();
 		expect(r.getByTestId('report-needs-one-fy')).toBeTruthy();
 		expect(appels(m.getProjectExpenses)).toBe(1);
+		// revue P2-1 : un rapport retiré de l'écran ne s'exporte pas
+		expect((r.getByTestId('project-report-export-pdf') as HTMLButtonElement).disabled).toBe(true);
+		expect((r.getByTestId('project-report-export-csv') as HTMLButtonElement).disabled).toBe(true);
 	});
 
 	it('AC-9 — une adresse d’un autre exercice : la demande qu’elle lance n’est pas périmée par le changement d’exercice', async () => {

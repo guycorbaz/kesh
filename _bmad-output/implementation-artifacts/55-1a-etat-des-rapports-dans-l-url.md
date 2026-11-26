@@ -766,7 +766,9 @@ Opus (agent de développement de la story), 2026-11-27.
   par compte analytique passent au même composant (snippets `controls` et `actions`) ; l'en-tête de période des six
   vues est `ReportPeriodHeading` (période de la réponse, prop `fiscalYears` facultative).
 - **Exports** (AC-25) : requête de la réponse affichée (classiques, grand livre, comptes analytiques) ; désactivés
-  pendant la demande de l'onglet et tant que les champs diffèrent du rapport affiché.
+  pendant la demande de l'onglet, et, pour les onglets classiques, tant que les champs diffèrent du rapport affiché
+  (le grand livre et les comptes analytiques, qui gardent *Générer*, exportent le rapport affiché ; un rapport retiré
+  par « Plusieurs » ou « Hors exercice » ne s'exporte pas — revue de code P2 de la 55-1a2, P2-1 et P2-2).
 - **`ledgerHref`** réécrite sur `reportHref` : sortie identique (Vitest, trois cas, contre l'ancienne construction).
 - **i18n** : dix clés `reports-nav-*` (FR, DE, IT, EN) ; `reports-loading` et `reports-error-no-entries-in-period`
   récrites (et leurs replis dans les cinq vues et la page) ; `reports-instruction-select-and-generate` et
