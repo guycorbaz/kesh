@@ -514,3 +514,12 @@ export interface LedgerQuery {
 	offset?: number;
 	limit?: number;
 }
+
+/**
+ * Story 55-2 (AC-6) — un compte désigné, tel que la page le passe à une vue : son identifiant (le lien) et
+ * son numéro (le texte).
+ */
+export interface AccountRef {
+	id: number;
+	number: string;
+}

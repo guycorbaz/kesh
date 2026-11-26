@@ -3675,7 +3675,7 @@ reports-fx-line = { $amount } × { $rate }
 reports-fx-totals = débit { $debit } · crédit { $credit }
 reports-fx-trial-balance = ouverture { $opening } · débit { $debit } · crédit { $credit } · clôture { $closing }
 reports-ledger-include-zero = Inclure les comptes sans mouvement
-reports-ledger-instruction = Choisissez une période, puis cliquez sur Générer. Le compte est facultatif.
+reports-ledger-instruction = Choisissez une période. Pour tous les comptes, cliquez sur Générer ; un compte choisi s'affiche de lui-même.
 
 # --- Journal d'audit — route, vocabulaire et export (Story 25-1c-a) ---
 # ----------------------------------------------------------------------
@@ -4508,3 +4508,5 @@ reports-nav-heading-named = { $name } — du { $from } au { $to }
 reports-nav-heading-part = Du { $from } au { $to } (partie de l’exercice { $fiscalYear })
 reports-nav-heading-several = Du { $from } au { $to } (exercices { $fiscalYears })
 reports-nav-heading-outside = Du { $from } au { $to } (hors exercice)
+# Story 55-2 (AC-6) — la ligne des comptes de TVA au grand livre, après le décompte.
+reports-nav-vat-accounts = Comptes au grand livre :

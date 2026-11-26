@@ -86,3 +86,18 @@ describe('IncomeStatementView', () => {
 		expect(container.textContent).not.toContain('USD');
 	});
 });
+
+// Story 55-2 (AC-2) — le compte de résultat à plat : le numéro de chaque produit et de chaque charge ouvre
+// son grand livre sur la période du rapport. Rouge sans le correctif (aucun lien à plat).
+describe('IncomeStatementView — Story 55-2, liens de compte à plat', () => {
+	it('produits et charges : le numéro est un lien vers le grand livre, période du rapport', async () => {
+		const { LINK_CLASS } = await import('$lib/shared/navigation/link-class');
+		const { getByRole } = render(IncomeStatementView, { dto: makeDto() });
+		const produit = getByRole('link', { name: '3000' });
+		expect(produit.getAttribute('href')).toBe('/reports?tab=general-ledger&accountId=1&from=2026-01-01&to=2026-12-31');
+		expect(produit.getAttribute('title')).toBe('Voir le détail dans le grand livre');
+		expect(produit.getAttribute('class')).toBe(LINK_CLASS);
+		const charge = getByRole('link', { name: '4000' });
+		expect(charge.getAttribute('href')).toBe('/reports?tab=general-ledger&accountId=2&from=2026-01-01&to=2026-12-31');
+	});
+});

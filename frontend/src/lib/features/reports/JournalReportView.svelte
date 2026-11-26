@@ -8,6 +8,7 @@
 		formatSwissDate,
 		isReportEmpty,
 	} from './reports.api';
+	import AccountLink from './AccountLink.svelte';
 	import ReportPeriodHeading from './ReportPeriodHeading.svelte';
 	import type { ExerciceBornes } from './reports-url';
 	import type { JournalEntryLineRow, JournalReportDto } from './reports.types';
@@ -69,7 +70,10 @@
 									<tbody>
 										{#each entry.lines as l (l.accountId + '_' + l.lineOrder)}
 											<tr>
-												<td class="font-mono">{l.accountNumber}</td>
+												<!-- Story 55-2 (AC-3) — le numéro ouvre le grand livre du compte, période du journal. -->
+												<td class="font-mono"
+													><AccountLink accountId={l.accountId} number={l.accountNumber} from={dto.period.startDate} to={dto.period.endDate} /></td
+												>
 												<td>{l.accountName}</td>
 												<td class="text-right font-mono">{fmt(l.debit)}</td>
 												<td class="text-right font-mono">{fmt(l.credit)}</td>

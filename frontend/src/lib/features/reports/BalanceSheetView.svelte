@@ -8,12 +8,12 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { accountRoleKey, type AccountRole } from '$lib/features/accounts/accounts.types';
 	import AccountCurrencyBalance from './AccountCurrencyBalance.svelte';
+	import AccountLink from './AccountLink.svelte';
 	import GroupedReportRows, { BALANCE_COLUMNS } from './GroupedReportRows.svelte';
 	import {
 		formatCurrencyFigure,
 		formatReportAmount,
 		isReportEmpty,
-		ledgerHref,
 		showsRetainedEarningsLine,
 	} from './reports.api';
 	import ReportPeriodHeading from './ReportPeriodHeading.svelte';
@@ -163,12 +163,7 @@
 						{#each dto.assets as a (a.accountId)}
 							<tr class:opacity-60={!a.active}>
 								<td class="px-2 py-1 font-mono">
-									<a
-										class="text-indigo-700 hover:underline"
-										href={ledgerHref(a.accountId, dto.period.startDate, dto.period.endDate)}
-										title={i18nMsg('reports-ledger-open-from-balance', 'Voir le détail dans le grand livre')}
-									>{a.accountNumber}</a
-									>
+									<AccountLink accountId={a.accountId} number={a.accountNumber} from={dto.period.startDate} to={dto.period.endDate} />
 								</td>
 								<td class="px-2 py-1">{a.accountName}<AccountCurrencyBalance account={a} /></td>
 								<td class="px-2 py-1 text-right font-mono">{fmt(a.balance)}</td>
@@ -212,12 +207,7 @@
 						{#each dto.liabilities as l (l.accountId)}
 							<tr class:opacity-60={!l.active}>
 								<td class="px-2 py-1 font-mono">
-									<a
-										class="text-indigo-700 hover:underline"
-										href={ledgerHref(l.accountId, dto.period.startDate, dto.period.endDate)}
-										title={i18nMsg('reports-ledger-open-from-balance', 'Voir le détail dans le grand livre')}
-									>{l.accountNumber}</a
-									>
+									<AccountLink accountId={l.accountId} number={l.accountNumber} from={dto.period.startDate} to={dto.period.endDate} />
 								</td>
 								<td class="px-2 py-1">{l.accountName}<AccountCurrencyBalance account={l} /></td>
 								<td class="px-2 py-1 text-right font-mono">{fmt(l.balance)}</td>
@@ -277,12 +267,7 @@
 							{#each group.rows as e (e.accountId)}
 								<tr class:opacity-60={!e.active}>
 									<td class="px-2 py-1 pl-4 font-mono">
-										<a
-											class="text-indigo-700 hover:underline"
-											href={ledgerHref(e.accountId, dto.period.startDate, dto.period.endDate)}
-											title={i18nMsg('reports-ledger-open-from-balance', 'Voir le détail dans le grand livre')}
-										>{e.accountNumber}</a
-										>
+										<AccountLink accountId={e.accountId} number={e.accountNumber} from={dto.period.startDate} to={dto.period.endDate} />
 									</td>
 									<td class="px-2 py-1">{e.accountName}<AccountCurrencyBalance account={e} /></td>
 									<td class="px-2 py-1 text-right font-mono">{fmt(e.balance)}</td>

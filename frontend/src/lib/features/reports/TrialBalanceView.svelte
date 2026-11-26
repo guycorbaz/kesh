@@ -9,12 +9,12 @@
 	// groupes, hors d'eux), totaux et contrôles restent ceux de la vue à plat.
 	import Big from 'big.js';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import AccountLink from './AccountLink.svelte';
 	import GroupedReportRows, { TRIAL_BALANCE_COLUMNS } from './GroupedReportRows.svelte';
 	import {
 		formatCurrencyFigure,
 		formatReportAmount,
 		isReportEmpty,
-		ledgerHref,
 	} from './reports.api';
 	import ReportPeriodHeading from './ReportPeriodHeading.svelte';
 	import type { ExerciceBornes } from './reports-url';
@@ -126,12 +126,7 @@
 				{#each dto.rows as r (r.accountId)}
 					<tr class:opacity-60={!r.active} data-testid="tb-row">
 						<td class="px-2 py-1 font-mono">
-							<a
-								class="text-indigo-700 hover:underline"
-								href={ledgerHref(r.accountId, dto.period.startDate, dto.period.endDate)}
-								title={i18nMsg('reports-ledger-open-from-balance', 'Voir le détail dans le grand livre')}
-							>{r.accountNumber}</a
-							>
+							<AccountLink accountId={r.accountId} number={r.accountNumber} from={dto.period.startDate} to={dto.period.endDate} />
 						</td>
 						<td class="px-2 py-1">
 							{r.accountName}

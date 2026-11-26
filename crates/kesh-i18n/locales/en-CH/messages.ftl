@@ -3603,7 +3603,7 @@ reports-fx-line = { $amount } × { $rate }
 reports-fx-totals = debit { $debit } · credit { $credit }
 reports-fx-trial-balance = opening { $opening } · debit { $debit } · credit { $credit } · closing { $closing }
 reports-ledger-include-zero = Include accounts with no movement
-reports-ledger-instruction = Pick a period, then click Generate. The account is optional.
+reports-ledger-instruction = Pick a period. For all accounts, click Generate; a chosen account is shown on its own.
 
 # --- Journal d'audit — route, vocabulaire et export (Story 25-1c-a) ---
 # ----------------------------------------------------------------------
@@ -4433,3 +4433,5 @@ reports-nav-heading-named = { $name } — from { $from } to { $to }
 reports-nav-heading-part = From { $from } to { $to } (part of fiscal year { $fiscalYear })
 reports-nav-heading-several = From { $from } to { $to } (fiscal years { $fiscalYears })
 reports-nav-heading-outside = From { $from } to { $to } (outside fiscal years)
+# Story 55-2 (AC-6) — la ligne des comptes de TVA au grand livre, après le décompte.
+reports-nav-vat-accounts = Ledger accounts:

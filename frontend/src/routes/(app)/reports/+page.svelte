@@ -63,6 +63,8 @@
 	import ProjectReturnView from '$lib/features/reports/ProjectReturnView.svelte';
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	import { getInvoiceSettings } from '$lib/features/invoices/invoices.api';
+	import type { InvoiceSettingsResponse } from '$lib/features/invoices/invoices.types';
 	// fx-filtre-comptes : exempté — rapports (consultation, comptes en devise compris).
 	import { letterableAccountIds as letterableIdsOf } from '$lib/features/open-items/open-items';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
@@ -83,6 +85,7 @@
 		VatReportDto,
 		GeneralLedgerDto,
 		LedgerQuery,
+		AccountRef,
 		AgedReceivablesDto,
 		GroupedRowBase,
 		GroupingParams,
@@ -131,14 +134,17 @@
 	const isAgedTab = $derived(activeTab === 'aged-receivables');
 	let agedReceivables = $state<AgedReceivablesDto | null>(null);
 
-	// Story 24-1 — grand livre : onglet à contrôles dédiés lui aussi, mais pour
-	// une raison différente de la balance âgée — il prend bien une période, ce
-	// qu'il ne prend PAS c'est un exercice. Il franchit la borne, sans quoi il ne
-	// concorderait pas avec le bilan, qui est cumulatif depuis l'origine.
+	// Story 24-1 — grand livre : il franchit la borne d'exercice, sans quoi il ne concorderait pas avec le
+	// bilan, cumulatif depuis l'origine ; l'API ne lui demande donc aucun exercice. Story 55-2 (AC-11) : son
+	// bandeau est `ReportSelector`, l'exercice y sert de raccourci pour la période ; le menu se DÉDUIT de ses
+	// dates propres (`ledgerMenu`), qui peuvent franchir la borne (« Plusieurs », « Hors exercice »). Il
+	// n'écrit jamais `selectedFiscalYearId` : il le lit seulement pour remplir ses dates vides (AC-12).
 	const isLedgerTab = $derived(activeTab === 'general-ledger');
 	let generalLedger = $state<GeneralLedgerDto | null>(null);
 	let ledgerFrom = $state('');
 	let ledgerTo = $state('');
+	let ledgerMenu = $state<EtatMenu>({ kind: 'outside' });
+	let ledgerPeriodInvalid = $state(false);
 	let ledgerAccountId = $state<number | null>(null);
 	let ledgerIncludeZero = $state(false);
 	let accounts = $state<AccountResponse[]>([]);
@@ -166,6 +172,34 @@
 	// liste : le Grand livre n'offre « Postes ouverts de ce compte » que pour eux.
 	// Liste en échec → ensemble vide → aucun lien.
 	const letterableAccountIds = $derived(letterableIdsOf(accounts));
+	// Story 55-2 (AC-4, C-55-2-3) — numéro → compte, de la même liste : les contreparties du grand livre (des
+	// numéros seuls) deviennent des liens ; recalculée quand la liste arrive après le rapport.
+	const accountIdByNumber = $derived(new Map(accounts.map((a) => [a.number, a.id])));
+	const accountById = $derived(new Map(accounts.map((a) => [a.id, a])));
+
+	// Story 55-2 (AC-6, D7) — les comptes de TVA désignés (réglages de facturation, tout rôle), lus UNE fois,
+	// au premier affichage d'un décompte TVA (génération, adresse, Retour, clic sur l'onglet qui le montre) ;
+	// aucune lecture tant qu'aucun décompte n'est affiché. En échec : silence, la ligne des comptes est omise
+	// (pas de retentative : l'effet reboucherait).
+	let vatSettings = $state<InvoiceSettingsResponse | null>(null);
+	let vatSettingsRequested = false;
+	$effect(() => {
+		if (activeTab !== 'vat' || vatReport === null || hiddenByMenu || vatSettingsRequested) return;
+		vatSettingsRequested = true;
+		getInvoiceSettings()
+			.then((s) => (vatSettings = s))
+			.catch(() => (vatSettings = null));
+	});
+	/** Un compte désigné résolu par la liste des comptes ; non désigné ou absent de la liste : `null`. */
+	function accountRefOf(id: number | null | undefined): AccountRef | null {
+		if (id == null) return null;
+		const a = accountById.get(id);
+		return a ? { id: a.id, number: a.number } : null;
+	}
+	const vatAccounts = $derived({
+		payable: accountRefOf(vatSettings?.defaultVatPayableAccountId),
+		recoverable: accountRefOf(vatSettings?.defaultVatRecoverableAccountId),
+	});
 	// Story 9-2a — flag dédié pour l'export (PAS partagé avec `loading` qui contrôle
 	// uniquement `generate()`). Pass 1 ECH-H2 + AC #36 + Pass 2 AA2-C1.
 	let exporting = $state(false);
@@ -520,11 +554,14 @@
 
 	/**
 	 * L'adresse qu'un geste sur un onglet écrit : la clé des champs ; à défaut, l'onglet et ses dates
-	 * (« Plusieurs », « Hors exercice »). Le grand livre, qui ne se charge pas encore seul (55-2),
-	 * écrit la clé de son rapport affiché, ou son onglet seul.
+	 * (« Plusieurs », « Hors exercice »). Le grand livre (55-2) : filtré et demandable, la clé de ses champs
+	 * (il se charge seul) ; sinon la clé de son rapport affiché, ou son onglet seul (*Générer* l'écrira).
 	 */
 	function urlForTab(tab: TabId): string {
-		if (tab === 'general-ledger') return displayedKeys[tab] ?? buildReportSearch({ tab });
+		if (tab === 'general-ledger') {
+			const key = ledgerLoadsItself() ? fieldsKey(tab) : null;
+			return key ?? displayedKeys[tab] ?? buildReportSearch({ tab });
+		}
 		const key = fieldsKey(tab);
 		if (key === null) return buildReportSearch({ tab, from: periodStart, to: periodEnd });
 		// Story 55-1b (D4, C-55-1b-2) — la présentation n'entre dans l'URL que par la réponse : si l'onglet
@@ -1071,20 +1108,26 @@
 			if (r?.fy != null && isGroupedReport(tab)) applyPresentation(tab, p.presentation);
 			requested = loadActiveIfNeeded();
 		} else if (tab === 'general-ledger') {
-			// Le grand livre ne se charge seul que sur une adresse complète (sa sortie de la 55-2).
+			// Une adresse complète (dates) affiche son rapport, filtré ou non (D3) ; incomplète, elle ne modifie
+			// aucun champ, sauf deux dates vides, pré-remplies (55-2, AC-12) — filtré, le rapport se charge.
 			if (p.from && p.to) {
 				ledgerFrom = p.from;
 				ledgerTo = p.to;
 				ledgerAccountId = p.accountId;
 				ledgerIncludeZero = p.includeZero;
+				ledgerPeriodInvalid = false;
+				syncLedgerMenu();
 				requested = loadActiveIfNeeded();
+			} else {
+				prefillLedgerIfEmpty();
+				requested = ledgerLoadsItself() && loadActiveIfNeeded();
 			}
 		} else if (tab === 'aged-receivables') {
 			requested = loadActiveIfNeeded();
 		}
 		const canonical =
 			tab === 'general-ledger'
-				? p.from && p.to
+				? (p.from && p.to) || requested
 					? (fieldsKey(tab) ?? buildReportSearch({ ...p, tab }))
 					: buildReportSearch({ ...p, tab })
 				: urlForTab(tab);
@@ -1151,8 +1194,11 @@
 		if (activeTab === next) return;
 		activeTab = next;
 		errorMsg = null;
+		// Story 55-2 (AC-12) — l'arrivée sur le grand livre remplit ses deux dates vides ; filtré, il se charge.
+		if (next === 'general-ledger') prefillLedgerIfEmpty();
 		const requested =
-			(isClassicTab(next) || next === 'aged-receivables') && loadActiveIfNeeded({ byClick: true });
+			((isClassicTab(next) || next === 'aged-receivables') && loadActiveIfNeeded({ byClick: true })) ||
+			(next === 'general-ledger' && ledgerLoadsItself() && loadActiveIfNeeded());
 		// Story 55-1b — l'adresse est calculée AVANT la règle de la 46-2 : une redemande de présentation
 		// n'entre dans l'URL que par sa réponse (le clic empile la clé affichée).
 		const url = urlForTab(next);
@@ -1199,20 +1245,111 @@
 	let pointerOnTablist = false;
 	let tablistEl = $state<HTMLElement | null>(null);
 
+	/** La sortie des dates va-t-elle à un onglet (focus ou pointeur posé sur la liste des onglets, R-19) ? */
+	function leavesToTablist(via: 'leave' | 'enter', next?: EventTarget | null): boolean {
+		if (via !== 'leave') return false;
+		return pointerOnTablist || (next instanceof Node && (tablistEl?.contains(next) ?? false));
+	}
+
 	/** Sortie du groupe des dates, ou Entrée. Vers un onglet : rien, l'onglet visé se charge (AC-22). */
 	function onPeriodCommit(via: 'leave' | 'enter', next?: EventTarget | null): void {
-		if (via === 'leave') {
-			if (pointerOnTablist) return;
-			if (next instanceof Node && tablistEl?.contains(next)) return;
-		}
+		if (leavesToTablist(via, next)) return;
 		commitPeriod();
 	}
 
-	/** Grand livre (24-1) — *Générer* : la demande, puis l'URL de ses champs, remplacée. */
+	/** Grand livre (24-1) — *Générer* (tous les comptes) : la demande, puis l'URL de ses champs, remplacée. */
 	function generateLedger(): void {
 		void generate();
 		const key = fieldsKey('general-ledger');
 		if (key) writeUrl(key, true);
+	}
+
+	// ----- Grand livre : le sélecteur d'exercice et le chargement filtré (Story 55-2, AC-11 à AC-14) ---------
+
+	/** Vrai si la période du grand livre est demandable : deux dates complètes, début au plus tard à la fin. */
+	function ledgerPeriodValid(): boolean {
+		return estDateStockable(ledgerFrom) && estDateStockable(ledgerTo) && ledgerFrom <= ledgerTo;
+	}
+
+	/**
+	 * Le grand livre se charge-t-il seul (D16) ? Filtré sur un compte et sur une période demandable ; le
+	 * grand livre de tous les comptes, lourd, garde *Générer*.
+	 */
+	function ledgerLoadsItself(): boolean {
+		return ledgerAccountId !== null && ledgerPeriodValid();
+	}
+
+	/** Remet l'état du menu du grand livre d'accord avec ses dates (le même `etatDuMenu` que les autres onglets). */
+	function syncLedgerMenu(): void {
+		ledgerMenu = etatDuMenu(ledgerFrom, ledgerTo, data.fiscalYears, ledgerMenu);
+	}
+
+	/**
+	 * AC-12 — à l'ENTRÉE sur l'onglet (clic, clavier, adresse incomplète, rechargement, Retour), ses deux dates
+	 * vides prennent les bornes de l'exercice choisi des rapports classiques (lu, jamais écrit). Jamais à la
+	 * saisie : deux dates vidées à la main restent vides. Des dates déjà remplies restent.
+	 */
+	function prefillLedgerIfEmpty(): void {
+		if (ledgerFrom !== '' || ledgerTo !== '') return;
+		const fy = data.fiscalYears.find((f) => f.id === selectedFiscalYearId);
+		if (!fy) return;
+		ledgerFrom = fy.startDate;
+		ledgerTo = fy.endDate;
+		syncLedgerMenu();
+	}
+
+	/**
+	 * Un geste du grand livre (menu, sortie des dates, Entrée, « Exercice entier », compte, « comptes sans
+	 * mouvement ») : filtré, le rapport des champs se charge s'il a changé (`loadActiveIfNeeded` compare les
+	 * clés), et l'adresse est remplacée ; tous les comptes : rien, *Générer* attend.
+	 */
+	function commitLedger(): void {
+		ledgerPeriodInvalid =
+			estDateStockable(ledgerFrom) && estDateStockable(ledgerTo) && ledgerFrom > ledgerTo;
+		if (!isLedgerTab || !ledgerLoadsItself()) return;
+		if (loadActiveIfNeeded()) writeUrl(urlForTab('general-ledger'), true);
+	}
+
+	/** Choix d'un exercice dans le menu du grand livre : ses bornes (raccourci de période), puis le geste. */
+	function selectLedgerFiscalYear(id: number): void {
+		const fy = data.fiscalYears.find((f) => f.id === id);
+		if (!fy) return;
+		ledgerFrom = fy.startDate;
+		ledgerTo = fy.endDate;
+		ledgerPeriodInvalid = false;
+		syncLedgerMenu();
+		commitLedger();
+	}
+
+	/** « Exercice entier » du grand livre. */
+	function wholeLedgerFiscalYear(): void {
+		if (ledgerMenu.kind === 'fy') selectLedgerFiscalYear(ledgerMenu.id);
+	}
+
+	/** Une date saisie au grand livre : champs et menu, rien n'est chargé avant la sortie ou Entrée. */
+	function onLedgerDatesInput(from: string, to: string): void {
+		ledgerFrom = from;
+		ledgerTo = to;
+		ledgerPeriodInvalid = false;
+		syncLedgerMenu();
+	}
+
+	/** Sortie du groupe des dates du grand livre, ou Entrée (même règle que les autres onglets, R-19). */
+	function onLedgerPeriodCommit(via: 'leave' | 'enter', next?: EventTarget | null): void {
+		if (leavesToTablist(via, next)) return;
+		commitLedger();
+	}
+
+	/** Choix du compte (défaut (a) de D16) : filtré, le rapport se charge ; « tous les comptes » : *Générer*. */
+	function setLedgerAccount(id: number | null): void {
+		ledgerAccountId = id;
+		commitLedger();
+	}
+
+	/** « Comptes sans mouvement » (défaut (a) de D16) : filtré, le rapport se charge. */
+	function setLedgerIncludeZero(v: boolean): void {
+		ledgerIncludeZero = v;
+		commitLedger();
 	}
 </script>
 
@@ -1246,81 +1383,85 @@
 			{exporting}
 		/>
 	{:else if isLedgerTab}
-		<!-- Story 24-1 — contrôles du grand livre. PAS de sélecteur d'exercice :
-		     ce rapport franchit la borne, c'est ce qui le rend concordant avec le
-		     bilan. La période est donc libre. -->
-		<div
-			class="flex flex-wrap items-end gap-3 rounded border border-border bg-surface p-3"
-			data-testid="ledger-controls"
-		>
-			<label class="text-sm">
-				{i18nMsg('reports-ledger-from', 'Du')}
-				<input
-					type="date"
-					class="mt-1 block rounded border border-border px-2 py-1 text-sm"
-					bind:value={ledgerFrom}
-					data-testid="ledger-from"
-				/>
-			</label>
-			<label class="text-sm">
-				{i18nMsg('reports-ledger-to', 'Au')}
-				<input
-					type="date"
-					class="mt-1 block rounded border border-border px-2 py-1 text-sm"
-					bind:value={ledgerTo}
-					data-testid="ledger-to"
-				/>
-			</label>
-			<label class="text-sm">
-				{i18nMsg('reports-ledger-account-label', 'Compte')}
-				<select
-					class="mt-1 block rounded border border-border px-2 py-1 text-sm"
-					bind:value={ledgerAccountId}
-					data-testid="ledger-account"
-				>
-					<option value={null}
-						>{i18nMsg('reports-ledger-all-accounts', 'Tous les comptes mouvementés')}</option
-					>
-					{#each accounts as a (a.id)}
-						<option value={a.id}
-							>{a.number} — {a.name}{a.active
-								? ''
-								: ` (${i18nMsg('reports-ledger-archived', 'archivé')})`}</option
+		<!-- Story 24-1 — contrôles du grand livre. Story 55-2 (AC-11) : le même ReportSelector que les autres
+		     onglets, l'exercice comme raccourci pour la période ; le grand livre franchit la borne
+		     (`unSeulExercice={false}` : « Plusieurs » et « Hors exercice » n'empêchent rien). Filtré sur un
+		     compte, il se charge seul ; tous les comptes, il garde *Générer*. -->
+		<div data-testid="ledger-controls">
+			<ReportSelector
+				fiscalYears={data.fiscalYears}
+				menu={ledgerMenu}
+				periodStart={ledgerFrom}
+				periodEnd={ledgerTo}
+				periodInvalid={ledgerPeriodInvalid}
+				unSeulExercice={false}
+				datesTestIdPrefix="ledger"
+				onFiscalYearSelect={selectLedgerFiscalYear}
+				onDatesInput={onLedgerDatesInput}
+				onPeriodCommit={onLedgerPeriodCommit}
+				onWholeFiscalYear={wholeLedgerFiscalYear}
+			>
+				{#snippet controls()}
+					<label class="block text-sm">
+						{i18nMsg('reports-ledger-account-label', 'Compte')}
+						<select
+							class="mt-1 block w-full rounded border border-border px-2 py-1 text-sm"
+							bind:value={() => ledgerAccountId, setLedgerAccount}
+							data-testid="ledger-account"
 						>
-					{/each}
-				</select>
-			</label>
-			<label class="flex items-center gap-2 text-sm">
-				<input type="checkbox" bind:checked={ledgerIncludeZero} data-testid="ledger-include-zero" />
-				{i18nMsg('reports-ledger-include-zero', 'Inclure les comptes sans mouvement')}
-			</label>
-			<button
-				type="button"
-				class="rounded bg-primary px-3 py-1 text-sm text-white disabled:opacity-50"
-				onclick={generateLedger}
-				disabled={!ledgerFrom || !ledgerTo}
-				data-testid="ledger-generate"
-			>
-				{i18nMsg('reports-button-generate', 'Générer')}
-			</button>
-			<button
-				type="button"
-				class="rounded border border-border px-3 py-1 text-sm disabled:opacity-50"
-				onclick={exportPdf}
-				disabled={exporting || generalLedger === null}
-				data-testid="ledger-export-pdf"
-			>
-				PDF
-			</button>
-			<button
-				type="button"
-				class="rounded border border-border px-3 py-1 text-sm disabled:opacity-50"
-				onclick={exportCsv}
-				disabled={exporting || generalLedger === null}
-				data-testid="ledger-export-csv"
-			>
-				CSV
-			</button>
+							<option value={null}
+								>{i18nMsg('reports-ledger-all-accounts', 'Tous les comptes mouvementés')}</option
+							>
+							{#each accounts as a (a.id)}
+								<option value={a.id}
+									>{a.number} — {a.name}{a.active
+										? ''
+										: ` (${i18nMsg('reports-ledger-archived', 'archivé')})`}</option
+								>
+							{/each}
+						</select>
+					</label>
+					<label class="flex items-center gap-2 self-end pb-1 text-sm sm:col-span-2">
+						<input
+							type="checkbox"
+							bind:checked={() => ledgerIncludeZero, setLedgerIncludeZero}
+							data-testid="ledger-include-zero"
+						/>
+						{i18nMsg('reports-ledger-include-zero', 'Inclure les comptes sans mouvement')}
+					</label>
+				{/snippet}
+				{#snippet actions()}
+					{#if ledgerAccountId === null}
+						<button
+							type="button"
+							class="rounded bg-primary px-3 py-1 text-sm text-white disabled:opacity-50"
+							onclick={generateLedger}
+							disabled={!ledgerFrom || !ledgerTo}
+							data-testid="ledger-generate"
+						>
+							{i18nMsg('reports-button-generate', 'Générer')}
+						</button>
+					{/if}
+					<button
+						type="button"
+						class="rounded border border-border px-3 py-1 text-sm disabled:opacity-50"
+						onclick={exportPdf}
+						disabled={exporting || generalLedger === null || activeBusy}
+						data-testid="ledger-export-pdf"
+					>
+						PDF
+					</button>
+					<button
+						type="button"
+						class="rounded border border-border px-3 py-1 text-sm disabled:opacity-50"
+						onclick={exportCsv}
+						disabled={exporting || generalLedger === null || activeBusy}
+						data-testid="ledger-export-csv"
+					>
+						CSV
+					</button>
+				{/snippet}
+			</ReportSelector>
 		</div>
 	{:else if isProjectTab}
 		<!-- Story 19-6a — contrôles dédiés des rapports par compte analytique. Story 55-1a (AC-15) : l'exercice
@@ -1491,7 +1632,7 @@
 				{:else if activeTab === 'journals' && journalReport}
 					<JournalReportView dto={journalReport} fiscalYears={data.fiscalYears} />
 				{:else if activeTab === 'vat' && vatReport}
-					<VatReportView dto={vatReport} fiscalYears={data.fiscalYears} />
+					<VatReportView dto={vatReport} fiscalYears={data.fiscalYears} {vatAccounts} />
 				{:else if activeTab === 'project-expenses' && projectExpenses}
 					<ProjectExpensesView report={projectExpenses} />
 				{:else if activeTab === 'project-return' && projectReturn}
@@ -1499,12 +1640,17 @@
 				{:else if activeTab === 'aged-receivables' && agedReceivables}
 					<AgedReceivablesView dto={agedReceivables} />
 				{:else if activeTab === 'general-ledger' && generalLedger}
-					<GeneralLedgerView dto={generalLedger} {letterableAccountIds} fiscalYears={data.fiscalYears} />
+					<GeneralLedgerView
+						dto={generalLedger}
+						{letterableAccountIds}
+						{accountIdByNumber}
+						fiscalYears={data.fiscalYears}
+					/>
 				{:else if isLedgerTab}
 					<p class="text-sm italic text-gray-500">
 						{i18nMsg(
 							'reports-ledger-instruction',
-							'Choisissez une période, puis cliquez sur Générer. Le compte est facultatif.',
+							"Choisissez une période. Pour tous les comptes, cliquez sur Générer ; un compte choisi s'affiche de lui-même.",
 						)}
 					</p>
 				{/if}

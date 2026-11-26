@@ -424,3 +424,75 @@ describe('GeneralLedgerView — Story 37-4, compte en devise', () => {
 		expect(r.container.querySelectorAll('tbody tr')).toHaveLength(2); // ouverture + 1 ligne
 	});
 });
+
+// Story 55-2 (AC-4, AC-5, D8) — les contreparties deviennent des liens (numéro → compte par la carte de la
+// page), même période ; le titre d'une section n'est un lien que si le rapport en rend plusieurs.
+describe('GeneralLedgerView — Story 55-2, contreparties et titre', () => {
+	const carte = new Map([
+		['6000', 60],
+		['1020', 7],
+		['2000', 20],
+	]);
+
+	it('une contrepartie résolue est un lien vers son grand livre, même période', async () => {
+		const { LINK_CLASS } = await import('$lib/shared/navigation/link-class');
+		const { getByTestId } = render(GeneralLedgerView, { dto: dto(), accountIdByNumber: carte });
+		const cellule = getByTestId('ledger-counterpart-1');
+		const a = cellule.querySelector('a');
+		// Mutation : `counterpart.join(', ')` gardé → aucun lien, rouge.
+		expect(a?.getAttribute('href')).toBe('/reports?tab=general-ledger&accountId=60&from=2026-01-01&to=2026-12-31');
+		expect(a?.getAttribute('class')).toBe(LINK_CLASS);
+		expect(a?.textContent).toBe('6000');
+	});
+
+	it('plusieurs contreparties : séparées par « , », une non résolue reste en texte, sans erreur', () => {
+		const { getByTestId } = render(GeneralLedgerView, {
+			dto: dto({ sections: [section({ lines: [line({ counterpart: ['6000', '9999', '2000'] })] })] }),
+			accountIdByNumber: carte,
+		});
+		const cellule = getByTestId('ledger-counterpart-1');
+		expect(cellule.textContent).toBe('6000, 9999, 2000');
+		const liens = [...cellule.querySelectorAll('a')].map((a) => a.textContent);
+		expect(liens).toEqual(['6000', '2000']);
+	});
+
+	it('sans carte (liste des comptes en échec) : les contreparties en texte', () => {
+		const { getByTestId } = render(GeneralLedgerView, { dto: dto() });
+		expect(getByTestId('ledger-counterpart-1').querySelector('a')).toBeNull();
+		expect(getByTestId('ledger-counterpart-1').textContent).toBe('6000');
+	});
+
+	it('une seule section : le numéro du titre reste du texte (un lien vers lui-même n’apprend rien)', () => {
+		const { getByTestId } = render(GeneralLedgerView, { dto: dto(), accountIdByNumber: carte });
+		// Mutation : titre toujours lié → rouge.
+		expect(getByTestId('ledger-title-1020').querySelector('a')).toBeNull();
+		expect(getByTestId('ledger-title-1020').textContent).toBe('1020');
+	});
+
+	it('plusieurs sections : le numéro de chaque titre est un lien vers son grand livre', () => {
+		const { getByTestId } = render(GeneralLedgerView, {
+			dto: dto({
+				sections: [
+					section(),
+					section({ accountId: 60, accountNumber: '6000', accountName: 'Loyer', lines: [line({ lineId: 2, counterpart: ['1020'] })] }),
+				],
+			}),
+			accountIdByNumber: carte,
+		});
+		// Mutation : titre jamais lié → rouge.
+		expect(getByTestId('ledger-title-1020').querySelector('a')?.getAttribute('href')).toBe(
+			'/reports?tab=general-ledger&accountId=7&from=2026-01-01&to=2026-12-31',
+		);
+		expect(getByTestId('ledger-title-6000').querySelector('a')?.getAttribute('href')).toBe(
+			'/reports?tab=general-ledger&accountId=60&from=2026-01-01&to=2026-12-31',
+		);
+	});
+
+	it('le lien des postes ouverts garde sa classe soulignée en plein (R-7, liens déjà soulignés inchangés)', () => {
+		const { getByTestId } = render(GeneralLedgerView, {
+			dto: dto(),
+			letterableAccountIds: new Set([7]),
+		});
+		expect(getByTestId('ledger-open-items-1020').getAttribute('class')).toBe('ml-auto text-xs text-primary underline');
+	});
+});

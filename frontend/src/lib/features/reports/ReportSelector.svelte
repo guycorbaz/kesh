@@ -9,12 +9,15 @@
 	//     groupe) ou Entrée dans une date confirme la période (`onPeriodCommit`) ;
 	//   - « Exercice entier » quand la période n'est qu'une partie de l'exercice ;
 	//   - rien n'est désactivé pendant un chargement (R-18) : la dernière demande l'emporte.
+	// Story 55-2 (AC-11) — le Grand livre s'y branche aussi (`unSeulExercice={false}`) : il franchit la borne,
+	// donc ni message « un seul exercice », et, sans exercice, des dates libres (non désactivées).
 	// Le composant ne tient aucun état : l'état du menu (`menu`) et les dates viennent de la page, qui les
 	// déduit (`etatDuMenu`) et décide du chargement.
 
 	import type { Snippet } from 'svelte';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { libellesExercices, type EtatMenu } from './fiscal-year-menu';
+	import { LINK_CLASS } from '$lib/shared/navigation/link-class';
 	import type { FiscalYearResponse } from '$lib/features/fiscal-years/fiscal-years.types';
 
 	interface Props {
@@ -27,6 +30,8 @@
 		showPeriod?: boolean;
 		/** L'onglet ne porte que sur un exercice : « Plusieurs » ou « Hors exercice » disent pourquoi rien ne se charge. */
 		unSeulExercice?: boolean;
+		/** Story 55-2 — préfixe des `data-testid` des dates (`<préfixe>-from`, `<préfixe>-to`) ; le Grand livre garde `ledger`. */
+		datesTestIdPrefix?: string;
 		/** La période saisie est invalide (début après fin) : message sous les dates. */
 		periodInvalid?: boolean;
 		/** Choix d'un exercice dans le menu. */
@@ -54,6 +59,7 @@
 		periodEnd,
 		showPeriod = true,
 		unSeulExercice = true,
+		datesTestIdPrefix = 'report',
 		periodInvalid = false,
 		onFiscalYearSelect,
 		onDatesInput,
@@ -71,6 +77,8 @@
 	const libelles = $derived(libellesExercices(fiscalYears));
 	const valeurMenu = $derived(menu.kind === 'fy' ? String(menu.id) : `__${menu.kind}`);
 	const needsOneFy = $derived(!noFiscalYears && unSeulExercice && menu.kind !== 'fy');
+	// Story 55-2 (AC-11) — sans exercice, un rapport qui franchit la borne (le Grand livre) garde ses dates.
+	const datesDisabled = $derived(noFiscalYears && unSeulExercice);
 
 	let groupe = $state<HTMLFieldSetElement | null>(null);
 
@@ -151,8 +159,8 @@
 							value={periodStart}
 							oninput={(e) => surSaisie('from', e)}
 							onkeydown={surTouche}
-							disabled={noFiscalYears}
-							data-testid="report-from"
+							disabled={datesDisabled}
+							data-testid="{datesTestIdPrefix}-from"
 						/>
 					</label>
 					<label class="block">
@@ -163,14 +171,14 @@
 							value={periodEnd}
 							oninput={(e) => surSaisie('to', e)}
 							onkeydown={surTouche}
-							disabled={noFiscalYears}
-							data-testid="report-to"
+							disabled={datesDisabled}
+							data-testid="{datesTestIdPrefix}-to"
 						/>
 					</label>
 					{#if menu.kind === 'fy' && !menu.whole}
 						<button
 							type="button"
-							class="pb-2 text-sm text-indigo-700 underline decoration-indigo-700/40 underline-offset-2 hover:decoration-current"
+							class="pb-2 text-sm {LINK_CLASS}"
 							onclick={onWholeFiscalYear}
 							data-testid="report-fy-whole"
 						>
@@ -190,7 +198,7 @@
 		{/if}
 	</div>
 
-	{#if noFiscalYears}
+	{#if noFiscalYears && unSeulExercice}
 		<p class="rounded bg-amber-50 p-3 text-sm text-amber-900" role="alert">
 			{i18nMsg(
 				'reports-error-no-fiscal-year-available',

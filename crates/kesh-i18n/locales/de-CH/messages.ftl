@@ -3597,7 +3597,7 @@ reports-fx-line = { $amount } × { $rate }
 reports-fx-totals = Soll { $debit } · Haben { $credit }
 reports-fx-trial-balance = Eröffnung { $opening } · Soll { $debit } · Haben { $credit } · Abschluss { $closing }
 reports-ledger-include-zero = Konten ohne Bewegung einschliessen
-reports-ledger-instruction = Wählen Sie einen Zeitraum und klicken Sie auf Erstellen. Das Konto ist optional.
+reports-ledger-instruction = Wählen Sie einen Zeitraum. Für alle Konten klicken Sie auf Erstellen; ein gewähltes Konto wird von selbst angezeigt.
 
 # --- Journal d'audit — route, vocabulaire et export (Story 25-1c-a) ---
 # ----------------------------------------------------------------------
@@ -4427,3 +4427,5 @@ reports-nav-heading-named = { $name } — vom { $from } bis { $to }
 reports-nav-heading-part = Vom { $from } bis { $to } (Teil des Geschäftsjahres { $fiscalYear })
 reports-nav-heading-several = Vom { $from } bis { $to } (Geschäftsjahre { $fiscalYears })
 reports-nav-heading-outside = Vom { $from } bis { $to } (ausserhalb der Geschäftsjahre)
+# Story 55-2 (AC-6) — la ligne des comptes de TVA au grand livre, après le décompte.
+reports-nav-vat-accounts = Konten im Hauptbuch:

@@ -17,6 +17,7 @@
 		LedgerLine,
 		LedgerSection,
 	} from './reports.types';
+	import AccountLink from './AccountLink.svelte';
 	import ReportPeriodHeading from './ReportPeriodHeading.svelte';
 	import type { ExerciceBornes } from './reports-url';
 
@@ -33,8 +34,23 @@
 		letterableAccountIds?: ReadonlySet<number>;
 		/** Story 55-1a (AC-17) — les exercices de la société, pour l'en-tête de la période. */
 		fiscalYears?: readonly ExerciceBornes[];
+		/**
+		 * Story 55-2 (AC-4, D8, C-55-2-3) — numéro → identifiant de compte, construit par la page depuis la
+		 * liste des comptes qu'elle charge déjà : les contreparties (numéros seuls dans le DTO) deviennent des
+		 * liens. Un numéro absent (liste en échec ou pas encore arrivée) reste du texte.
+		 */
+		accountIdByNumber?: ReadonlyMap<string, number>;
 	}
-	let { dto, letterableAccountIds = new Set<number>(), fiscalYears = [] }: Props = $props();
+	let {
+		dto,
+		letterableAccountIds = new Set<number>(),
+		fiscalYears = [],
+		accountIdByNumber = new Map<string, number>(),
+	}: Props = $props();
+
+	// Story 55-2 (AC-5, D8) — le titre d'une section n'est un lien que si le rapport en rend plusieurs : un
+	// lien vers le compte qu'on lit déjà n'apprend rien.
+	const titleLinked = $derived(dto.sections.length > 1);
 
 	/**
 	 * Story 15-1c-ii (AC9, C-15-1c-20) — les colonnes, **une seule fois** : les
@@ -221,7 +237,15 @@
 	{#each dto.sections as s (s.accountId)}
 		<article class="rounded border" data-testid="ledger-section-{s.accountNumber}">
 			<header class="flex flex-wrap items-baseline gap-2 border-b bg-gray-50 px-3 py-2">
-				<span class="font-mono font-semibold">{s.accountNumber}</span>
+				<span class="font-mono font-semibold" data-testid="ledger-title-{s.accountNumber}"
+					><AccountLink
+						accountId={s.accountId}
+						number={s.accountNumber}
+						from={dto.period.from}
+						to={dto.period.to}
+						linked={titleLinked}
+					/></span
+				>
 				<span class="font-semibold">{s.accountName}</span>
 				{#if s.currency}
 					<span
@@ -290,7 +314,15 @@
 							<td class="px-2 py-1 font-mono">{piece(s, l)}</td>
 							<td class="px-2 py-1">{l.journal}</td>
 							<td class="px-2 py-1">{l.description}</td>
-							<td class="px-2 py-1 font-mono text-xs">{l.counterpart.join(', ')}</td>
+							<!-- Story 55-2 (AC-4, D8) — chaque contrepartie ouvre son grand livre, même période ; « , » entre elles. -->
+							<td class="px-2 py-1 font-mono text-xs" data-testid="ledger-counterpart-{l.lineId}"
+								>{#each l.counterpart as num, i (i)}{#if i > 0}{', '}{/if}<AccountLink
+										accountId={accountIdByNumber.get(num) ?? null}
+										number={num}
+										from={dto.period.from}
+										to={dto.period.to}
+									/>{/each}</td
+							>
 							<td class="px-2 py-1 text-right font-mono">{amountOrBlank(l.debit)}</td>
 							<td class="px-2 py-1 text-right font-mono">{amountOrBlank(l.credit)}</td>
 							<td class="px-2 py-1 text-right font-mono">{fmt(l.runningBalance)}</td>
