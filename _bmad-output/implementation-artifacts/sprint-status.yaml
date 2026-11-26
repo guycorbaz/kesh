@@ -1306,3 +1306,6 @@ development_status:
   46-7-solde-dette-epic: done  # 2026-11-22 revue P1 (Sonnet 5.5) 0/0/0/5, boucle close ; LOW-1, 2, 4 remédiés, LOW-3 et LOW-5 versés à la liste des issues
   46-8-export-api-groupe-par-defaut: done  # 2026-11-24 revues closes (P1 Opus 0/0/0/8, P2 ciblée 0/0/0/3, P3 ciblée 0/0/0/1) ; 2026-11-24 décision du mainteneur : l'export par l'API rend la présentation de l'écran (groupé par défaut, detailLevel=flat pour l'ancien rendu) ; branche story/46-export-api-groupe ; revue P1 à lancer (kesh-gate-logs/s46-export/revue-p1-prompt.md)
   epic-46-retrospective: optional
+
+  # 2026-11-25 — Stories hors epic de la 0.20.0 (demandes du Project Lead) : visées vendredi 2026-11-27 ; non closes le jeudi soir, elles passent à la 0.21.0 sans retarder la release (décision du Project Lead).
+  1582-nom-comptabilite: done  # 2026-11-25 close : revue de code P1 (Opus 0/0/0/8) et P2 ciblée (Haiku 0/0/0/2), gates et E2E verts (7 échecs KF-029) ; fiche écrite (Sonnet 5.5), validations P1 (Opus) et P2 (Sonnet) faites et remédiées, P3 ciblée (Haiku) remédiée, passe ciblée P4 (Sonnet) à lancer : 1582-nom-comptabilite-validation-prompt-p4.md ; #1582 (P3) ; nom de la comptabilité sous le logo et dans le titre de l'onglet ; frontend seul, sans migration ni changement d'API ; questions Q1 à Q3 au Project Lead (Change Log de la fiche)
