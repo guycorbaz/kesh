@@ -8,7 +8,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.20.0] — Non publié
+## [0.20.0] — 2026-11-27
 
 ⚠️ **Avant la mise à jour, faites une sauvegarde complète : la base, un `.keshbackup` et le dossier des documents. Elle est obligatoire.** La 0.20.0 porte **trois migrations** (98 au total) : `20261118000002_invoice_line_types` (le type d'une ligne de facture et d'avoir), `20261120000001_paypal_import` (les comptes PayPal) et `20261120000003_stripe_import` (les comptes Stripe) ; les comptes Wise réutilisent les colonnes de la migration PayPal et n'en ajoutent aucune. Aucune ne relève `kesh_version_min_required`, qui reste à 0.17.6, et aucune ne réécrit une valeur enregistrée : les colonnes neuves prennent leur valeur par défaut ou restent vides ; mais, comme toute migration, elles empêchent la 0.19.1 de démarrer sur la base migrée. **Le retour à la 0.19.1 ne se fait que par la restauration de cette sauvegarde**, et un `.keshbackup` écrit en 0.20.0 ne s'importe pas dans une 0.19.1 (refus `IMPORT_SCHEMA_MISMATCH`) ; une sauvegarde prise en 0.19.1 s'importe dans la 0.20.0. Kesh écrit aussi sa propre sauvegarde dans `backup/pre-upgrade/` avant de migrer ; elle ne dispense pas de la vôtre. Si Kesh s'arrête au milieu de l'une des trois migrations, ne reprenez pas le schéma à la main : revenez par la sauvegarde, puis refaites la mise à jour. Le détail est au manuel d'administration, *Passer à la 0.20.0*.
 
