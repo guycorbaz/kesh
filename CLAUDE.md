@@ -25,6 +25,8 @@ Règles et décisions en vigueur pour travailler sur Kesh. Ce fichier ne porte n
 
 Guy travaille en **français** : conversation et documents en français, sauf indication contraire.
 
+**Une question à Guy ne bloque pas le travail** (décision de Guy du 2026-11-26). L'orchestrateur qui attend une réponse de Guy pose la question, puis passe à un travail qui n'en dépend pas — une autre story, un autre epic, un lot d'issues — et reprend le sujet suspendu dès la réponse. Il ne contourne jamais la question en tranchant à la place de Guy : ce qui lui revient (fusion, tag, image, priorité, périmètre, effacement) attend. *Motif : avancer même quand Guy est occupé ailleurs.*
+
 ## Structure du dépôt
 
 ```
