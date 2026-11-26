@@ -270,6 +270,7 @@ accounts-parent-archived = Parent account { $number } is archived. Reactivate it
 error-account-parent-cycle = Account { $number } is this account itself or one of its sub-accounts: an account cannot be placed under itself.
 error-account-parent-has-entries = Account { $number } carries entries: placing this account under it would make it non-postable with a balance that no entry could correct any more. Choose a group account without entries.
 error-account-parent-bank-linked = Account { $number } is designated by the bank account “{ $bank }”: it receives automatic entries and cannot become a group account. Choose another group account.
+error-account-reactivate-parent-bank-linked = Account { $child } cannot be reactivated: its parent account { $number } is designated by the bank account “{ $bank }” and receives automatic entries; it cannot become a group account again. Account { $child } stays archived.
 error-account-group-invalid-mixed-types = Proposal { $position }: the accounts to place are of different types; a group only brings together accounts of the same type.
 error-account-group-invalid-group-type-mismatch = Proposal { $position }: the group account is of a different type from the accounts to place under it.
 error-account-group-invalid-number-taken = Proposal { $position }: this number is already held by an account, archived ones included, or is requested twice; choose another number.

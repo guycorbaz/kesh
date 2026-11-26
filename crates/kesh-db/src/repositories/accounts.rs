@@ -333,7 +333,9 @@ pub async fn create_in_tx(
     // devient donc un compte de regroupement. Les chemins qui créent une
     // relation de parenté sont celui-ci, le seed et, depuis le correctif
     // `fix-api-parent-compte`, le changement de parent d'[`update`], qui
-    // applique la même règle ; la normalisation d'[`update`] couvre le reste.
+    // applique la même règle, et la réactivation d'un sous-compte archivé
+    // ([`reactivate`], depuis la revue d'intégration de la PR de l'Epic 46) ;
+    // la normalisation d'[`update`] couvre le reste.
     // Le scope `company_id` est défensif : sans lui, un `parentId` pointant sur
     // une autre société ferait écrire hors du tenant courant.
     // Pas de bump de `version` : `postable` est ici une conséquence structurelle,
@@ -2039,6 +2041,16 @@ fn role_conflict(role: AccountRole, holder: Account) -> DbError {
 ///   pouvoir nommer le compte qui bloque.
 /// - **Compte déjà actif** → no-op idempotent : entité retournée telle quelle,
 ///   sans bump de version ni audit (cohérent avec le court-circuit KF-004 d'[`update`]).
+/// - **Parent repassé non imputable** (revue d'intégration de la PR de l'Epic
+///   46, H1) : il retrouve un sous-compte actif, comme à [`create`] ; sans hausse
+///   de `version`. Un parent mouvementé n'est pas refusé (même écart que la
+///   création, #1431).
+/// - **Parent désigné par un compte bancaire** — son compte du plan ou son
+///   compte de frais de prestataire, compte bancaire clos ou archivé compris
+///   (revue d'intégration de la PR de l'Epic 46, H1) →
+///   [`DbError::AccountParentBankLinked`], `reactivated_number` renseigné :
+///   la garde de [`guard_parent_change_in_tx`], que la réactivation ne
+///   traverse pas. Jugé après les désignations de change.
 /// - **Parent désigné compte de gains, de pertes ou de conversion** (Story 37-1,
 ///   revue de code P2, 37-1-CR-P2-7) → [`DbError::AccountIsFxDifferenceAccount`] :
 ///   un compte désigné ne reçoit pas de sous-compte (AC-4), et réactiver un
@@ -2105,9 +2117,11 @@ pub async fn reactivate(
     }
 
     // Garde 1 : le parent doit être actif (sinon arborescence incohérente).
+    // Verrou exclusif (revue d'intégration de la PR de l'Epic 46, H1) : le
+    // parent passe non imputable plus bas, comme à la création.
     if let Some(parent_id) = before.parent_id {
         let parent: Option<(bool, String)> =
-            sqlx::query_as("SELECT active, number FROM accounts WHERE id = ? LOCK IN SHARE MODE")
+            sqlx::query_as("SELECT active, number FROM accounts WHERE id = ? FOR UPDATE")
                 .bind(parent_id)
                 .fetch_optional(&mut *tx)
                 .await
@@ -2126,6 +2140,35 @@ pub async fn reactivate(
         if let Err(e) = refuse_designated(hits, |_| true) {
             tx.rollback().await.map_err(map_db_error)?;
             return Err(e);
+        }
+        // Revue d'intégration de la PR de l'Epic 46 (H1) : la réactivation est
+        // un chemin par lequel un compte redevient parent sans passer par
+        // [`guard_parent_change_in_tx`]. Un groupe dont le seul sous-compte est
+        // archivé peut repasser imputable, puis être lié à un compte bancaire
+        // (compte du plan ou compte de frais) ; réactiver le sous-compte lui
+        // rendrait un enfant actif — non imputable, avec ses écritures
+        // automatiques. Même refus, mêmes `details`, après celui des
+        // désignations de change (ordre du changement de parent).
+        if let Err(e) =
+            refuse_bank_linked_parent_in_tx(&mut tx, company_id, parent_id, &parent_number).await
+        {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(match e {
+                DbError::AccountParentBankLinked {
+                    parent_account_id,
+                    parent_number,
+                    bank_account_id,
+                    bank_name,
+                    ..
+                } => DbError::AccountParentBankLinked {
+                    parent_account_id,
+                    parent_number,
+                    bank_account_id,
+                    bank_name,
+                    reactivated_number: Some(before.number.clone()),
+                },
+                other => other,
+            });
         }
     }
 
@@ -2158,6 +2201,27 @@ pub async fn reactivate(
         // Défensif : une tx concurrente a modifié la ligne entre le SELECT et l'UPDATE.
         tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::OptimisticLockConflict);
+    }
+
+    // Revue d'intégration de la PR de l'Epic 46 (H1) : le parent retrouve un
+    // sous-compte actif, il redevient un compte de regroupement — la règle de
+    // [`create`] (code review 14-3a, D2), que la réactivation n'appliquait pas.
+    // Sans elle, un groupe repassé imputable pendant l'archivage de son dernier
+    // sous-compte restait imputable avec un enfant actif : il recevait des
+    // écritures (« solde propre » aux rapports par groupes) et acceptait d'être
+    // lié à un compte bancaire, le contrôle d'imputabilité de la liaison lisant
+    // la colonne. Pas de hausse de `version`, comme à la création.
+    if let Some(parent_id) = before.parent_id
+        && let Err(e) =
+            sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ? AND company_id = ?")
+                .bind(parent_id)
+                .bind(company_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_db_error)
+    {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(e);
     }
 
     let after = sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
@@ -3151,6 +3215,7 @@ async fn refuse_bank_linked_parent_in_tx(
             parent_number: parent_number.to_string(),
             bank_account_id,
             bank_name: bank_account_display_name(&bank_name, description.as_deref()),
+            reactivated_number: None,
         }),
         None => Ok(()),
     }

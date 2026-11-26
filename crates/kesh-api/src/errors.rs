@@ -5364,20 +5364,37 @@ impl IntoResponse for AppError {
                     parent_number,
                     bank_account_id,
                     bank_name,
+                    reactivated_number,
                 } => {
                     let mut args = FluentArgs::new();
                     args.set("number", parent_number.clone());
                     args.set("bank", bank_name.clone());
-                    coded_response(
-                        StatusCode::CONFLICT,
-                        "ACCOUNT_PARENT_BANK_LINKED",
-                        t_args(
+                    // Revue d'intégration de la PR de l'Epic 46 (H1) : à la
+                    // réactivation, il n'y a pas d'autre groupe à choisir — le
+                    // message dit ce qui est refusé, mêmes code et `details`.
+                    let message = match reactivated_number {
+                        Some(child) => {
+                            args.set("child", child.clone());
+                            t_args(
+                                "error-account-reactivate-parent-bank-linked",
+                                &format!(
+                                    "Le compte {child} ne peut pas être réactivé : son compte parent {parent_number} est désigné par le compte bancaire « {bank_name} » et reçoit des écritures automatiques ; il ne peut pas redevenir un compte de groupe. Le compte {child} reste archivé."
+                                ),
+                                &args,
+                            )
+                        }
+                        None => t_args(
                             "error-account-parent-bank-linked",
                             &format!(
                                 "Le compte {parent_number} est désigné par le compte bancaire « {bank_name} » : il reçoit des écritures automatiques et ne peut pas devenir un compte de groupe. Choisissez un autre compte de groupe."
                             ),
                             &args,
                         ),
+                    };
+                    coded_response(
+                        StatusCode::CONFLICT,
+                        "ACCOUNT_PARENT_BANK_LINKED",
+                        message,
                         serde_json::json!({
                             "parentAccountId": parent_account_id,
                             "parentNumber": parent_number,

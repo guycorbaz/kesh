@@ -270,6 +270,7 @@ accounts-parent-archived = Il conto padre { $number } è archiviato. Riattivatel
 error-account-parent-cycle = Il conto { $number } è questo conto stesso o uno dei suoi sottoconti: un conto non può essere collocato sotto sé stesso.
 error-account-parent-has-entries = Il conto { $number } porta delle registrazioni: collocandovi sotto questo conto, diventerebbe non imputabile con un saldo che nessuna registrazione potrebbe più correggere. Scegliete un conto di gruppo senza registrazioni.
 error-account-parent-bank-linked = Il conto { $number } è designato dal conto bancario «{ $bank }»: riceve registrazioni automatiche e non può diventare un conto di gruppo. Scegliete un altro conto di gruppo.
+error-account-reactivate-parent-bank-linked = Il conto { $child } non può essere riattivato: il suo conto padre { $number } è designato dal conto bancario «{ $bank }» e riceve registrazioni automatiche; non può tornare a essere un conto di gruppo. Il conto { $child } resta archiviato.
 error-account-group-invalid-mixed-types = Proposta { $position }: i conti da collocare sono di tipi diversi; un gruppo riunisce solo conti dello stesso tipo.
 error-account-group-invalid-group-type-mismatch = Proposta { $position }: il conto di gruppo è di un tipo diverso da quello dei conti da collocarvi.
 error-account-group-invalid-number-taken = Proposta { $position }: questo numero è già portato da un conto, archiviati compresi, o è richiesto due volte; scegliete un altro numero.

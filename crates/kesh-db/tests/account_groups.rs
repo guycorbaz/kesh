@@ -896,6 +896,7 @@ fn lie(e: &DbError) -> (i64, String, i64, String) {
             parent_number,
             bank_account_id,
             bank_name,
+            ..
         } => (
             *parent_account_id,
             parent_number.clone(),
@@ -1048,6 +1049,116 @@ async fn compte_de_frais_partage_ne_devient_pas_groupe(pool: MySqlPool) {
         .unwrap();
     ranger(&pool, &s, membre_frais, frais).await.unwrap();
     assert!(!lire(&pool, frais).await.postable);
+}
+
+/// Revue d'intégration de la PR de l'Epic 46 (H1) — la réactivation, chemin par
+/// lequel un compte redevient parent sans changement de parent : un groupe dont
+/// le seul sous-compte est archivé repasse imputable, puis est lié à un compte
+/// bancaire (compte du plan ou compte de frais d'un prestataire, clos ou
+/// archivé compris) ; réactiver le sous-compte est refusé, mêmes `details`, et
+/// rien n'est écrit. Sans liaison, la réactivation passe.
+#[sqlx::test(migrations = "./test-schema")]
+async fn reactivation_sous_un_compte_lie_refusee(pool: MySqlPool) {
+    let s = seed_accounting_company(&pool).await.unwrap();
+
+    /// Le groupe `numero` et son seul sous-compte, archivé ; le groupe repassé
+    /// imputable par `PUT postable: true`. Rend `(groupe, sous-compte)`.
+    async fn groupe_vide(
+        pool: &MySqlPool,
+        s: &SeededCompany,
+        numero: &str,
+        t: AccountType,
+    ) -> (i64, i64) {
+        let g = compte_dans(pool, s.admin_user_id, s.company_id, numero, t, None).await;
+        let c = compte_dans(
+            pool,
+            s.admin_user_id,
+            s.company_id,
+            &format!("{numero}1"),
+            t,
+            Some(g),
+        )
+        .await;
+        assert!(!lire(pool, g).await.postable, "groupe non imputable");
+        accounts::archive(pool, c, lire(pool, c).await.version, s.admin_user_id)
+            .await
+            .unwrap();
+        let a = lire(pool, g).await;
+        accounts::update(
+            pool,
+            g,
+            a.version,
+            s.admin_user_id,
+            AccountUpdate {
+                name: a.name,
+                account_type: a.account_type,
+                role: a.role,
+                postable: true,
+                currency: CurrencyChange::Unchanged,
+                own_fx_accounts: OwnFxAccountsChange::Unchanged,
+                parent: ParentChange::Unchanged,
+            },
+            false,
+        )
+        .await
+        .unwrap();
+        assert!(lire(pool, g).await.postable, "groupe repassé imputable");
+        (g, c)
+    }
+    async fn reactiver(pool: &MySqlPool, s: &SeededCompany, c: i64) -> Result<Account, DbError> {
+        accounts::reactivate(pool, c, lire(pool, c).await.version, s.admin_user_id, false).await
+    }
+
+    // Compte du plan d'un compte bancaire.
+    let (g, c) = groupe_vide(&pool, &s, "102", AccountType::Asset).await;
+    let banque = banque_liee(&pool, &s, "Banque Test", g).await;
+    let err = reactiver(&pool, &s, c).await.unwrap_err();
+    assert_eq!(lie(&err), (g, "102".into(), banque, "Banque Test".into()));
+    match &err {
+        DbError::AccountParentBankLinked {
+            reactivated_number, ..
+        } => assert_eq!(reactivated_number.as_deref(), Some("1021")),
+        other => panic!("ACCOUNT_PARENT_BANK_LINKED attendu, reçu {other:?}"),
+    }
+    assert!(!lire(&pool, c).await.active, "le sous-compte reste archivé");
+    assert!(lire(&pool, g).await.postable, "le groupe reste imputable");
+
+    // Compte de frais d'un prestataire, compte bancaire archivé : refusé aussi.
+    let (f, cf) = groupe_vide(&pool, &s, "684", AccountType::Expense).await;
+    let paypal = prestataire(&pool, &s, "paypal", f).await;
+    sqlx::query("UPDATE bank_accounts SET archived = TRUE WHERE id = ?")
+        .bind(paypal)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let err = reactiver(&pool, &s, cf).await.unwrap_err();
+    assert_eq!(
+        lie(&err).2,
+        paypal,
+        "un compte bancaire archivé désigne encore"
+    );
+    assert!(!lire(&pool, cf).await.active);
+
+    // Liaison retirée : la réactivation passe, et le groupe repasse non
+    // imputable, comme à la création d'un sous-compte (sans hausse de version).
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = NULL WHERE id = ?")
+        .bind(banque)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let v_groupe = lire(&pool, g).await.version;
+    let apres = reactiver(&pool, &s, c).await.unwrap();
+    assert!(apres.active);
+    let groupe = lire(&pool, g).await;
+    assert!(!groupe.postable, "le groupe redevient non imputable");
+    assert_eq!(groupe.version, v_groupe);
+    // Il ne se lie plus à un compte bancaire : le contrôle d'imputabilité de la
+    // liaison lit la colonne (`ensure_postable_if_active_in_tx`).
+    let mut tx = pool.begin().await.unwrap();
+    let e = accounts::ensure_postable_if_active_in_tx(&mut tx, s.company_id, g)
+        .await
+        .unwrap_err();
+    assert!(matches!(e, DbError::AccountsNotPostable(_)), "{e:?}");
 }
 
 /// `POST /accounts` (création d'un sous-compte) : un compte désigné par un compte

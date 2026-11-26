@@ -827,8 +827,11 @@ pub async fn archive_account(
 /// feature Projets utilise `POST /unarchive` ; on privilégie ici la cohérence
 /// interne de la ressource `accounts`).
 ///
-/// Refus possibles, tous en 409 : parent archivé, rôle singleton repris depuis
-/// l'archivage, conflit de version. Réactiver un compte déjà actif est un no-op.
+/// Refus possibles, tous en 409 : parent archivé, parent désigné compte de
+/// change (`ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`) ou par un compte bancaire
+/// (`ACCOUNT_PARENT_BANK_LINKED`, revue d'intégration de la PR de l'Epic 46,
+/// H1), rôle singleton repris depuis l'archivage, conflit de version.
+/// Réactiver un compte déjà actif est un no-op.
 pub async fn reactivate_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,

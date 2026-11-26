@@ -270,6 +270,7 @@ accounts-parent-archived = Le compte parent { $number } est archivé. Réactivez
 error-account-parent-cycle = Le compte { $number } est ce compte ou l'un de ses sous-comptes : un compte ne peut pas être rangé sous lui-même.
 error-account-parent-has-entries = Le compte { $number } porte des écritures : y ranger ce compte le rendrait non imputable avec un solde qu'aucune saisie ne pourrait plus corriger. Choisissez un compte de groupe sans écriture.
 error-account-parent-bank-linked = Le compte { $number } est désigné par le compte bancaire « { $bank } » : il reçoit des écritures automatiques et ne peut pas devenir un compte de groupe. Choisissez un autre compte de groupe.
+error-account-reactivate-parent-bank-linked = Le compte { $child } ne peut pas être réactivé : son compte parent { $number } est désigné par le compte bancaire « { $bank } » et reçoit des écritures automatiques ; il ne peut pas redevenir un compte de groupe. Le compte { $child } reste archivé.
 error-account-group-invalid-mixed-types = Proposition { $position } : les comptes à ranger sont de types différents ; un groupe ne réunit que des comptes d'un même type.
 error-account-group-invalid-group-type-mismatch = Proposition { $position } : le compte de groupe est d'un autre type que les comptes à y ranger.
 error-account-group-invalid-number-taken = Proposition { $position } : ce numéro est déjà porté par un compte, archivé compris, ou demandé deux fois ; choisissez un autre numéro.
