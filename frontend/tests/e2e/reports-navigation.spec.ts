@@ -230,7 +230,7 @@ async function capture1b(page: Page, nom: string): Promise<void> {
 }
 
 /** Un changement de présentation, et l'adresse que sa réponse écrit. */
-async function presentation(page: Page, geste: () => Promise<void>, attendu: RegExp): Promise<void> {
+async function presentation(page: Page, geste: () => Promise<unknown>, attendu: RegExp): Promise<void> {
 	const req = page.waitForRequest((r) => /\/api\/v1\/reports\/balance-sheet\?/.test(r.url()));
 	await geste();
 	await req;
