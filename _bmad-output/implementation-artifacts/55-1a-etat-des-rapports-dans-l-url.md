@@ -695,7 +695,8 @@ sur tous les onglets : il montre l'exercice seul, en gras (ses années, ou son n
 toujours remplis, « Exercice entier » remet les bornes, « Plusieurs » ou « Hors exercice » s'affichent quand les dates
 sortent d'un exercice, et l'en-tête du rapport dit la période réelle. Le bouton *Générer* disparaît : le rapport se
 charge à l'ouverture, au choix d'un exercice, en quittant les dates ou par Entrée, et reste affiché, grisé, pendant qu'il
-se recharge ; seul le Grand livre de tous les comptes garde un bouton. Les exports portent sur le rapport affiché.
+se recharge ; seuls le Grand livre de tous les comptes et les deux rapports par compte analytique gardent un bouton. Les exports
+portent sur le rapport affiché.
 (refs #1604)
 
 ## Dev Notes
