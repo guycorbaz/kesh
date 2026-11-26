@@ -1248,7 +1248,11 @@ const ATTENDU = {
 	// Story 55-1a (Epic 55, base epic/55-navigation) : sites ajoutés (sélecteur, en-tête, période invalide) et
 	// retirés (invites « cliquez sur Générer », bouton de la balance âgée, en-tête « Période : » des six vues)
 	// = **3788**, recompté par la garde (`kesh-gate-logs/s55-dev/55-1a/front-1/front-test-unit.log`).
-	sitesTotal: 3788,
+	// Story 55-2 : le titre `reports-ledger-open-from-balance` des cinq liens de compte passe dans le seul
+	// `AccountLink` (−4) ; `reports-nav-vat-accounts` et les deux étiquettes de la ligne des comptes de TVA
+	// ajoutés, le Grand livre sur `ReportSelector` (ses libellés « Du », « Au » repris du composant) = **3785**,
+	// relevé par la garde (« expected 3785 to be 3788 », `kesh-gate-logs/s55-dev/55-2/front-1/front-test-unit.log`).
+	sitesTotal: 3785,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
