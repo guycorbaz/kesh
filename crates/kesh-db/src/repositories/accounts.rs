@@ -14,12 +14,14 @@ use sqlx::mysql::MySqlPool;
 
 use crate::entities::Company;
 use crate::entities::account::{
-    Account, AccountRole, AccountType, AccountUpdate, FxAccounts, FxAccountsOrigin, NewAccount,
-    OwnFxAccounts, OwnFxAccountsChange,
+    Account, AccountRole, AccountType, AccountUpdate, CurrencyChange, FxAccounts, FxAccountsOrigin,
+    GroupKind, GroupMember, GroupProposal, GroupsOutcome, MAX_GROUP_MEMBERS, MAX_GROUP_PROPOSALS,
+    NewAccount, OwnFxAccounts, OwnFxAccountsChange, ParentChange,
 };
 use crate::entities::audit_log::NewAuditLogEntry;
 use crate::errors::{
-    CurrencyUseSite, DbError, FxAccountField, FxAccountReason, FxDesignation, map_db_error,
+    AccountGroupReason, CurrencyUseSite, DbError, FxAccountField, FxAccountReason, FxDesignation,
+    GroupStepError, map_db_error,
 };
 use crate::repositories::{audit_log, company_invoice_settings};
 
@@ -178,6 +180,8 @@ fn effective_postable(role: Option<AccountRole>, requested: bool, has_children: 
 /// dans la transaction : `MULTI_CURRENCY_DISABLED` (devise donnée, société
 /// mono-devise) → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` (le parent est un compte
 /// de différence de change : il ne reçoit pas de sous-compte) →
+/// `ACCOUNT_PARENT_BANK_LINKED` (le parent est désigné par un compte bancaire,
+/// Epic 46) → `ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES` →
 /// `ACCOUNT_IN_FOREIGN_CURRENCY` (rôle posé avec une devise) →
 /// `FX_ACCOUNT_INVALID` des comptes propres (`unexpected` sans devise, puis
 /// gain, puis perte) → refus existants (rôle singleton).
@@ -187,17 +191,34 @@ fn effective_postable(role: Option<AccountRole>, requested: bool, has_children: 
 /// partage, puis le parent `FOR UPDATE` (il passera non imputable), puis les
 /// désignations propres et les comptes propres en lecture verrouillante.
 pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<Account, DbError> {
+    // Refus pur, avant de prendre une connexion (comme [`update`]) ;
+    // [`create_in_tx`] le refait en tête, sans effet ici.
     check_role_account_type(new.role, new.account_type)?;
-
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+    let account = create_in_tx(&mut tx, user_id, new).await?;
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(account)
+}
+
+/// [`create`] dans la transaction de l'appelant (Story 46-5a, AC-1) : **tout**
+/// le corps de la création — gardes, verrous (dans le même ordre), `INSERT`,
+/// passage du parent non imputable, copie des cours, audit —, sans `begin()` ni
+/// `commit()`. Une erreur est rendue telle quelle : la transaction de
+/// l'appelant s'annule à l'abandon, avec ce qu'elle a déjà écrit.
+pub async fn create_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    user_id: i64,
+    new: NewAccount,
+) -> Result<Account, DbError> {
+    check_role_account_type(new.role, new.account_type)?;
 
     let company_lock = if new.own_fx_accounts.is_some() {
         CompanyLock::ForUpdate
     } else {
         CompanyLock::Share
     };
-    let state = lock_company_currency_in_tx(&mut tx, new.company_id, company_lock).await?;
-    lock_invoice_settings_share_in_tx(&mut tx, new.company_id).await?;
+    let state = lock_company_currency_in_tx(tx, new.company_id, company_lock).await?;
+    lock_invoice_settings_share_in_tx(tx, new.company_id).await?;
 
     if new.currency.is_some() && !state.multi_currency_enabled {
         return Err(DbError::MultiCurrencyDisabled {
@@ -208,18 +229,23 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
     // Le parent, verrouillé avant d'être passé non imputable plus bas : un
     // compte de différence de change ne reçoit pas de sous-compte.
     if let Some(parent_id) = new.parent_id {
-        let parent: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
+        let parent: Option<String> = sqlx::query_scalar(
+            "SELECT number FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
         )
         .bind(parent_id)
         .bind(new.company_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(map_db_error)?;
-        if parent.is_some() {
-            let hits = fx_designations_of_in_tx(&mut tx, new.company_id, &state, parent_id).await?;
+        if let Some(parent_number) = parent {
+            let hits = fx_designations_of_in_tx(tx, new.company_id, &state, parent_id).await?;
             refuse_designated(hits, |_| true)?;
-            refuse_foreign_parent_with_entries_in_tx(&mut tx, parent_id).await?;
+            // Garde de la 46-5 (Epic 46, décision du mainteneur du 2026-11-26),
+            // étendue à la création : un compte désigné par un compte bancaire
+            // ne reçoit pas de sous-compte. La règle des parents mouvementés,
+            // elle, ne change pas ici (création plus large que le `PUT`, #1431).
+            refuse_bank_linked_parent_in_tx(tx, new.company_id, parent_id, &parent_number).await?;
+            refuse_foreign_parent_with_entries_in_tx(tx, parent_id).await?;
         }
     }
 
@@ -251,7 +277,7 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
     }
 
     check_own_fx_accounts_in_tx(
-        &mut tx,
+        tx,
         new.company_id,
         None,
         new.currency.as_deref(),
@@ -267,9 +293,8 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
     // Le rôle singleton est-il déjà porté ? `exclude_id = 0` : aucune ligne ne
     // porte cet ID (AUTO_INCREMENT démarre à 1), donc rien n'est exclu.
     if let Some(role) = new.role
-        && let Some(holder) = find_singleton_role_holder(&mut tx, new.company_id, role, 0).await?
+        && let Some(holder) = find_singleton_role_holder(tx, new.company_id, role, 0).await?
     {
-        tx.rollback().await.map_err(map_db_error)?;
         return Err(role_conflict(role, holder));
     }
 
@@ -291,13 +316,12 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
     .bind(&new.currency)
     .bind(new.own_fx_accounts.map(|o| o.gain))
     .bind(new.own_fx_accounts.map(|o| o.loss))
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await
     .map_err(map_db_error)?;
 
     let last_id = result.last_insert_id();
     if last_id == 0 {
-        tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::Invariant(
             "last_insert_id == 0 après INSERT accounts".into(),
         ));
@@ -318,14 +342,14 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
         sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ? AND company_id = ?")
             .bind(parent_id)
             .bind(new.company_id)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .map_err(map_db_error)?;
     }
 
     let account = sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
         .bind(id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(map_db_error)?
         .ok_or_else(|| DbError::Invariant(format!("account {id} introuvable après INSERT")))?;
@@ -337,7 +361,7 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
     let mut details = account_snapshot_json(&account);
     if let Some(currency) = &account.currency {
         let copied = crate::repositories::exchange_rates::copy_currency_to_open_years_in_tx(
-            &mut tx,
+            tx,
             account.company_id,
             currency,
         )
@@ -346,10 +370,10 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
     }
 
     // Story 3.5 : audit log AVANT commit (snapshot direct, cohérent
-    // avec la convention projet documentée en spec 3.5).
-    // Rollback explicite pour cohérence avec les autres branches d'erreur.
-    if let Err(e) = audit_log::insert_in_tx(
-        &mut tx,
+    // avec la convention projet documentée en spec 3.5), dans la transaction
+    // de l'appelant.
+    audit_log::insert_in_tx(
+        tx,
         NewAuditLogEntry::user(
             user_id,
             "account.created".to_string(),
@@ -358,13 +382,7 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
             Some(details),
         ),
     )
-    .await
-    {
-        tx.rollback().await.map_err(map_db_error)?;
-        return Err(e);
-    }
-
-    tx.commit().await.map_err(map_db_error)?;
+    .await?;
     Ok(account)
 }
 
@@ -950,6 +968,10 @@ where
 ///    qui porte une ligne d'écriture → [`DbError::AccountParentHasEntries`]
 ///    (`ACCOUNT_PARENT_HAS_ENTRIES`, revue P1-2 — **plus strict que
 ///    [`create`]**, qui l'accepte) ;
+///    — et, avant ces deux derniers, un compte du plan désigné par un compte
+///    bancaire (son compte du plan ou son compte de frais de prestataire) →
+///    [`DbError::AccountParentBankLinked`] (`ACCOUNT_PARENT_BANK_LINKED`, Epic
+///    46, décision du mainteneur du 2026-11-26) ;
 /// 5. l'un des comptes propres **résultants** du compte → `FX_ACCOUNT_INVALID`
 ///    `notPostable` (il deviendrait non imputable — revue de code P2 de la
 ///    37-1, 37-1-CR-P2-8, appliquée à la création).
@@ -966,7 +988,8 @@ where
 async fn guard_parent_change_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     state: &CompanyCurrencyState,
-    account: &Account,
+    company_id: i64,
+    moved: Option<&Account>,
     new_parent_id: i64,
     own_fx: Option<OwnFxAccounts>,
 ) -> Result<(), DbError> {
@@ -974,52 +997,63 @@ async fn guard_parent_change_in_tx(
         "SELECT number, active, parent_id FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
     )
     .bind(new_parent_id)
-    .bind(account.company_id)
+    .bind(company_id)
     .fetch_optional(&mut **tx)
     .await
     .map_err(map_db_error)?;
     let Some((parent_number, parent_active, mut ancestor)) = parent else {
         return Err(DbError::AccountParentNotFound);
     };
-    if new_parent_id == account.id {
+    if let Some(account) = moved
+        && new_parent_id == account.id
+    {
         return Err(DbError::AccountParentCycle { parent_number });
     }
     if !parent_active {
         return Err(DbError::AccountParentArchived { parent_number });
     }
 
-    let mut seen = std::collections::HashSet::from([new_parent_id]);
-    while let Some(current) = ancestor {
-        if current == account.id {
-            return Err(DbError::AccountParentCycle { parent_number });
+    // Le cycle par les ancêtres (et leur verrouillage) ne vaut que pour un
+    // compte existant déplacé : un groupe pas encore créé n'a pas de
+    // sous-compte (Story 46-5a, AC-2).
+    if let Some(account) = moved {
+        let mut seen = std::collections::HashSet::from([new_parent_id]);
+        while let Some(current) = ancestor {
+            if current == account.id {
+                return Err(DbError::AccountParentCycle { parent_number });
+            }
+            if !seen.insert(current) {
+                return Err(DbError::Invariant(format!(
+                    "hiérarchie de comptes cyclique en base au-dessus du compte {new_parent_id}"
+                )));
+            }
+            ancestor = sqlx::query_scalar::<_, Option<i64>>(
+                "SELECT parent_id FROM accounts WHERE id = ? LOCK IN SHARE MODE",
+            )
+            .bind(current)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(map_db_error)?
+            .flatten();
         }
-        if !seen.insert(current) {
-            return Err(DbError::Invariant(format!(
-                "hiérarchie de comptes cyclique en base au-dessus du compte {new_parent_id}"
-            )));
-        }
-        ancestor = sqlx::query_scalar::<_, Option<i64>>(
-            "SELECT parent_id FROM accounts WHERE id = ? LOCK IN SHARE MODE",
-        )
-        .bind(current)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(map_db_error)?
-        .flatten();
     }
 
     // Revue P1-4 : la désignation propre **du compte lui-même** se juge sur
     // l'état après le `PUT` (étape 5 ci-dessous, comptes propres résolus) ;
-    // seules les désignations des **autres** comptes refusent ici.
+    // seules les désignations des **autres** comptes refusent ici. Sans compte
+    // déplacé (groupe à créer), toutes refusent (`0` : aucun identifiant).
+    let exclude_holder = moved.map_or(0, |a| a.id);
     let hits =
-        fx_designations_excluding_in_tx(tx, account.company_id, state, new_parent_id, account.id)
+        fx_designations_excluding_in_tx(tx, company_id, state, new_parent_id, exclude_holder)
             .await?;
     refuse_designated(hits, |_| true)?;
+    refuse_bank_linked_parent_in_tx(tx, company_id, new_parent_id, &parent_number).await?;
     refuse_foreign_parent_with_entries_in_tx(tx, new_parent_id).await?;
-    // Revue P1-2 (décision de Beat) : un parent qui porte des écritures, en
-    // quelque devise, passerait non imputable avec son solde, que plus aucune
-    // saisie ne corrigerait — refusé. Après le refus propre à la devise, qui
-    // garde son code. ⚠️ La création ne le refuse pas (écart tracé).
+    // Revue P1-2 (décision du responsable de l'epic) : un parent qui porte des
+    // écritures, en quelque devise, passerait non imputable avec son solde, que
+    // plus aucune saisie ne corrigerait — refusé. Après le refus propre à la
+    // devise, qui garde son code. ⚠️ La création ne le refuse pas (écart
+    // tracé) ; la route groupée, si (Story 46-5a).
     if has_journal_line_locked(tx, new_parent_id).await? {
         return Err(DbError::AccountParentHasEntries {
             parent_account_id: new_parent_id,
@@ -1036,7 +1070,7 @@ async fn guard_parent_change_in_tx(
                 return Err(DbError::FxAccountInvalid {
                     field,
                     reason: FxAccountReason::NotPostable,
-                    holder_account_id: Some(account.id),
+                    holder_account_id: moved.map(|a| a.id),
                 });
             }
         }
@@ -1123,42 +1157,69 @@ pub async fn update(
     let company_id = company_of_account(pool, id).await?;
 
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+    let account = update_in_tx(
+        &mut tx,
+        company_id,
+        id,
+        version,
+        user_id,
+        changes,
+        confirm_retype,
+    )
+    .await?;
+    // Un no-op n'a rien écrit : le commit ne fait que rendre les verrous.
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(account)
+}
+
+/// [`update`] dans la transaction de l'appelant (Story 46-5a, AC-1) : **tout**
+/// le corps de la modification — verrous (dans le même ordre), gardes,
+/// `UPDATE`, passage du nouveau parent non imputable, copie des cours, audit —,
+/// sans `begin()` ni `commit()`. `company_id` est celui de l'appelant (lu hors
+/// transaction par [`update`], ou la société de la route groupée) : le compte
+/// relu `FOR UPDATE` dans une autre société rend `NotFound`.
+///
+/// Les refus sont rendus tels quels, dans le même ordre ; la transaction de
+/// l'appelant s'annule à l'abandon. ⚠️ Le court-circuit **no-op** rend
+/// `Ok(before)` **sans rien annuler** : la transaction de l'appelant peut
+/// porter des écritures antérieures (groupes déjà créés et rangés par
+/// [`apply_groups`]), qu'un `rollback` ici effacerait.
+pub async fn update_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    version: i32,
+    user_id: i64,
+    changes: AccountUpdate,
+    confirm_retype: bool,
+) -> Result<Account, DbError> {
+    check_role_account_type(changes.role, changes.account_type)?;
 
     let company_lock = if matches!(changes.own_fx_accounts, OwnFxAccountsChange::Unchanged) {
         CompanyLock::Share
     } else {
         CompanyLock::ForUpdate
     };
-    let state = lock_company_currency_in_tx(&mut tx, company_id, company_lock).await?;
-    lock_invoice_settings_share_in_tx(&mut tx, company_id).await?;
+    let state = lock_company_currency_in_tx(tx, company_id, company_lock).await?;
+    lock_invoice_settings_share_in_tx(tx, company_id).await?;
 
     // Snapshot "before" AVANT l'UPDATE, dans la même transaction — sous
     // `FOR UPDATE` depuis la Story 34-11a2 (C-e341-40).
     let before_opt = sqlx::query_as::<_, Account>(FIND_BY_ID_FOR_UPDATE_SQL)
         .bind(id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(map_db_error)?;
 
     let before = match before_opt {
-        None => {
-            tx.rollback().await.map_err(map_db_error)?;
-            return Err(DbError::NotFound);
-        }
-        Some(a) if a.company_id != company_id => {
-            tx.rollback().await.map_err(map_db_error)?;
-            return Err(DbError::NotFound);
-        }
+        None => return Err(DbError::NotFound),
+        Some(a) if a.company_id != company_id => return Err(DbError::NotFound),
         Some(a) if !a.active => {
-            tx.rollback().await.map_err(map_db_error)?;
             return Err(DbError::IllegalStateTransition(
                 "impossible de modifier un compte archivé".into(),
             ));
         }
-        Some(a) if a.version != version => {
-            tx.rollback().await.map_err(map_db_error)?;
-            return Err(DbError::OptimisticLockConflict);
-        }
+        Some(a) if a.version != version => return Err(DbError::OptimisticLockConflict),
         Some(a) => a,
     };
 
@@ -1169,7 +1230,7 @@ pub async fn update(
         postable: effective_postable(
             changes.role,
             changes.postable,
-            has_active_children(&mut tx, id).await?,
+            has_active_children(tx, id).await?,
         ),
         ..changes
     };
@@ -1179,8 +1240,10 @@ pub async fn update(
     // décrivait ici la note KF-004 (snapshot périmé d'un `SELECT` sans verrou,
     // cf. spec 7-3 §race-condition) n'existe plus — une transaction concurrente
     // commitée est vue, et sa version rend 409 plus haut.
+    //
+    // Story 46-5a (AC-1) : aucun `rollback` ici — la transaction est celle de
+    // l'appelant, qui peut porter des écritures antérieures.
     if is_no_op_change(&before, &changes) {
-        tx.rollback().await.map_err(map_db_error)?;
         return Ok(before);
     }
 
@@ -1189,15 +1252,7 @@ pub async fn update(
     // la route), puis les gardes de l'AC-4 dans leur ordre.
     let currency = changes.currency.resolve(before.currency.as_deref());
     let own_fx = changes.own_fx_accounts.resolve(before.own_fx_accounts());
-    guard_currency_update(
-        &mut tx,
-        &state,
-        &before,
-        &changes,
-        currency.as_deref(),
-        own_fx,
-    )
-    .await?;
+    guard_currency_update(tx, &state, &before, &changes, currency.as_deref(), own_fx).await?;
 
     // Correctif `fix-api-parent-compte` : le parent résolu ici, sous le
     // `FOR UPDATE` du compte ; un parent qui change passe les contrôles de la
@@ -1206,7 +1261,8 @@ pub async fn update(
     if parent_id != before.parent_id
         && let Some(new_parent_id) = parent_id
     {
-        guard_parent_change_in_tx(&mut tx, &state, &before, new_parent_id, own_fx).await?;
+        guard_parent_change_in_tx(tx, &state, company_id, Some(&before), new_parent_id, own_fx)
+            .await?;
     }
 
     // Story 14-3a : si le payload attribue un rôle singleton déjà porté par un
@@ -1214,10 +1270,8 @@ pub async fn update(
     // La contrainte DB reste le filet (1062 sur course perdue).
     if let Some(role) = changes.role
         && before.role != Some(role)
-        && let Some(holder) =
-            find_singleton_role_holder(&mut tx, before.company_id, role, id).await?
+        && let Some(holder) = find_singleton_role_holder(tx, before.company_id, role, id).await?
     {
-        tx.rollback().await.map_err(map_db_error)?;
         return Err(role_conflict(role, holder));
     }
 
@@ -1242,20 +1296,18 @@ pub async fn update(
         // compte doit admettre le nouveau type ; sinon refus, qu'aucune
         // confirmation ne lève. Avant la garde des écritures.
         if let Some((bank_account_id, bank_account_name)) =
-            first_linked_bank_account_refusing(&mut tx, before.company_id, id, changes.account_type)
+            first_linked_bank_account_refusing(tx, before.company_id, id, changes.account_type)
                 .await?
         {
-            tx.rollback().await.map_err(map_db_error)?;
             return Err(DbError::AccountLinkedToBankAccount {
                 bank_account_id,
                 bank_account_name,
             });
         }
         let (entry_count, closed_fiscal_years) =
-            retype_impact(&mut *tx, before.company_id, id).await?;
+            retype_impact(&mut **tx, before.company_id, id).await?;
         if entry_count > 0 {
             if !confirm_retype {
-                tx.rollback().await.map_err(map_db_error)?;
                 return Err(DbError::AccountHasEntries {
                     entry_count,
                     closed_fiscal_years,
@@ -1282,7 +1334,7 @@ pub async fn update(
     .bind(parent_id)
     .bind(id)
     .bind(version)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await
     .map_err(map_db_error)?
     .rows_affected();
@@ -1291,7 +1343,6 @@ pub async fn update(
         // Défensif : ne devrait pas arriver puisqu'on a vérifié avant,
         // mais garde-fou contre une race theoretically possible entre
         // le SELECT et l'UPDATE (lecture repeatable InnoDB).
-        tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::OptimisticLockConflict);
     }
 
@@ -1308,21 +1359,20 @@ pub async fn update(
         sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ? AND company_id = ?")
             .bind(new_parent_id)
             .bind(before.company_id)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .map_err(map_db_error)?;
     }
 
     let after = sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
         .bind(id)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await
         .map_err(map_db_error)?;
 
     // Story 3.5 : audit log avec wrapper {before, after} pour update.
     // Même format {before, after} que `journal_entries::update` (rétablie par
     // la Story 15-8a, #532) et tous les `update` du dépôt.
-    // Rollback explicite pour cohérence avec les autres branches d'erreur.
     let mut audit_details = serde_json::json!({
         "before": account_snapshot_json(&before),
         "after": account_snapshot_json(&after),
@@ -1336,7 +1386,7 @@ pub async fn update(
         && let Some(currency) = &after.currency
     {
         let copied = crate::repositories::exchange_rates::copy_currency_to_open_years_in_tx(
-            &mut tx,
+            tx,
             after.company_id,
             currency,
         )
@@ -1373,8 +1423,8 @@ pub async fn update(
         None => "account.updated",
     };
 
-    if let Err(e) = audit_log::insert_in_tx(
-        &mut tx,
+    audit_log::insert_in_tx(
+        tx,
         NewAuditLogEntry::user(
             user_id,
             action.to_string(),
@@ -1383,14 +1433,396 @@ pub async fn update(
             Some(audit_details),
         ),
     )
-    .await
-    {
-        tx.rollback().await.map_err(map_db_error)?;
-        return Err(e);
+    .await?;
+    Ok(after)
+}
+
+/// Les contrôles de **forme** d'une demande groupée (Story 46-5a, AC-2),
+/// avant toute transaction — `ACCOUNT_GROUP_INVALID` :
+///
+/// 1. plus de [`MAX_GROUP_PROPOSALS`] propositions (`groupIndex` = la première
+///    en trop) ou plus de [`MAX_GROUP_MEMBERS`] membres (`groupIndex` = la
+///    proposition qui franchit le plafond) → `tooMany` ;
+/// 2. puis proposition par proposition, dans l'ordre reçu : sans membre →
+///    `empty` ; membre par membre, dans l'ordre reçu, le compte même du
+///    rattachement ou de la réutilisation → `memberIsOwnGroup`, un membre déjà
+///    vu (dans cette proposition ou une précédente) → `accountInTwoGroups` ;
+///    enfin, le compte du rattachement ou de la réutilisation membre d'une
+///    **autre** proposition de la demande → `groupIsMember`, puis déjà visé par
+///    un rattachement ou une réutilisation d'une proposition **précédente** →
+///    `groupInTwoProposals` (deux `attach`, deux `reuse`, ou l'un et l'autre, du
+///    même compte : revue P1, L2 — ses comptes se réunissent en une seule
+///    proposition).
+///
+/// Fonction pure : la route l'appelle par [`apply_groups`].
+pub fn check_groups_shape(groups: &[GroupProposal]) -> Result<(), DbError> {
+    let invalid = |group_index, reason, account_id| DbError::AccountGroupInvalid {
+        group_index,
+        reason,
+        account_id,
+    };
+    if groups.len() > MAX_GROUP_PROPOSALS {
+        return Err(invalid(
+            MAX_GROUP_PROPOSALS,
+            AccountGroupReason::TooMany,
+            None,
+        ));
+    }
+    let mut total = 0usize;
+    for (i, g) in groups.iter().enumerate() {
+        total += g.members.len();
+        if total > MAX_GROUP_MEMBERS {
+            return Err(invalid(i, AccountGroupReason::TooMany, None));
+        }
+    }
+    let all_members: std::collections::HashSet<i64> = groups
+        .iter()
+        .flat_map(|g| g.members.iter().map(|m| m.id))
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    let mut targets = std::collections::HashSet::new();
+    for (i, g) in groups.iter().enumerate() {
+        if g.members.is_empty() {
+            return Err(invalid(i, AccountGroupReason::Empty, None));
+        }
+        let target = g.kind.target();
+        for m in &g.members {
+            if target == Some(m.id) {
+                return Err(invalid(i, AccountGroupReason::MemberIsOwnGroup, Some(m.id)));
+            }
+            if !seen.insert(m.id) {
+                return Err(invalid(
+                    i,
+                    AccountGroupReason::AccountInTwoGroups,
+                    Some(m.id),
+                ));
+            }
+        }
+        if let Some(t) = target
+            && all_members.contains(&t)
+        {
+            return Err(invalid(i, AccountGroupReason::GroupIsMember, Some(t)));
+        }
+        if let Some(t) = target
+            && !targets.insert(t)
+        {
+            return Err(invalid(i, AccountGroupReason::GroupInTwoProposals, Some(t)));
+        }
+    }
+    Ok(())
+}
+
+/// Crée des comptes de groupe et y range des comptes, **en une seule
+/// transaction, tout ou rien** (Story 46-5a, `POST /api/v1/accounts/groups`,
+/// AC-2) : toute erreur annule la demande entière — aucun compte créé, déplacé
+/// ni rendu non imputable, aucune entrée d'audit.
+///
+/// # Déroulé, et ordre des refus
+///
+/// 0. **Forme**, avant `begin()` : [`check_groups_shape`].
+/// 1. **Verrous de tête** : `companies` en partage, les réglages de facturation
+///    en partage (comme [`create`] et [`update`], qui les reprennent ensuite
+///    sans effet), puis **tous** les membres et comptes de rattachement ou de
+///    réutilisation de la demande `FOR UPDATE`, **en une passe**, par `id`
+///    croissant sur toute la demande, par une lecture **filtrée par la
+///    société** : un identifiant absent de la société → `NotFound`, le plus
+///    petit d'abord, avant tout autre contrôle.
+/// 2. **Membres**, par `id` croissant : archivé → `IllegalStateTransition` (le
+///    refus d'[`update`]), puis `version` différente de celle de la demande →
+///    `OptimisticLockConflict` — avant les contrôles d'état : un membre retypé
+///    depuis l'aperçu rend `409`, non `mixedTypes`.
+/// 3. **État**, **phase entière avant toute écriture**, proposition par
+///    proposition dans l'ordre reçu, sur les lignes verrouillées : membres de
+///    types différents → `mixedTypes` (le premier membre, dans l'ordre reçu,
+///    d'un autre type que le premier) ; puis, pour une création, numéro déjà
+///    porté (archivé compris, lu `FOR UPDATE` sur `(company_id, number)`) ou
+///    déjà demandé par une création précédente (comparé sans casse) → `numberTaken` ; pour un
+///    rattachement, compte inactif ou sans sous-compte actif → `notAGroup` ;
+///    pour une réutilisation, compte inactif ou avec un sous-compte actif →
+///    `notReusable` ; puis, pour ces deux, type différent de celui des membres
+///    → `groupTypeMismatch`.
+/// 4. **Écritures**, proposition par proposition dans l'ordre reçu : une
+///    création passe d'abord le contrôle du parent du **changement de parent**
+///    ([`guard_parent_change_in_tx`], sans compte déplacé : parent de la
+///    société, actif, ni compte de différence de change, **ni mouvementé** —
+///    `ACCOUNT_PARENT_HAS_ENTRIES`, plus strict que [`create`], écart A-1 de
+///    `fix-api-parent-compte`), puis [`create_in_tx`] (type des membres, devise
+///    principale, aucun rôle, non imputable) ; puis chaque membre, par `id`
+///    croissant, passe par [`update_in_tx`], ligne verrouillée inchangée hors
+///    du parent (`ParentChange::Under`, `confirm_retype = false`) — un compte
+///    réutilisé qui porte des écritures est refusé là, sous verrou
+///    (`ACCOUNT_PARENT_HAS_ENTRIES`), et un membre déjà sous son groupe est un
+///    no-op (ni `version`, ni audit).
+/// 5. **Relecture**, avant le commit : les comptes réutilisés et déplacés sont
+///    relus après la dernière écriture — la réponse rend l'état que le commit
+///    publie (un compte déplacé devenu parent d'un groupe créé ensuite y est
+///    non imputable).
+///
+/// L'erreur porte l'étape ([`GroupStepError`]) : la proposition, et le compte
+/// quand l'étape en vise un (membre, compte de rattachement ou de
+/// réutilisation ; aucun pour la création du groupe).
+///
+/// # Verrous
+///
+/// `companies` → réglages de facturation → tous les comptes de la demande
+/// (`FOR UPDATE`, `id` croissant, par la clé primaire) → numéros des groupes à
+/// créer (`FOR UPDATE`, verrou d'intervalle pour un numéro absent) → parent
+/// d'un groupe créé (`FOR UPDATE`, puis ses désignations et ses lignes en
+/// lecture verrouillante) → les verrous d'[`update`] pour chaque membre (son
+/// nouveau parent `FOR UPDATE`, ses ancêtres en partage). Deux demandes croisées
+/// s'interbloquent moins par la passe de tête ; l'interblocage restant (verrous
+/// d'intervalle de numéros voisins, notamment) est rejoué par la route, la
+/// transaction entière à chaque tentative.
+///
+/// # Audit
+///
+/// Aucune action neuve : `account.created` par groupe créé, `account.updated`
+/// par compte déplacé, écrites dans la transaction par [`create_in_tx`] et
+/// [`update_in_tx`]. Un groupe réutilisé ou rattaché, qui passe non imputable
+/// sans hausse de `version`, n'a pas d'entrée propre.
+pub async fn apply_groups(
+    pool: &MySqlPool,
+    company_id: i64,
+    user_id: i64,
+    groups: &[GroupProposal],
+) -> Result<GroupsOutcome, GroupStepError> {
+    check_groups_shape(groups).map_err(GroupStepError::bare)?;
+    if groups.is_empty() {
+        return Ok(GroupsOutcome::default());
     }
 
-    tx.commit().await.map_err(map_db_error)?;
-    Ok(after)
+    let bare = GroupStepError::bare;
+    let mut tx = pool.begin().await.map_err(|e| bare(map_db_error(e)))?;
+    let state = lock_company_currency_in_tx(&mut tx, company_id, CompanyLock::Share)
+        .await
+        .map_err(bare)?;
+    lock_invoice_settings_share_in_tx(&mut tx, company_id)
+        .await
+        .map_err(bare)?;
+
+    // La proposition de chaque compte de la demande (membre ou compte d'un
+    // rattachement ou d'une réutilisation) — unique, la forme l'a garanti.
+    let mut owner: std::collections::BTreeMap<i64, usize> = std::collections::BTreeMap::new();
+    for (i, g) in groups.iter().enumerate() {
+        for id in g.members.iter().map(|m| m.id).chain(g.kind.target()) {
+            owner.entry(id).or_insert(i);
+        }
+    }
+
+    // 1. La passe de verrous : une lecture, par la clé primaire, filtrée par la
+    //    société, `id` croissant.
+    let placeholders = vec!["?"; owner.len()].join(", ");
+    let sql = format!(
+        "SELECT {COLUMNS} FROM accounts FORCE INDEX (PRIMARY) \
+         WHERE company_id = ? AND id IN ({placeholders}) ORDER BY id FOR UPDATE"
+    );
+    let mut query = sqlx::query_as::<_, Account>(&sql).bind(company_id);
+    for id in owner.keys() {
+        query = query.bind(*id);
+    }
+    let locked: std::collections::BTreeMap<i64, Account> = query
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| bare(map_db_error(e)))?
+        .into_iter()
+        .map(|a| (a.id, a))
+        .collect();
+    if let Some((&id, &i)) = owner.iter().find(|(id, _)| !locked.contains_key(id)) {
+        return Err(GroupStepError::at(i, Some(id), DbError::NotFound));
+    }
+
+    // 2. Les membres, par `id` croissant : archivé, puis `version`.
+    let mut requested: std::collections::BTreeMap<i64, (usize, i32)> =
+        std::collections::BTreeMap::new();
+    for (i, g) in groups.iter().enumerate() {
+        for m in &g.members {
+            requested.insert(m.id, (i, m.version));
+        }
+    }
+    for (&id, &(i, version)) in &requested {
+        let account = &locked[&id];
+        if !account.active {
+            return Err(GroupStepError::at(
+                i,
+                Some(id),
+                DbError::IllegalStateTransition("impossible de modifier un compte archivé".into()),
+            ));
+        }
+        if account.version != version {
+            return Err(GroupStepError::at(
+                i,
+                Some(id),
+                DbError::OptimisticLockConflict,
+            ));
+        }
+    }
+
+    // 3. L'état, proposition par proposition, avant toute écriture.
+    let invalid = |i: usize, reason, account_id: Option<i64>| {
+        GroupStepError::bare(DbError::AccountGroupInvalid {
+            group_index: i,
+            reason,
+            account_id,
+        })
+    };
+    let mut group_types = Vec::with_capacity(groups.len());
+    // Les numéros des créations précédentes, comparés **sans casse** (revue P1,
+    // L1) : `accounts.number` est sous une collation insensible à la casse, et
+    // deux créations `10a` et `10A` se heurteraient à l'index unique (`409
+    // UNIQUE_CONSTRAINT_VIOLATION`) au lieu du motif promis. Les autres
+    // équivalences de la collation (accents) restent couvertes par l'index
+    // unique, tout ou rien tenu.
+    let mut numbers_to_create = std::collections::HashSet::new();
+    for (i, g) in groups.iter().enumerate() {
+        let first_type = locked[&g.members[0].id].account_type;
+        if let Some(other) = g
+            .members
+            .iter()
+            .find(|m| locked[&m.id].account_type != first_type)
+        {
+            return Err(invalid(i, AccountGroupReason::MixedTypes, Some(other.id)));
+        }
+        match &g.kind {
+            GroupKind::Create { number, .. } => {
+                let holder: Option<i64> = sqlx::query_scalar(
+                    "SELECT id FROM accounts WHERE company_id = ? AND number = ? FOR UPDATE",
+                )
+                .bind(company_id)
+                .bind(number)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| GroupStepError::at(i, None, map_db_error(e)))?;
+                if holder.is_some() || !numbers_to_create.insert(number.to_lowercase()) {
+                    return Err(invalid(i, AccountGroupReason::NumberTaken, holder));
+                }
+            }
+            GroupKind::Attach { account_id } | GroupKind::Reuse { account_id } => {
+                let target = &locked[account_id];
+                let has_children = has_active_children(&mut tx, *account_id)
+                    .await
+                    .map_err(|e| GroupStepError::at(i, Some(*account_id), e))?;
+                let refused = match g.kind {
+                    GroupKind::Attach { .. } if !target.active || !has_children => {
+                        Some(AccountGroupReason::NotAGroup)
+                    }
+                    GroupKind::Reuse { .. } if !target.active || has_children => {
+                        Some(AccountGroupReason::NotReusable)
+                    }
+                    _ => None,
+                };
+                if let Some(reason) = refused {
+                    return Err(invalid(i, reason, Some(*account_id)));
+                }
+                if target.account_type != first_type {
+                    return Err(invalid(
+                        i,
+                        AccountGroupReason::GroupTypeMismatch,
+                        Some(*account_id),
+                    ));
+                }
+            }
+        }
+        group_types.push(first_type);
+    }
+
+    // 4. Les écritures.
+    let mut outcome = GroupsOutcome::default();
+    let mut reused_ids = std::collections::BTreeSet::new();
+    let mut moved_ids = std::collections::BTreeSet::new();
+    for (i, g) in groups.iter().enumerate() {
+        let group_id = match &g.kind {
+            GroupKind::Create {
+                number,
+                name,
+                parent_id,
+            } => {
+                if let Some(parent_id) = *parent_id {
+                    guard_parent_change_in_tx(&mut tx, &state, company_id, None, parent_id, None)
+                        .await
+                        .map_err(|e| GroupStepError::at(i, None, e))?;
+                }
+                let group = create_in_tx(
+                    &mut tx,
+                    user_id,
+                    NewAccount {
+                        company_id,
+                        number: number.clone(),
+                        name: name.clone(),
+                        account_type: group_types[i],
+                        parent_id: *parent_id,
+                        role: None,
+                        postable: false,
+                        currency: None,
+                        own_fx_accounts: None,
+                    },
+                )
+                .await
+                .map_err(|e| GroupStepError::at(i, None, e))?;
+                let id = group.id;
+                outcome.created.push(group);
+                id
+            }
+            GroupKind::Attach { account_id } => *account_id,
+            GroupKind::Reuse { account_id } => {
+                reused_ids.insert(*account_id);
+                *account_id
+            }
+        };
+
+        let mut members: Vec<GroupMember> = g.members.clone();
+        members.sort_by_key(|m| m.id);
+        for m in members {
+            let row = &locked[&m.id];
+            let changes = AccountUpdate {
+                name: row.name.clone(),
+                account_type: row.account_type,
+                role: row.role,
+                postable: row.postable,
+                currency: CurrencyChange::Unchanged,
+                own_fx_accounts: OwnFxAccountsChange::Unchanged,
+                parent: ParentChange::Under(group_id),
+            };
+            let after = update_in_tx(
+                &mut tx, company_id, m.id, m.version, user_id, changes, false,
+            )
+            .await
+            .map_err(|e| GroupStepError::at(i, Some(m.id), e))?;
+            if after.version != m.version {
+                moved_ids.insert(m.id);
+            }
+        }
+    }
+
+    // Les comptes réutilisés et les comptes déplacés relus **après la dernière
+    // écriture**, avant le commit (revue P1, M1) : un compte déplacé par une
+    // proposition peut devenir le parent d'un groupe créé par une proposition
+    // suivante, qui le passe non imputable sans hausser sa `version` ; la ligne
+    // rendue par `update_in_tx` serait alors périmée. Un compte réutilisé passe
+    // non imputable au rangement de son premier membre.
+    outcome.reused = reread_in_tx(&mut tx, &reused_ids).await.map_err(bare)?;
+    outcome.moved = reread_in_tx(&mut tx, &moved_ids).await.map_err(bare)?;
+
+    tx.commit().await.map_err(|e| bare(map_db_error(e)))?;
+    outcome.created.sort_by_key(|a| a.id);
+    Ok(outcome)
+}
+
+/// Les comptes `ids`, relus dans la transaction, par `id` croissant (l'ordre
+/// du `BTreeSet`) : l'état que le commit publiera.
+async fn reread_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    ids: &std::collections::BTreeSet<i64>,
+) -> Result<Vec<Account>, DbError> {
+    let mut accounts = Vec::with_capacity(ids.len());
+    for id in ids {
+        let account = sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
+            .bind(id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+        accounts.push(account);
+    }
+    Ok(accounts)
 }
 
 /// Archive un compte (active = false). Verrouillage optimiste + audit log (Story 3.5).
@@ -2670,6 +3102,55 @@ pub async fn refuse_foreign_currency_accounts_in_tx(
         Some((account_id, currency)) => Err(DbError::AccountInForeignCurrency {
             account_id: Some(account_id),
             currency,
+        }),
+        None => Ok(()),
+    }
+}
+
+/// Refuse comme parent un compte du plan qu'un compte bancaire **désigne** —
+/// son compte du plan (`journal_account_id`) ou, pour un compte de prestataire
+/// (PayPal, Stripe, Wise), son compte de frais (`fee_account_id`), même partagé
+/// par plusieurs prestataires ; un compte bancaire **clos ou archivé** compte
+/// aussi : il peut être rouvert ou désarchivé, et ses écritures passées restent
+/// liées (Epic 46, décision du mainteneur du 2026-11-26). Ces comptes reçoivent des
+/// écritures automatiques (imports, rapprochements, acceptations de
+/// prestataire, dont certaines écrivent sans contrôler `postable`) : devenus
+/// parents, ils passeraient non imputables et ressortiraient en « solde propre »
+/// aux rapports par groupes. Le compte de versement d'un compte Stripe est un
+/// compte bancaire : son compte du plan est couvert par `journal_account_id`.
+/// Le compte de conversion et les comptes de change de la société sont refusés
+/// avant, par les désignations de change.
+///
+/// Rangé **sous** un groupe (membre), un tel compte reste imputable : seul le
+/// fait d'en devenir le parent est refusé. Lecture verrouillante (`LOCK IN
+/// SHARE MODE`), comme les autres lectures de `bank_accounts` du dépôt : une
+/// liaison concurrente est vue, ou s'interbloque avec ce changement, que la
+/// route rejoue.
+async fn refuse_bank_linked_parent_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    parent_id: i64,
+    parent_number: &str,
+) -> Result<(), DbError> {
+    use crate::entities::bank_account::bank_account_display_name;
+    let row: Option<(i64, String, Option<String>)> = sqlx::query_as(
+        "SELECT id, bank_name, description FROM bank_accounts \
+         WHERE company_id = ? \
+         AND (journal_account_id = ? OR fee_account_id = ?) \
+         ORDER BY id LIMIT 1 LOCK IN SHARE MODE",
+    )
+    .bind(company_id)
+    .bind(parent_id)
+    .bind(parent_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    match row {
+        Some((bank_account_id, bank_name, description)) => Err(DbError::AccountParentBankLinked {
+            parent_account_id: parent_id,
+            parent_number: parent_number.to_string(),
+            bank_account_id,
+            bank_name: bank_account_display_name(&bank_name, description.as_deref()),
         }),
         None => Ok(()),
     }

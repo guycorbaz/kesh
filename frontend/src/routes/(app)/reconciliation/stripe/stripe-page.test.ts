@@ -70,6 +70,7 @@ function stripeAccount(id: number, account: string): BankAccountSummary {
 		cardLast4: null,
 		provider: 'stripe',
 		paypal: null,
+		wise: null,
 		stripe: { account, feeAccountId: 60, payoutBankAccountId: 9 },
 		isPrimary: false,
 		journalAccountId: 31,
@@ -195,11 +196,12 @@ describe('page Stripe (Story 40-7d)', () => {
 	// Revue P1 de 40-7d (M3) — un versement vers un compte Wise : la réconciliation bancaire
 	// n'offre pas ce compte, le renvoi dit d'importer son relevé ; vers une banque ordinaire,
 	// le lien vers la réconciliation reste.
-	it('versement sans réception : lien vers la réconciliation pour une banque, texte pour un compte Wise', async () => {
+	it('versement sans réception : lien vers la réconciliation pour une banque, vers la page Wise pour un compte Wise', async () => {
 		const destination = (provider: 'wise' | null) => ({
 			...stripeAccount(9, 'x'),
 			bankName: provider === 'wise' ? 'Wise' : 'Banque',
 			provider,
+			wise: null,
 			stripe: null,
 			iban: provider === 'wise' ? null : 'CH9300762011623852957',
 		});
@@ -208,7 +210,8 @@ describe('page Stripe (Story 40-7d)', () => {
 		await waitFor(() => expect(wise.getByTestId('stripe-gap-payout_without_receipt')).toBeTruthy());
 		const bloc = wise.getByTestId('stripe-gap-payout_without_receipt');
 		expect(bloc.querySelector('[data-testid="stripe-gap-receipt-import"]')?.textContent).toContain('Importez le relevé');
-		expect(Array.from(bloc.querySelectorAll('a')).map((a) => a.getAttribute('href'))).toEqual(['/journal-entries/77']);
+		// Story 39-11d — le texte mène à la page Wise, où le relevé du compte de destination s'importe.
+		expect(Array.from(bloc.querySelectorAll('a')).map((a) => a.getAttribute('href'))).toEqual(['/journal-entries/77', '/reconciliation/wise']);
 		wise.unmount();
 		listBankAccountsMock.mockResolvedValue([stripeAccount(1, 'Stripe boutique'), destination(null)]);
 		const banque = render(Page);
@@ -220,7 +223,7 @@ describe('page Stripe (Story 40-7d)', () => {
 
 	// Revue P2 de 40-7d (P2-3) — une destination Wise archivée ou close n'est pas offerte par la
 	// réconciliation non plus : la résolution relit aussi les comptes archivés et clos.
-	it('versement vers un compte Wise archivé : le texte, non le lien (comptes archivés et clos relus)', async () => {
+	it('versement vers un compte Wise archivé : la page Wise, non la réconciliation (comptes archivés et clos relus)', async () => {
 		const wiseArchive = { ...stripeAccount(9, 'x'), bankName: 'Wise', provider: 'wise' as const, stripe: null, iban: null, archived: true };
 		listBankAccountsMock.mockImplementation(async (archived) =>
 			archived ? [stripeAccount(1, 'Stripe boutique'), wiseArchive] : [stripeAccount(1, 'Stripe boutique')],
@@ -229,7 +232,8 @@ describe('page Stripe (Story 40-7d)', () => {
 		await waitFor(() => expect(r.getByTestId('stripe-gap-payout_without_receipt')).toBeTruthy());
 		const bloc = r.getByTestId('stripe-gap-payout_without_receipt');
 		await waitFor(() => expect(bloc.querySelector('[data-testid="stripe-gap-receipt-import"]')).not.toBeNull());
-		expect(Array.from(bloc.querySelectorAll('a')).map((a) => a.getAttribute('href'))).toEqual(['/journal-entries/77']);
+		// Story 39-11d — le texte mène à la page Wise, où le relevé du compte de destination s'importe.
+		expect(Array.from(bloc.querySelectorAll('a')).map((a) => a.getAttribute('href'))).toEqual(['/journal-entries/77', '/reconciliation/wise']);
 		expect(listBankAccountsMock).toHaveBeenCalledWith(true, true);
 	});
 

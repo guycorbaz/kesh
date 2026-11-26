@@ -440,3 +440,4 @@ résultat.
   **Boucle close.** Tendance : P1 0 C / 0 H / 2 M / 6 L (Opus 5.5) → P2 0 / 0 / 1 M / 4 L (Sonnet 5.5) → P3 0 / 0 / 0 / 4 L
   (Opus 5.5, au lieu de Haiku : la remédiation changeait la logique d'état de la page). Gates frontend verts :
   Vitest 4707 / 283 fichiers. `done`.
+- 2026-11-26 — **Suivis ouverts** (dette de la story, non réglée par la PR de l'epic) : #1640 (L3 de la revue P3 : la redemande du bilan efface l'erreur affichée de l'autre onglet) ; #1641 (L2 de la revue P3 : changer la vue du bilan pendant le chargement d'un autre rapport interrompt ce chargement).

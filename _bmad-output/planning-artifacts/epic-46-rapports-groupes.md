@@ -14,8 +14,11 @@ macros des manuels et tag par Guy. **Aucune migration attendue** (D2).
 des versions*) : **sept stories** à la revue 1 (46-1 à 46-7, solde compris), approuvées par Guy ; la balance par
 groupes (« 46-6 ») touche plus de cinq modules et se découpe, par la règle de splitting préventif, en **46-6a**
 (modèle, API, MCP) et **46-6b** (écran, PDF, CSV) — **huit fiches**, la balance restant au numéro 46-6 et le solde
-en dernier (remarque 2 de Guy). 46-5 est **conditionnelle** (Q9, maquette avant décision) ; si elle sort, l'epic en
-compte sept.
+en dernier (remarque 2 de Guy). 46-5 était **conditionnelle** (Q9, maquette avant décision) : **décidée le 2026-11-22** par le
+responsable de l'epic sur la maquette, découpée en **46-5a** et **46-5b** (six modules), et fusionnée dans l'epic
+seulement après l'accord de Guy ; s'il la refuse, elle sort de l'epic. **Accord du mainteneur le 2026-11-26** : la 46-5
+entre dans la PR de l'Epic 46 (branche `pr/46-rapports-groupes-v2`), pour que l'epic n'entre qu'une fois dans `main`.
+*(Annoté le 2026-11-26.)*
 
 **Règles des fichiers communs** (`CLAUDE.md` § *Travailler à plusieurs développeurs*) : aucune ligne au `CHANGELOG.md`
 en cours d'epic (chaque fiche a sa *Note de version*) ; aucun PDF de manuel commité (`.tex` seul) ; catalogues i18n et
@@ -108,7 +111,7 @@ légales imposées (Q7) ; le grand livre (Q6) ; **la balance est dans le périm�
 - FR-46-2 — Écrans du bilan et du compte de résultat au niveau choisi (D9). → 46-2
 - FR-46-3 — PDF et CSV au niveau choisi, groupes en gras, retrait par profondeur. → 46-3
 - FR-46-4 — Outils MCP `kesh_bilan`, `kesh_compte_de_resultat` avec le niveau. → 46-4
-- FR-46-5 — Aide à la création des groupes d'un plan existant. → 46-5 (conditionnelle ; maquette avant décision)
+- FR-46-5 — Aide à la création des groupes d'un plan existant. → 46-5a, 46-5b (décidée le 2026-11-22 sur la maquette ; accord du mainteneur le 2026-11-26)
 - FR-46-6 — Balance par groupes (Q6, responsable) : niveaux, sous-totaux, écran, PDF, CSV, API, MCP. → 46-6a, 46-6b
 - FR-46-7 — Un groupe non affiché laisse son total à son parent (Q2). → 46-1, 46-2
 - FR-46-8 — Solde en devise d'un groupe : devise + CHF si une seule devise, sinon CHF seul, aucune ligne supplémentaire (Q3). → 46-1, 46-2, 46-3
@@ -161,7 +164,9 @@ AC-4 ; la 46-3 ne commence qu'après sa fusion) ; la **47-3** (présentation mir
 | 46-2 | Écrans du bilan et du compte de résultat par groupes | 46-1, **46-3** (export groupé) | M | `46-2-groupes-ecrans.md` |
 | 46-3 | PDF et CSV par groupes | 46-1, **48-11 dans `main`** | M | `46-3-groupes-pdf-csv.md` |
 | 46-4 | Outils MCP par groupes | 46-1 | S | `46-4-groupes-mcp.md` |
-| 46-5 | Aide à la création des groupes d'un plan (conditionnelle, maquette avant décision) | maquette approuvée | M | `46-5-aide-groupes-plan.md` |
+| 46-5 | Aide à la création des groupes d'un plan — décidée le 2026-11-22 sur la maquette, découpée (six modules) ; accord du mainteneur le 2026-11-26, dans la PR de l'epic | maquette approuvée | — | `46-5-aide-groupes-plan.md` |
+| 46-5a | Groupes du plan : transaction et route | — | M | `46-5a-aide-groupes-transaction-route.md` |
+| 46-5b | Groupes du plan : propositions, écran, manuel | 46-5a | M | `46-5b-aide-groupes-ecran.md` |
 | 46-6a | Balance par groupes : modèle, API, MCP | 46-1 ; MCP : 46-4 | M | `46-6a-balance-groupes-modele-api-mcp.md` |
 | 46-6b | Balance par groupes : écran, PDF, CSV | 46-6a, 46-2, 46-3 | M | `46-6b-balance-groupes-ecran-pdf-csv.md` |
 | 46-7 | Solde de la dette de l'epic (plafond : **2 issues**) | toutes | S | `46-7-solde-dette-epic.md` |
@@ -169,7 +174,7 @@ AC-4 ; la 46-3 ne commence qu'après sa fusion) ; la **47-3** (présentation mir
 
 Ordre : 46-1 → (46-3 dès la 48-11 fusionnée, 46-4, 46-6a hors MCP en parallèle ; le MCP de la 46-6a après la 46-4) → 46-2 (après 46-3, pour l'export groupé :
 avant elle, `ExportQuery` ignorerait les paramètres et rendrait un PDF à plat d'un écran groupé, sans rien signaler) →
-46-6b → 46-5 (si décidée) → 46-7. **Ordre avec la 47-3** : miroir puis groupes ; le second arrivé recâble (fiche
+46-6b → 46-7 → 46-5a → 46-5b (décidée après la clôture de la 46-7 : sa dette se corrige dans la story ou s'ouvre en issue, fiche mère). **Ordre avec la 47-3** : miroir puis groupes ; le second arrivé recâble (fiche
 47-3, § *Recâblage*), avec revue du code d'intégration.
 
 ## Dépendances
@@ -206,16 +211,16 @@ Déclarés au kickoff (`CLAUDE.md` § *Travailler à plusieurs développeurs*, �
 | `crates/kesh-api/src/routes/reports.rs` | 46-1, 46-3, 46-6a, 46-6b | — | — |
 | `crates/kesh-api/tests/reports_e2e.rs`, `reports_export_e2e.rs` | 46-1, 46-3, 46-6a, 46-6b | 47-3 (exemple chiffré) | blocs de tests distincts |
 | `crates/kesh-api/src/mcp/outils/rapports.rs`, `tests/mcp_*.rs` | 46-4, 46-6a | 47-3 (descriptions de `kesh_bilan`, `kesh_compte_de_resultat`) | garder les deux phrases (aucune garde ne contrôle la longueur des descriptions ; la taille des réponses est mesurée à la 46-4, AC-5) |
-| `crates/kesh-api/src/routes/accounts.rs`, `kesh-db/src/repositories/accounts.rs` | 46-5 (si décidée) | 47-1/47-2 (miroir), 48-x | blocs distincts |
-| `crates/kesh-i18n/locales/*/messages.ftl` | 46-2, 46-6b, 46-5 | tous | bloc propre `reports-groups-*` ; conflit : garder les deux côtés |
+| `crates/kesh-api/src/routes/accounts.rs`, `kesh-db/src/repositories/accounts.rs`, `kesh-api/src/lib.rs` (`comptable_routes`), `kesh-api/src/errors.rs`, `kesh-db/src/errors.rs`, `kesh-api/tests/audit_route_registry.rs` (liste (vi) et son décompte, **recompté** après fusion), `docs/MULTI-TENANT-SCOPING-PATTERNS.md` (tableau des verrous) | 46-5a | 47-1/47-2 (miroir), 48-x | blocs distincts |
+| `crates/kesh-i18n/locales/*/messages.ftl` | 46-2, 46-6b, 46-5a, 46-5b | tous | bloc propre `reports-groups-*` (46-5 : `accounts-groups-*`) ; conflit : garder les deux côtés |
 | `frontend/src/lib/features/reports/*` (vues, `reports.api.ts`, `reports.types.ts`, `GroupedReportRows.svelte` neuf) | 46-2, 46-6b | 47-4 (écrans du miroir) | le second arrivé résout |
 | `frontend/src/routes/(app)/reports/+page.svelte` | 46-2, 46-6b | 47-4 | idem |
-| `frontend/src/routes/(app)/accounts/+page.svelte`, `features/accounts/` | 46-5 | 47-2 (écran du plan) | idem |
-| `frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal`) | 46-2, 46-6b, 46-5 | tous | **recompté** par la garde après fusion |
+| `frontend/src/routes/(app)/accounts/+page.svelte`, `features/accounts/` | 46-5b | 47-2 (écran du plan) | idem |
+| `frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal`) | 46-2, 46-6b, 46-5a, 46-5b | tous | **recompté** par la garde après fusion |
 | `frontend/tests/e2e/reports*.spec.ts` | 46-2, 46-6b | 47-4 | 46-2 change l'écran par défaut (Q10) : specs adaptées sans perdre d'assertion |
-| `docs/api-external.md` | 46-1, 46-3, 46-6a | 47-3, Epic 48, 49 | paragraphes distincts |
-| `docs/manual/fr/user-manual.tex` | 46-2, 46-3, 46-6b, 46-5 | 47-4, 49-1c, v0200-menu-sous-groupes | `.tex` seul, PDF régénérés à la release |
-| `docs/manual/fr/admin-manual.tex` (tableau MCP) | 46-4, 46-6a | 47-3 | troisième colonne : garder les deux phrases |
+| `docs/api-external.md` | 46-1, 46-3, 46-6a, 46-5a | 47-3, Epic 48, 49 | paragraphes distincts |
+| `docs/manual/fr/user-manual.tex` | 46-2, 46-3, 46-6b, 46-5b | 47-4, 49-1c, v0200-menu-sous-groupes | `.tex` seul, PDF régénérés à la release |
+| `docs/manual/fr/admin-manual.tex` (tableau MCP ; opérations fermées aux clés : 46-5a) | 46-4, 46-6a, 46-5a | 47-3 | troisième colonne : garder les deux phrases |
 | `_bmad-output/implementation-artifacts/sprint-status.yaml` | toutes | tous | bloc propre de l'epic |
 | `CHANGELOG.md` | — | — | jamais en cours d'epic (*Note de version* de chaque fiche) |
 
@@ -306,3 +311,21 @@ La page pour Guy (`data-not-committed/epic-46-revue-pour-guy.html`) porte ces r�
   C-46-6a-5, 46-4 C-46-4-5). La 46-6b repasse en `drafted` (phrase de manuel adossée à C-46-6a-3) ; ligne
   `trial_balance.rs` des fichiers communs corrigée (aucune story). Passe P2 à suivre
   (`kesh-gate-logs/s46-specs/validation-p2-prompt.md`).
+
+## Dette en suivi (issues ouvertes le 2026-11-26)
+
+Les dix suivis de l'epic (repères E46-01 à E46-10 de la préparation de la PR), toutes P4, non réglées par la PR :
+
+| Repère | Issue | Objet | Constaté |
+|---|---|---|---|
+| E46-01 | #1636 | Outils MCP par groupes : le test de fidélité ne couvre que les lignes de compte | 46-4, revue P2 (F2) |
+| E46-02 | #1637 | PDF par groupes : la limite de 48 caractères ne vaut que pour la capitale moyenne | 46-3, revue P1 (L2) |
+| E46-03 | #1638 | Extraction du texte d'un PDF (tests) : deux textes de même ordonnée de pages consécutives fusionnés | 46-3, revue P1 (L4) |
+| E46-04 | #1639 | Export groupé : le test de fidélité JSON/PDF ne joue qu'un jeu de paramètres | 46-3, revue P1 (L5) |
+| E46-05 | #1640 | Rapports : la redemande du bilan efface l'erreur affichée de l'autre onglet | 46-2, revue P3 (L3) |
+| E46-06 | #1641 | Rapports : changer la vue du bilan pendant le chargement d'un autre rapport interrompt ce chargement | 46-2, revue P3 (L2) |
+| E46-07 | #1642 | Balance par groupes en PDF : le premier compte d'un groupe peut passer seul en haut de la page suivante | 46-6b, revue P2 (LOW-3) |
+| E46-08 | #1643 | Rapports par groupes : un groupe à sous-total nul, ouvert à la main puis fermé d'un clic, disparaît | 46-7, revue P1 (LOW-3) |
+| E46-09 | #1644 | Balance par groupes en PDF : nom de la ligne « solde propre » réduit aux profondeurs 2 et 3 | 46-7, revue P1 (LOW-5) |
+| E46-10 | #1645 | Test Vitest de la table d'ouverture : dépend du répertoire courant | 46-7 |
+

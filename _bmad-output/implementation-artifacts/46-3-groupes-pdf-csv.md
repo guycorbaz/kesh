@@ -475,3 +475,4 @@ Journaux hors dépôt, `kesh-gate-logs/s46-3/` : `t1-ecrire.log` (fixtures au co
   clippy workspace verts ; nextest `package(kesh-report) | package(kesh-core) | binary(reports_export_e2e) |
   binary(reports_e2e) | binary(textes_coherents)` : 799 passés, 1 ignoré ; manuel compilé dans une copie, phrase des
   libellés présente au PDF, aucun « Overfull ».
+- 2026-11-26 — **Suivis ouverts** (dette de la story, non réglée par la PR de l'epic) : #1637 (L2 de la revue P1 : la limite de 48 caractères ne vaut que pour la capitale moyenne) ; #1638 (L4 de la revue P1 : extraction du texte d'un PDF entre deux pages) ; #1639 (L5 de la revue P1 : le test de fidélité JSON/PDF ne joue qu'un jeu de paramètres).

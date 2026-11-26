@@ -333,4 +333,4 @@ Journaux hors dépôt, `kesh-gate-logs/s46-4/` : `t0-capture.log` (littéral de 
   (`minimum: 1` retiré). F2 : le test de fidélité ne couvre que les lignes de compte, non les groupes ni les sous-totaux ;
   tracé dans `issues-a-ouvrir.md` (`technical-debt`, P4). **Tendance : P1 (Sonnet) 0 C / 0 H / 1 M / 5 L → P2 ciblée
   (Haiku) 0 / 0 / 0 / 2** ; remédiation P1 sans MEDIUM résiduel. **Story `done`.**
-
+- 2026-11-26 — **Suivis ouverts** (dette de la story, non réglée par la PR de l'epic) : #1636 (F2 de la revue P2 : le test de fidélité MCP ne couvre que les lignes de compte).

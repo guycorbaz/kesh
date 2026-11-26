@@ -27,8 +27,8 @@ use chrono::NaiveDate;
 use rust_decimal::Decimal;
 
 use crate::csv::encoding::{decode_bytes, detect_encoding};
-use crate::csv::{ColumnsByName, HeaderByNameError, parse_dot_decimal_amount};
-use crate::error::{CsvError, MAX_CSV_LINE_ERROR_VALUE_CHARS, MAX_CSV_LINE_ERRORS};
+use crate::csv::{ColumnsByName, HeaderByNameError, parse_dot_decimal_amount, read_records};
+use crate::error::{CsvError, MAX_CSV_LINE_ERRORS};
 
 /// Colonnes que l'import et le rapprochement lisent (38-11b, 38-11c2) :
 /// toutes requises, dans l'ordre où un refus les nomme.
@@ -242,7 +242,7 @@ pub struct PaypalLineError {
     pub field: Option<&'static str>,
     /// Code stable.
     pub code: PaypalLineErrorCode,
-    /// Valeur fautive, tronquée à [`MAX_CSV_LINE_ERROR_VALUE_CHARS`]
+    /// Valeur fautive, tronquée à [`crate::error::MAX_CSV_LINE_ERROR_VALUE_CHARS`]
     /// caractères (suffixe `…`).
     pub value: Option<String>,
 }
@@ -257,15 +257,7 @@ impl PaypalLineError {
         code: PaypalLineErrorCode,
         value: Option<&str>,
     ) -> Self {
-        let value = value.map(|v| {
-            if v.chars().count() <= MAX_CSV_LINE_ERROR_VALUE_CHARS {
-                v.to_string()
-            } else {
-                let mut s: String = v.chars().take(MAX_CSV_LINE_ERROR_VALUE_CHARS).collect();
-                s.push('…');
-                s
-            }
-        });
+        let value = value.map(crate::error::truncate_line_error_value);
         Self {
             line,
             field,
@@ -467,49 +459,20 @@ pub fn parse_paypal_csv(bytes: &[u8]) -> Result<PaypalCsv, PaypalCsvError> {
     })?;
     let text = decode_bytes(&bytes[bom_len..], encoding).map_err(PaypalCsvError::Encoding)?;
 
-    // `flexible(true)` : le nombre de cellules se contrôle ici, ce qui permet
-    // de sauter une ligne vide (fin de fichier) avant de la compter fausse.
-    let mut reader = csv::ReaderBuilder::new()
-        .has_headers(false)
-        .flexible(true)
-        .from_reader(text.as_bytes());
-
+    let raw = read_records(&text);
     let mut errors = Errors::default();
-    let mut header: Option<csv::StringRecord> = None;
-    let mut records: Vec<(usize, csv::StringRecord)> = Vec::new();
-    for result in reader.records() {
-        match result {
-            Ok(record) => {
-                if record.iter().all(|c| c.trim().is_empty()) {
-                    continue;
-                }
-                let line = record.position().map_or(0, |p| p.line() as usize);
-                match &header {
-                    None => header = Some(record),
-                    Some(h) if record.len() != h.len() => errors.push(PaypalLineError::new(
-                        line,
-                        None,
-                        PaypalLineErrorCode::FieldCount,
-                        Some(&record.len().to_string()),
-                    )),
-                    Some(_) => records.push((line, record)),
-                }
-            }
-            Err(e) => {
-                let line = e.position().map_or(0, |p| p.line() as usize);
-                errors.push(PaypalLineError::new(
-                    line,
-                    None,
-                    PaypalLineErrorCode::FieldCount,
-                    Some(&e.to_string()),
-                ));
-            }
-        }
+    for (line, value) in &raw.malformed {
+        errors.push(PaypalLineError::new(
+            *line,
+            None,
+            PaypalLineErrorCode::FieldCount,
+            Some(value),
+        ));
     }
-
-    let Some(header) = header else {
+    let Some(header) = raw.header else {
         return Err(PaypalCsvError::Empty);
     };
+    let records = raw.records;
     let columns = ColumnsByName::locate(header.iter(), &REQUIRED_COLUMNS, &OPTIONAL_COLUMNS)
         .map_err(|e| match e {
             HeaderByNameError::Missing(names) => PaypalCsvError::MissingColumns(names),
@@ -723,6 +686,7 @@ fn read_row(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::MAX_CSV_LINE_ERROR_VALUE_CHARS;
     use rust_decimal_macros::dec;
 
     /// En-tête minimal : les requises, dans l'ordre de [`REQUIRED_COLUMNS`].

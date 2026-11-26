@@ -90,10 +90,14 @@ export interface ProviderCurrencyReport {
 	duplicates: number;
 }
 
-/** Ce que tout compte rendu d'import porte : le compte et ses devises. */
+/**
+ * Ce que tout compte rendu d'import porte : le compte et, pour PayPal et
+ * Stripe, ses devises. Story 39-11d : Wise rend un compte rendu **par fichier**
+ * (`files`) et non par devise ; sa page le montre par `importReportMain`.
+ */
 export interface ProviderImportResponseBase {
 	account: string;
-	currencies: ProviderCurrencyReport[];
+	currencies?: ProviderCurrencyReport[];
 }
 
 /** Une erreur de ligne d'un lecteur de prestataire (`details.lines[]` du refus du CSV). */
@@ -115,15 +119,22 @@ export interface ProviderPageTexts {
 	noAccount: string;
 	accountLabel: string;
 	importButton: string;
+	/** Story 39-11d — la consigne d'export, sous le bouton d'import (facultative). */
+	importHelp?: string;
 	/** En-tête de la colonne de l'identifiant chez le prestataire (« TXN », « Identifiant »). */
 	idColumn: string;
 	/** Rappel affiché sous les sélecteurs, facultatif. */
 	hint?: string;
 }
 
-/** Le client d'API du prestataire. */
+/**
+ * Le client d'API du prestataire. Story 39-11d : `importFiles` remplace
+ * `importFile` quand la page prend plusieurs fichiers d'un geste (Wise) ; sans
+ * `getReview` ni `accept`, la page n'a que l'import (pas d'exercice, pas de revue).
+ */
 export interface ProviderPageApi<P extends ProviderProposalBase, B, R> {
-	importFile(file: File, account: string): Promise<R>;
-	getReview(account: string, fiscalYearId: number): Promise<ProviderReview<P>>;
-	accept(account: string, proposals: B[]): Promise<ProviderAcceptResponse>;
+	importFile?(file: File, account: string): Promise<R>;
+	importFiles?(files: File[], account: string): Promise<R>;
+	getReview?(account: string, fiscalYearId: number): Promise<ProviderReview<P>>;
+	accept?(account: string, proposals: B[]): Promise<ProviderAcceptResponse>;
 }
