@@ -1203,6 +1203,10 @@ const ATTENDU = {
 	// vers Wise) : **3692** (« expected 3692 to be 3689 »), relevé par la garde.
 	// Revue P2 de la 40-7d (délégation complète de PayPal au module commun, texte du versement Wise
 	// raccourci) : **3691** (« expected 3691 to be 3692 »), relevé par la garde.
+	// Story 39-11d (fusion d'epic/40-stripe, écrans de l'import Wise, case « Compte Wise ») :
+	// **3739** (« expected 3739 to be 3691 »), relevé par la garde, non additionné.
+	// Revue P1 de la 39-11d (M1 : phrase du refus de doublon `wise-import-error-duplicate-file`) :
+	// **3740** (« expected 3740 to be 3739 »), relevé par la garde.
 	// Story 38-12b (dialogue générique de téléchargement, bouton et aide de la page PayPal, code
 	// de ligne `STATUS`) : **3671** (« expected 3671 to be 3632 »), relevé par la garde ; recompté
 	// au diff hors tests : 42 sites `i18nMsg(` ajoutés, 3 retirés (compte rendu extrait), net +39.
@@ -1218,9 +1222,18 @@ const ATTENDU = {
 	// 3681 (main) + 21 (48-12a/b) = **3702**, confirmé par la garde (`kesh-gate-logs/e50/reprise-main-r2/vitest-compteur.log`).
 	// Fusion d'epic/38-paypal (38-12b) dans epic/40-stripe : **3733** (« expected 3733 to be 0 »),
 	// relevé par la garde = 3691 + 42 (les sites de la 38-12b, 3674 − 3632).
+	// Fusion d'epic/40-stripe (38-12b) dans epic/39-wise, après la 39-11d : **3782** (« expected 3782 to be 0 »), relevé par la garde = 3740 + 42 (les sites de la 38-12b).
+	// Story 39-11d2 (revue Wise à l'écran : genres, actions, motifs, écarts, refus, sous-lignes) :
+	// **3814** (« expected 3814 to be 3782 »), relevé par la garde ; recompté au diff hors tests :
+	// 32 sites `i18nMsg(` ajoutés (28 `wise-labels.ts`, 1 `provider-labels.ts`, 2 page Wise,
+	// 1 `ProviderReviewPage.svelte`), 0 retiré. Puis les colonnes « Nom » et « Identifiant Wise » des
+	// lignes « à examiner » de la page Wise : **3816**, 2 sites ajoutés (`wise-col-name`, `wise-col-id`).
 	// Correctif de la destination d'un versement Stripe rejugée (revue d'intégration de l'Epic 39,
 	// M2 : libellé de `STRIPE_PAYOUT_ACCOUNT_INVALID` dans `stripeFailedLabel`) : **3734**
 	// (« expected 3734 to be 3733 »), relevé par la garde ; au diff : 1 site ajouté, 0 retiré.
+	// Fusion d'epic/40-stripe (destination d'un versement Stripe rejugée) dans epic/39-wise, après la
+	// 39-11d2 : **3817** (« expected 3817 to be 0 »), relevé par la garde = 3816 + 1 (le site du correctif,
+	// 3734 − 3733).
 	// Story 40-8b (bouton, aide, dialogue et compte rendu du téléchargement Stripe) : +7 net sur
 	// 3733 (9 sites `i18nMsg(` ajoutés, 2 retirés), soit **3741** après la fusion dans
 	// epic/40-stripe, relevé par la garde (3734 + 7).
@@ -1235,7 +1248,15 @@ const ATTENDU = {
 	// `paypal-to-review-already-posted` de PayPal.
 	// Reprise de main à 1e23edb55 (Epics 49 et 50, #1560 déjà portée) dans pr/40-stripe (2026-11-25) : les deux
 	// côtés gardés ; 3746 (pr/40, base 3677) + 25 (main, 3677 → 3702) = **3771**, confirmé par la garde (`kesh-gate-logs/s40-m2d/compteurs-3.log`).
-	sitesTotal: 3771,
+	// Propagation d'epic/40-stripe (38-13, 40-8b, 40-9) dans epic/39-wise : relevé par la garde.
+	// **3825** = 3817 + 8 (40-8b + 7, 40-9 + 1 ; la 38-13 ne retire aucun site).
+	// Fusion de pr/40-stripe (02d025725, main à 1e23edb55 compris) dans pr/39-wise-v2 (2026-11-25) : les deux côtés
+	// gardés ; 3771 (pr/40) + 83 (Epic 39, 3742 → 3825 de son côté, sur l'ancienne pr/40) = **3854**, confirmé par
+	// la garde (`kesh-gate-logs/s39-pr/compteurs-1.log`).
+	// **3855** (revue P2 de la PR de l'Epic 39, M-1) : + `wise-review-card-group-partly-posted`, relevé par la garde
+	// (« expected 3855 to be 3854 »).
+	// **3856** (correctif du frais d'un paiement groupé Wise, revue P1) : + `wise-review-card-group-fee-account-missing`.
+	sitesTotal: 3856,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

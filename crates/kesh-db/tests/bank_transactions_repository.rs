@@ -1,7 +1,7 @@
 //! Tests d'intégration pour `repositories::bank_transactions::find_in_dedup_window`
 //! (Story 8-3 T3.2).
 //!
-//! 4 tests : filtre fenêtre date, scoping multi-tenant `company_id`,
+//! Tests : filtre fenêtre date, scoping multi-tenant `company_id`,
 //! scoping `bank_account_id`, retour vide si aucune transaction dans
 //! la fenêtre. Les tests utilisent `bank_imports::create_with_transactions`
 //! pour seeder des transactions persistées (l'INSERT direct nécessiterait
@@ -320,4 +320,195 @@ async fn find_in_dedup_window_returns_empty_when_no_match(pool: MySqlPool) {
     .await
     .unwrap();
     assert!(result.is_empty());
+}
+
+/// Story 39-11a2 — `existing_transactions_by_ids` rend une ligne par
+/// transaction (un identifiant au débit et au crédit revient deux fois), avec
+/// montant et date, bornée à la société et au compte ; un identifiant absent
+/// ne rend rien.
+#[sqlx::test(migrations = "./test-schema")]
+async fn existing_transactions_by_ids_returns_each_transaction_with_its_amount(pool: MySqlPool) {
+    let company = create_test_company(&pool, "Société A").await;
+    let user = create_test_user(&pool, "user-a", company).await;
+    let account = create_test_bank_account(&pool, company, "CH9300762011623852957").await;
+    let other_account = create_test_bank_account(&pool, company, "CH4431999123000889012").await;
+    let d1 = NaiveDate::from_ymd_opt(2026, 5, 10).unwrap();
+    let d2 = NaiveDate::from_ymd_opt(2026, 5, 17).unwrap();
+    let with_id = |date, amount, id: &str| NewBankTransaction {
+        transaction_id: Some(id.into()),
+        ..make_tx(company, account, date, amount, "r")
+    };
+    seed_import_with_txs(
+        &pool,
+        company,
+        account,
+        user,
+        HASH_A,
+        vec![
+            with_id(d1, dec!(-32.10), "CARD-1"),
+            with_id(d2, dec!(32.10), "CARD-1"),
+            with_id(d2, dec!(-5.00), "CARD-2"),
+        ],
+    )
+    .await;
+    seed_import_with_txs(
+        &pool,
+        company,
+        other_account,
+        user,
+        HASH_B,
+        vec![NewBankTransaction {
+            transaction_id: Some("CARD-1".into()),
+            ..make_tx(company, other_account, d1, dec!(-1.00), "r")
+        }],
+    )
+    .await;
+
+    let mut conn = pool.acquire().await.unwrap();
+    let ids = vec!["CARD-1".to_string(), "CARD-9".to_string()];
+    let mut got =
+        bank_transactions::existing_transactions_by_ids(&mut conn, company, account, &ids)
+            .await
+            .unwrap();
+    got.sort_by_key(|t| t.booking_date);
+    assert_eq!(
+        got,
+        vec![
+            bank_transactions::ExistingTransaction {
+                transaction_id: "CARD-1".into(),
+                amount: dec!(-32.10),
+                booking_date: d1,
+            },
+            bank_transactions::ExistingTransaction {
+                transaction_id: "CARD-1".into(),
+                amount: dec!(32.10),
+                booking_date: d2,
+            },
+        ]
+    );
+    let none =
+        bank_transactions::existing_transactions_by_ids(&mut conn, company + 1, account, &ids)
+            .await
+            .unwrap();
+    assert!(none.is_empty(), "autre société : rien");
+}
+
+/// Story 39-13 — `existing_transaction_ids`, écrite sur
+/// `existing_transactions_by_ids` : un identifiant au débit et au crédit est
+/// rendu une fois, un identifiant absent ne l'est pas, le même identifiant sur
+/// un autre compte de la société ou dans une autre société (réelle) est exclu.
+/// Test de caractérisation (l'ancienne requête rendait le même ensemble).
+///
+/// Ordre de création voulu : société A (1), son autre compte (1) puis le
+/// compte visé (2), société B (2) et son compte (3). Aucune ligne ne porte
+/// donc (société = id du compte visé, compte = id de la société visée) : une
+/// délégation qui permuterait les deux arguments rendrait l'ensemble vide
+/// (assertion de montage ci-dessous).
+#[sqlx::test(migrations = "./test-schema")]
+async fn existing_transaction_ids_returns_each_id_once_within_company_and_account(pool: MySqlPool) {
+    let company = create_test_company(&pool, "Société A").await;
+    let user = create_test_user(&pool, "user-a", company).await;
+    let other_account = create_test_bank_account(&pool, company, "CH4431999123000889012").await;
+    let account = create_test_bank_account(&pool, company, "CH9300762011623852957").await;
+    let other_company = create_test_company(&pool, "Société B").await;
+    let other_user = create_test_user(&pool, "user-b", other_company).await;
+    let foreign_account =
+        create_test_bank_account(&pool, other_company, "CH9300762011623852957").await;
+    assert_ne!(
+        company, account,
+        "montage : société et compte visés distincts"
+    );
+
+    let d1 = NaiveDate::from_ymd_opt(2026, 5, 10).unwrap();
+    let d2 = NaiveDate::from_ymd_opt(2026, 5, 17).unwrap();
+    let with_id = |company, account, date, amount, id: &str| NewBankTransaction {
+        transaction_id: Some(id.into()),
+        ..make_tx(company, account, date, amount, "r")
+    };
+    seed_import_with_txs(
+        &pool,
+        company,
+        account,
+        user,
+        HASH_A,
+        vec![
+            with_id(company, account, d1, dec!(-32.10), "CARD-1"),
+            with_id(company, account, d2, dec!(32.10), "CARD-1"),
+            with_id(company, account, d2, dec!(-5.00), "CARD-2"),
+        ],
+    )
+    .await;
+    seed_import_with_txs(
+        &pool,
+        company,
+        other_account,
+        user,
+        HASH_B,
+        vec![with_id(company, other_account, d1, dec!(-1.00), "CARD-3")],
+    )
+    .await;
+    seed_import_with_txs(
+        &pool,
+        other_company,
+        foreign_account,
+        other_user,
+        HASH_A,
+        vec![with_id(
+            other_company,
+            foreign_account,
+            d1,
+            dec!(-2.00),
+            "CARD-4",
+        )],
+    )
+    .await;
+
+    let mut conn = pool.acquire().await.unwrap();
+    let ids: Vec<String> = ["CARD-1", "CARD-3", "CARD-4", "CARD-9"]
+        .map(String::from)
+        .to_vec();
+    // Montage, lu par une requête directe (non par la fonction testée) :
+    // aucune ligne ne porte (société = id du compte visé, compte = id de la
+    // société visée), si bien qu'une permutation des deux arguments ne rendrait rien.
+    let swapped: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM bank_transactions WHERE company_id = ? AND bank_account_id = ?",
+    )
+    .bind(account)
+    .bind(company)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(
+        swapped, 0,
+        "montage : (compte, société) permutés ne désignent aucune ligne"
+    );
+
+    let got = bank_transactions::existing_transaction_ids(&mut conn, company, account, &ids)
+        .await
+        .unwrap();
+    assert_eq!(
+        got,
+        std::collections::HashSet::from(["CARD-1".to_string()]),
+        "CARD-1 une fois ; CARD-3 (autre compte), CARD-4 (autre société), CARD-9 (absent) exclus"
+    );
+    let other =
+        bank_transactions::existing_transaction_ids(&mut conn, company, other_account, &ids)
+            .await
+            .unwrap();
+    assert_eq!(
+        other,
+        std::collections::HashSet::from(["CARD-3".to_string()])
+    );
+    let foreign = bank_transactions::existing_transaction_ids(
+        &mut conn,
+        other_company,
+        foreign_account,
+        &ids,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        foreign,
+        std::collections::HashSet::from(["CARD-4".to_string()])
+    );
 }

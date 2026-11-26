@@ -84,6 +84,7 @@ function bank(overrides: Partial<BankAccountSummary>): BankAccountSummary {
 		cardLast4: null,
 		provider: null,
 		paypal: null,
+		wise: null,
 		stripe: null,
 		isPrimary: false,
 		journalAccountId: BANQUE.id,

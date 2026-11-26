@@ -238,6 +238,8 @@ pub fn provider_lines_of_row(row: &StripePayoutRow) -> Vec<ProviderLine> {
         provider_type: Some(category.clone()),
         rank: row.line,
         balance_after: None,
+        counterparty_iban: None,
+        direction: None,
     };
 
     let mut out = Vec::with_capacity(2);
@@ -283,6 +285,8 @@ fn payout_line(payout_id: &str, first: &StripePayoutRow, net: Decimal) -> Provid
         provider_type: Some(PAYOUT_PROVIDER_TYPE.to_string()),
         rank: first.line,
         balance_after: None,
+        counterparty_iban: None,
+        direction: None,
     }
 }
 

@@ -59,7 +59,7 @@
 		selectedBodies,
 		withdrawalAccountCandidates,
 	} from '$lib/features/paypal/paypal-review';
-	import { listRules } from '$lib/features/reconciliation/rules/rules.api';
+	import { ruleLabelsById } from '$lib/features/provider/provider-rules';
 	import type {
 		PaypalAcceptProposal,
 		PaypalDownloadResult,
@@ -110,26 +110,14 @@
 		withdrawalAccountCandidates(withoutForeignCurrency(accounts), ownLedgerIds),
 	);
 
-	/** Lectures propres à PayPal : comptes du plan et libellés des règles (best-effort). */
-	async function loadPaypal() {
-		const [acc, rules] = await Promise.allSettled([fetchAccounts(false), allRules()]);
-		ruleLabels =
-			rules.status === 'fulfilled' ? new Map(rules.value.map((r) => [r.id, r.label])) : new Map();
-		accounts = acc.status === 'fulfilled' ? acc.value : [];
-	}
-
 	/**
-	 * Toutes les règles, page par page (le serveur borne une page à 200) : les libellés des
-	 * propositions « Règle … » au-delà de la première page (revue P1, L9).
+	 * Lectures propres à PayPal : comptes du plan et libellés des règles (best-effort), toutes
+	 * les pages des règles (revue P1, L9 ; lecture commune aux prestataires depuis la 39-11d2).
 	 */
-	async function allRules(): Promise<{ id: number; label: string }[]> {
-		const out: { id: number; label: string }[] = [];
-		for (let page = 1; page <= 50; page++) {
-			const res = await listRules(page, 200);
-			out.push(...res.items);
-			if (res.items.length === 0 || out.length >= res.total) break;
-		}
-		return out;
+	async function loadPaypal() {
+		const [acc, rules] = await Promise.allSettled([fetchAccounts(false), ruleLabelsById()]);
+		ruleLabels = rules.status === 'fulfilled' ? rules.value : new Map();
+		accounts = acc.status === 'fulfilled' ? acc.value : [];
 	}
 
 	function needsAccount(p: PaypalProposal): boolean {

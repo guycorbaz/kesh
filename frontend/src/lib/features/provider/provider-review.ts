@@ -59,8 +59,13 @@ export function selectedInDateOrder<P extends ProviderProposalBase>(
 		.sort((a, b) => a.transaction.date.localeCompare(b.transaction.date) || idOf(a) - idOf(b));
 }
 
-/** La date d'un écart, en forme suisse : celle de sa transaction, sinon de sa première écriture. */
+/**
+ * La date d'un écart, en forme suisse : celle de sa transaction, sinon de sa
+ * première écriture, sinon `details.date` (Story 39-11d2 : l'écart de
+ * continuité Wise, `balance_gap`, n'a ni transaction ni écriture).
+ */
 export function findingDate(f: ProviderFinding): string {
-	const d = f.transaction?.date ?? f.entries?.[0]?.entryDate;
+	const fromDetails = typeof f.details?.date === 'string' ? f.details.date : undefined;
+	const d = f.transaction?.date ?? f.entries?.[0]?.entryDate ?? fromDetails;
 	return d ? formatSwissDate(d) : '';
 }

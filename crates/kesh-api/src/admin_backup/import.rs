@@ -150,17 +150,15 @@ fn invalide(msg: impl Into<String>) -> AppError {
 
 /// Lit une entrée à travers `take(max + 1)` : au-delà de `max` octets,
 /// « entrée … trop grande ». La borne ne dépend pas de la taille que déclare
-/// l'en-tête ZIP, qui est déclarative.
+/// l'en-tête ZIP, qui est déclarative. La lecture bornée elle-même est
+/// partagée avec l'import du zip de Wise ([`crate::zip_read::read_bounded`],
+/// Story 39-11e) ; les messages restent ceux de la sauvegarde.
 fn lire_borne(entry: impl Read, nom: &str, max: u64) -> Result<Vec<u8>, AppError> {
-    let mut buf = Vec::new();
-    entry
-        .take(max.saturating_add(1))
-        .read_to_end(&mut buf)
-        .map_err(|e| invalide(format!("lecture {nom} : {e}")))?;
-    if buf.len() as u64 > max {
-        return Err(invalide(format!("entrée {nom} trop grande")));
+    match crate::zip_read::read_bounded(entry, max) {
+        Ok(Some(buf)) => Ok(buf),
+        Ok(None) => Err(invalide(format!("entrée {nom} trop grande"))),
+        Err(e) => Err(invalide(format!("lecture {nom} : {e}"))),
     }
-    Ok(buf)
 }
 
 /// Parse le conteneur ZIP et vérifie structure, intégrité et cohérence
