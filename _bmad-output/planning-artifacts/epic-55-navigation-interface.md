@@ -28,6 +28,13 @@ story ; le choix est posé au mainteneur (§ *Questions au mainteneur*). Le 2026
 l'utilisateur et de l'UX entrent **sans story neuve** : le chargement sans *Générer* (D16) dans la 55-1a, le style des
 liens (D17) dans la 55-2, qui gagne un balayage mécanique des liens de l'application (§ *Questions au mainteneur*).
 
+**Sept stories au compte depuis le 2026-11-27** (55-1a1, 55-1a2, 55-1b, 55-2, 55-3a, 55-3b, 55-4 ; la 55-1a, `split`, ne
+compte pas). ⚠️ **Dérogation à la borne de six stories** (`CLAUDE.md` § *Numérotation des versions*, « au plus six
+stories ») : découpage demandé par le mainteneur le 2026-11-27, après le développement, pour la revue de code ; une story
+de plus au compte, aucun code ajouté. La 55-1a (taille L) devient la **55-1a1** (l'état dans l'URL, Retour, Suivant, lien
+partagé) et la **55-1a2** (le sélecteur d'exercice et le chargement sans *Générer*), chacune revue à part ; les quatre
+commits de la 55-1a leur sont communs.
+
 **Issues** (ouvertes par l'agent du mainteneur ; numéros à reporter) :
 
 | Point | Type | Priorité | Issue |
@@ -266,14 +273,16 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
 | Clé | Titre | Dépend de | Taille | Fiche |
 |---|---|---|---|---|
 | 55-0 | Kickoff (ce fichier ; pas de fiche) | — | — | — |
-| 55-1a | L'état des Rapports dans l'URL : Retour, Suivant, lien partagé ; le sélecteur d'exercice (D15) ; le chargement sans *Générer* (D16) | base PR 46 | **L** (M avant D15, 2026-11-26 ; cinq modules, à la borne ; D16 n'ajoute aucun module) | `55-1a-etat-des-rapports-dans-l-url.md` |
+| 55-1a | ~~L'état des Rapports dans l'URL ; le sélecteur d'exercice (D15) ; le chargement sans *Générer* (D16)~~ — **découpée le 2026-11-27** (sur demande du mainteneur, après le développement, pour la revue) en 55-1a1 et 55-1a2 ; `split`, ne compte pas | base PR 46 | L (M avant D15) | `55-1a-etat-des-rapports-dans-l-url.md` (historique) |
+| 55-1a1 | L'état des Rapports dans l'URL : Retour, Suivant, lien partagé (D1 à D3, D5 ; AC-1 à AC-11, AC-13 de la mère) | base PR 46 | M | `55-1a1-etat-dans-l-url-et-retour.md` |
+| 55-1a2 | Le sélecteur d'exercice (D15) et le chargement sans *Générer* (D16) (AC-14 à AC-26 de la mère) | 55-1a1 | M | `55-1a2-selecteur-et-chargement-sans-generer.md` |
 | 55-1b | La présentation des rapports groupés dans l'URL (Epic 46) | 55-1a | S | `55-1b-presentation-dans-l-url.md` |
 | 55-2 | Le lien de compte partout : Journaux, Grand livre, TVA, Compte de résultat à plat ; sélecteur d'exercice du Grand livre ; le style des liens dans toute l'application (D17) | 55-1a | M (+ balayage mécanique, D17) | `55-2-lien-de-compte-partout.md` |
 | 55-3a | Les justificatifs d'une écriture dans la réponse du journal et du grand livre (serveur) | base PR 46 ; **backend** (Q1 acceptée) | **M** (XL avant que l'aperçu marqué ne sorte de l'epic, 2026-11-26) | `55-3a-justificatifs-serveur.md` |
 | 55-3b | Ouvrir les justificatifs depuis le Journal (et le Grand livre) | 55-3a, 55-2 | M | `55-3b-justificatifs-ecran.md` |
 | 55-4 | Solde de la dette de l'epic (plafond : **2 issues**) | toutes | S | `55-4-solde-dette-epic.md` |
 
-Ordre : 55-1a → 55-1b → 55-2 → 55-3b → 55-4 ; la 55-3a (serveur, aucun fichier commun avec les autres stories) peut se
+Ordre : 55-1a (55-1a1, puis 55-1a2 pour la revue) → 55-1b → 55-2 → 55-3b → 55-4 ; la 55-3a (serveur, aucun fichier commun avec les autres stories) peut se
 faire en parallèle de la 55-1a ou de la 55-2, avant la 55-3b.
 
 ## Gates
@@ -432,6 +441,15 @@ Versées aux décisions D12 à D14, à l'en-tête (*Migration*, *Backend*), aux 
    `cargo nextest run -p kesh-i18n` et `binary(textes_coherents)` (§ *Dérogation* ; 55-1a, 55-1b, 55-2 R-2, 55-3b R-3,
    55-4). Tranche l'ancienne question *Gardes Rust des textes*.
 5. Les questions tranchées sont retirées ; reste la numérotation.
+
+## Décisions du mainteneur (2026-11-27)
+
+- **2026-11-27 — Décisions de l'Epic 55 acceptées** : plus de bouton *Générer* sur les rapports à période (D16), « à voir
+  à l'usage » — la mesure est **à revoir après essai** ; le sélecteur d'exercice de la démonstration (D15) ; les liens
+  soulignés (D17). Valent confirmation des questions D15 et D16 posées ci-dessous (§ *Questions au mainteneur*), dans le
+  sens des défauts retenus par les fiches.
+- **2026-11-27 — La 55-1a est découpée** en 55-1a1 et 55-1a2, après le développement, pour que chacune passe sa propre
+  revue de code ; le code ne change pas ; dérogation à la borne de six stories (en-tête, *Taille*).
 
 ## Décisions de l'utilisateur et de l'UX (2026-11-26, soir)
 

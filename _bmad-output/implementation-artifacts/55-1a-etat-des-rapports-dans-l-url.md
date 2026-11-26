@@ -1,6 +1,16 @@
 # Story 55-1a : l'état des Rapports dans l'URL — Retour, Suivant, lien partagé
 
-Status: review
+Status: split
+
+> **2026-11-27 — Découpée sur demande du mainteneur, après le développement** (`CLAUDE.md` § *Règle de splitting
+> préventif*), pour que chaque partie passe sa propre revue de code, plus courte. Le code ne change pas ; les quatre
+> commits (`5d98bc9ab`, `e33426630`, `946347e16`, `5645d6890`) sont communs aux deux filles :
+> - **55-1a1** — `55-1a1-etat-dans-l-url-et-retour.md` : l'état des Rapports dans l'URL, Retour, Suivant, lien partagé
+>   (D1 à D3, D5 ; AC-1 à AC-11, AC-13) ;
+> - **55-1a2** — `55-1a2-selecteur-et-chargement-sans-generer.md` : le sélecteur d'exercice et le chargement sans
+>   *Générer* (D15, D16 ; AC-14 à AC-26).
+>
+> Le contenu ci-dessous reste tel quel, comme historique et comme référence des deux filles.
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D1 à D3 (réponse de l'utilisateur du 2026-11-25, AC-13), D5 (D4 : 55-1b). Issue : #1604 (`bug`, P3, point b).
 Release : la prochaine planifiée après la 0.20.0 (numéro fixé par le mainteneur). **Frontend seulement, aucune migration.**

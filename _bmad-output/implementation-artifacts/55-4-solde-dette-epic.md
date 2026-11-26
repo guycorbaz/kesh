@@ -80,7 +80,7 @@ afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre de
 - [x] **T0** — Liste des candidates (AC-1). **Prérequis** : le mainteneur ou son agent a ouvert les issues des sections
       *Issues à ouvrir* et transmis leurs numéros ; une candidate sans numéro peut être retenue, son numéro reporté avant T1.
 - [x] **T1** — Corrections et preuves (AC-2).
-- [ ] **T2** — *(joué par le coordinateur en fin d'epic)* Gates de fin d'epic (fichier d'epic, § *Gates*, *Dérogation*, Q6 tranchée par le mainteneur le
+- [x] **T2** — *(joué par le coordinateur en fin d'epic, 2026-11-27, à `ff0c56a40` : voir le Change Log)* Gates de fin d'epic (fichier d'epic, § *Gates*, *Dérogation*, Q6 tranchée par le mainteneur le
       2026-11-25), **après le dernier commit de code** des corrections, **avant la PR vers `main`** :
       `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, les quatre commandes
       frontend (`npm run check`, `lint-i18n-ownership`, `test:unit`, `build`), `scripts/gate-ci.sh kesh_ci_s55_4
@@ -270,3 +270,13 @@ L13, L14 ; L2 et L8 sont corrigées ici (pas d'issue). Décompte des issues ouve
 - 2026-11-26 — **T1 et T3** : L8 corrigée (rouge avant, vert après), L2 couverte (mutation tuée) ; gates de la story verts
   (fmt, clippy, front complet, E2E partiel 3 specs, 33 passés) ; statut `review`, T2 laissé au coordinateur (fin d'epic).
   Correction non revue, revue à la demande du mainteneur.
+- 2026-11-27 — **T2, gates de fin d'epic** (coordinateur), à la tête `ff0c56a40` (dernier commit de code `647b5b039`,
+  dont fmt, clippy et le front complet sont verts à la 55-4) :
+  - **E2E complet** (`LANG=fr_CH.UTF-8`, `kesh-gate-logs/s55-dev/fin/e2e-complet/e2e.log`, 48,2 min) : **542 passés,
+    7 échecs, 20 ignorés** ; les sept échecs sont exactement ceux de la KF-029 (#97) : `mode-expert.spec.ts:26`, `:41`,
+    `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`. `opening-balances.spec.ts:156` passé.
+  - **`scripts/gate-ci.sh kesh_ci_s55_4`** sur une copie `git archive` de `ff0c56a40`, cible
+    `kesh-targets/gate-ci-e55` (`kesh-gate-logs/s55-dev/fin/gate-ci-1.log`, 5467 s) : **6832 passés, 0 échec, 21
+    ignorés**, code 0. Joués l'un après l'autre (disque : la cible neuve de gate-ci n'aurait pas tenu au-dessus du
+    plancher de 40 Go avec celle de la story).
+  - Journaux sous `kesh-gate-logs/s55-dev/fin/` (et non `s55-4/`, comme le reste de l'epic).
