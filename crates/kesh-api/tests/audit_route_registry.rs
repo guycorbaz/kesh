@@ -1306,7 +1306,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     assert_eq!(
         // 40-7b et 38-11c2, unies par la 40-7c : 164 → 165 ; 40-7c : 166 ; 39-11b,
         // unie à l'intégration des Epics 39 et 40 : 167 ; 39-11c, de même : 168 ;
-        // 40-8b, unie par la propagation d'epic/40-stripe : 169.
+        // 40-8b, unie par la propagation d'epic/40-stripe : 169 ; 46-5a (Epic 46) : 170.
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
         170,
         "le registre est plus large que l'inventaire, et c'est voulu"
