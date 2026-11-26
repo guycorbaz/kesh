@@ -463,7 +463,10 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
 // **126 → 128**, confirmés par la garde (`kesh-gate-logs/s40-m2d/compteurs-3.log`).
 // **149 → 151** (Epic 46 reposé sur main à a914c4823, branche pr/46-rapports-groupes-v2) : `toggleLabel`
 // (46-2) et `fxText` (46-6b) ; `conforme` **128 → 130**, confirmés par la garde (`kesh-gate-logs/s46-pr/front-vitest-a.log`).
-const CANDIDATES_ATTENDUES = 151;
+// **151 → 152** (Story 55-1a) : `keepDisplay` (`routes/(app)/reports/+page.svelte`, une constante
+// booléenne de `generate()` que le nom fait relever, aucun texte) ; `conforme` **130 → 131**, relevés par
+// la garde (`kesh-gate-logs/s55-dev/55-1a/front-1/front-test-unit.log`), non additionnés.
+const CANDIDATES_ATTENDUES = 152;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -980,7 +983,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 130 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 131 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

@@ -12,19 +12,22 @@
 	import {
 		formatCurrencyFigure,
 		formatReportAmount,
-		formatSwissDate,
 		isReportEmpty,
 		ledgerHref,
 		showsRetainedEarningsLine,
 	} from './reports.api';
+	import ReportPeriodHeading from './ReportPeriodHeading.svelte';
+	import type { ExerciceBornes } from './reports-url';
 	import type { AccountBalance, BalanceSheetDto, GroupedRow } from './reports.types';
 
 	interface Props {
 		dto: BalanceSheetDto;
 		/** Story 46-2 — clic sur l'accordéon d'un groupe (vue groupée seulement). */
 		onToggleGroup?: (row: GroupedRow) => void;
+		/** Story 55-1a (AC-17) — les exercices de la société, pour l'en-tête de la période. */
+		fiscalYears?: readonly ExerciceBornes[];
 	}
-	let { dto, onToggleGroup = () => {} }: Props = $props();
+	let { dto, onToggleGroup = () => {}, fiscalYears = [] }: Props = $props();
 
 	// Story 46-2 — vue groupée si la réponse en porte les lignes.
 	let grouped = $derived(dto.groupedRows && dto.grouping ? dto.groupedRows : null);
@@ -124,14 +127,14 @@
 </script>
 
 <section class="space-y-4">
-	<header class="text-sm text-gray-600">
-		<strong>{i18nMsg('reports-filter-period', 'Période')}:</strong>
-		{formatSwissDate(dto.period.startDate)} — {formatSwissDate(dto.period.endDate)}
+	<!-- Story 55-1a (AC-17) — la période réelle de la réponse, et l'exercice dont elle est l'entier ou une partie. -->
+	<header>
+		<ReportPeriodHeading from={dto.period.startDate} to={dto.period.endDate} {fiscalYears} />
 	</header>
 
 	{#if empty}
 		<p class="rounded bg-blue-50 p-4 text-blue-900" role="status">
-			{i18nMsg('reports-error-no-entries-in-period', 'Aucune écriture dans la période sélectionnée.')}
+			{i18nMsg('reports-error-no-entries-in-period', 'Aucune écriture sur cette période.')}
 		</p>
 	{:else}
 		<div class="grid gap-6 lg:grid-cols-2">

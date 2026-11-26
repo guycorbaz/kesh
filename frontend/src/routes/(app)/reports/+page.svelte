@@ -4,12 +4,13 @@
 	// Code review Pass 1 patches : P5 (error handler isApiError + Fluent), P6 (ARIA tabs),
 	// P17 (reset dates on FY change), P19 (loading indicator), P20 (race guard).
 
-	import { onMount, untrack } from 'svelte';
+	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
+	import { estDateStockable } from '$lib/shared/utils/date-filtre';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import ReportSelector from '$lib/features/reports/ReportSelector.svelte';
 	import BalanceSheetView from '$lib/features/reports/BalanceSheetView.svelte';
@@ -47,6 +48,15 @@
 		getAgedReceivables,
 		downloadAgedReceivables,
 	} from '$lib/features/reports/reports.api';
+	import {
+		buildReportSearch,
+		isClassicTab,
+		parseReportUrl,
+		resolveClassicPeriod,
+		type ClassicTab,
+		type TabId,
+	} from '$lib/features/reports/reports-url';
+	import { etatDuMenu, type EtatMenu } from '$lib/features/reports/fiscal-year-menu';
 	import ProjectExpensesView from '$lib/features/reports/ProjectExpensesView.svelte';
 	import ProjectReturnView from '$lib/features/reports/ProjectReturnView.svelte';
 	import { listProjects } from '$lib/features/projects/projects.api';
@@ -77,13 +87,8 @@
 	} from '$lib/features/reports/reports.types';
 	import type { FiscalYearResponse } from '$lib/features/fiscal-years/fiscal-years.types';
 
-	/** Onglets = rapports comptables classiques + rapports par projet (19-6a/b) + balance âgée (21-7). */
-	type TabId =
-		| ReportType
-		| 'project-expenses'
-		| 'project-return'
-		| 'aged-receivables'
-		| 'general-ledger';
+	// Onglets = rapports comptables classiques + rapports par projet (19-6a/b) + balance âgée (21-7) +
+	// grand livre (24-1) : `TabId` et la liste des identifiants vivent dans `reports-url.ts` (55-1a).
 
 	interface PageData {
 		fiscalYears: FiscalYearResponse[];
@@ -94,9 +99,18 @@
 	}
 	let { data }: { data: PageData } = $props();
 
-	let selectedFiscalYearId = $state<number | null>(data.fiscalYears[0]?.id ?? null);
-	let periodStart = $state('');
-	let periodEnd = $state('');
+	// Story 55-1a (D15, AC-15) — les dates sont toujours remplies : à l'ouverture, les bornes du premier
+	// exercice ; l'exercice (`selectedFiscalYearId`) est DÉDUIT des dates (`etatDuMenu`), et garde sa
+	// dernière valeur quand elles sortent d'un exercice (« Plusieurs », « Hors exercice »).
+	const premierExercice = untrack(() => data.fiscalYears[0] ?? null);
+	let selectedFiscalYearId = $state<number | null>(premierExercice?.id ?? null);
+	let periodStart = $state(premierExercice?.startDate ?? '');
+	let periodEnd = $state(premierExercice?.endDate ?? '');
+	let menu = $state<EtatMenu>(
+		premierExercice ? { kind: 'fy', id: premierExercice.id, whole: true } : { kind: 'outside' },
+	);
+	// AC-20 — début après fin : rien n'est chargé, un message le dit sous les dates.
+	let periodInvalid = $state(false);
 	let activeTab = $state<TabId>('balance-sheet');
 	let loading = $state(false);
 	let errorMsg = $state<string | null>(null);
@@ -162,23 +176,36 @@
 
 	// P20 — race guard : sequence counter pattern (cf. ReconciliationProposals).
 	let genSeq = 0;
-	// L'onglet dont la génération est en vol (rapports classiques), `null` sinon.
-	let inFlightTab: TabId | null = null;
+	// L'onglet dont une demande est en vol, `null` sinon (Story 55-1a : tous les onglets).
+	let inFlightTab = $state<TabId | null>(null);
+
+	// Story 55-1a (AC-13, point 4) — les clés d'un onglet : la clé AFFICHÉE est la recherche canonique
+	// de la réponse qu'il affiche ; la clé EN VOL, celle de la demande partie. Une clé affichée égale
+	// à la clé des champs : rien à demander. Les rapports par compte analytique n'en ont pas (C-55-1-7).
+	let displayedKeys = $state<Partial<Record<TabId, string>>>({});
+	let inFlightKey: string | null = null;
+	// La requête de la réponse affichée de chaque rapport : l'export la reprend (AC-25), la règle de la
+	// 46-2 la redemande (une présentation changée ne change pas la période du rapport affiché).
+	let displayedClassic: Partial<Record<ClassicTab, ReportQuery>> = {};
+	let inFlightClassic: ReportQuery | null = null;
+	let displayedLedger: LedgerQuery | null = null;
+	let displayedProject: Partial<Record<ProjectReportType, ProjectReportQuery>> = {};
 
 	/**
-	 * Périme toute génération en vol et rabaisse ses deux drapeaux (`loading`,
-	 * `refreshing`) ; rend le numéro de la génération suivante.
+	 * Périme toute demande en vol, de quelque onglet qu'elle soit, et rabaisse ses drapeaux (`loading`,
+	 * `refreshing`) ; rend le numéro de la demande suivante.
 	 *
-	 * ⚠️ **Le seul endroit qui incrémente `genSeq`** (Story 46-2, revue P1 M1) :
-	 * une réponse périmée est jetée par `mySeq !== genSeq`, donc son `finally` ne
-	 * rabaisse plus rien — c'est à celui qui la périme de le faire. Avant cette
-	 * fonction, trois chemins (grand livre, balance âgée, projet) et l'effet de
-	 * changement de projet incrémentaient `genSeq` sans rabaisser `refreshing`,
-	 * qui restait levé (export grisé, `aria-busy`) jusqu'au « Générer » suivant.
+	 * ⚠️ **Le seul endroit qui incrémente `genSeq`** (Story 46-2, revue P1 M1) : une réponse périmée est
+	 * jetée par `mySeq !== genSeq`, donc son `finally` ne rabaisse plus rien — c'est à celui qui la
+	 * périme de le faire. Story 55-1a (AC-21, R-16) : c'est aussi ce qui fait que **la dernière demande
+	 * l'emporte** — aucune annulation réseau (`api-client.ts` n'en propose pas), la réponse d'une demande
+	 * plus ancienne que la dernière est ignorée, sans erreur ni message.
 	 */
 	function invalidateInFlight(): number {
 		genSeq++;
 		inFlightTab = null;
+		inFlightKey = null;
+		inFlightClassic = null;
 		loading = false;
 		refreshing = false;
 		return genSeq;
@@ -250,8 +277,12 @@
 		// redemander, sans quoi les contrôles diraient une vue que l'écran
 		// n'affiche pas. Un chargement complet reste un chargement complet.
 		const loadingThis = loading && inFlightTab === report;
-		if (displayed || loadingThis) {
-			void generate({ keepDisplay: displayed !== null && !loadingThis });
+		// Story 55-1a — la redemande porte sur la période du rapport affiché (ou de la demande en vol),
+		// non sur des champs modifiés depuis : seule la présentation change.
+		if (loadingThis) {
+			void generate({ keepDisplay: false, classicQuery: inFlightClassic ?? undefined });
+		} else if (displayed) {
+			void generate({ keepDisplay: true, classicQuery: displayedClassic[report] });
 		}
 	}
 
@@ -278,7 +309,7 @@
 		if (!isGroupedReport(activeTab)) return;
 		const displayed = displayedReport(activeTab);
 		if (displayed && !loading && !displayedMatchesView(activeTab)) {
-			void generate({ keepDisplay: true });
+			void generate({ keepDisplay: true, classicQuery: displayedClassic[activeTab] });
 		}
 	}
 
@@ -324,28 +355,40 @@
 		}
 	}
 
-	// P17 — reset period dates when fiscal year changes (avoid silent cross-FY 400).
-	let lastFyId: number | null = selectedFiscalYearId;
-	$effect(() => {
-		if (selectedFiscalYearId !== lastFyId) {
-			periodStart = '';
-			periodEnd = '';
-			balanceSheet = null;
-			incomeStatement = null;
-			trialBalance = null;
-			journalReport = null;
-			vatReport = null;
-			projectExpenses = null;
-			projectReturn = null;
-			errorMsg = null;
-			// Story 19-6a Pass 3 (Opus, LOW) — invalide aussi les générations en vol
-			// sur l'axe exercice (sinon un résultat FY-2026 en vol pourrait repeupler
-			// la vue après un switch vers FY-2027 → mismatch affichage/export). Durcit
-			// du même coup la même race préexistante sur les 5 rapports classiques.
-			invalidateInFlight();
-			lastFyId = selectedFiscalYearId;
+	// Story 55-1a (D15, R-8, R-11) — P17 (l'effet qui vidait dates et rapports au changement d'exercice)
+	// est RETIRÉ : choisir un exercice se fait dans le gestionnaire du menu (`selectFiscalYear`), et
+	// l'exercice suit les dates. Quand il change, seuls les rapports par compte analytique, qui lisent le
+	// même exercice et n'ont pas de clé, sont vidés ; les rapports classiques restent (chacun sa clé).
+
+	/** L'exercice a changé (menu, adresse, date saisie) : rapports par compte analytique vidés. */
+	function fiscalYearChanged(): void {
+		projectExpenses = null;
+		projectReturn = null;
+		displayedProject = {};
+		if (inFlightTab === 'project-expenses' || inFlightTab === 'project-return') invalidateInFlight();
+	}
+
+	/** Remet l'état du menu d'accord avec les dates ; l'exercice suit (AC-15). */
+	function syncMenu(): void {
+		menu = etatDuMenu(periodStart, periodEnd, data.fiscalYears, menu);
+		if (menu.kind === 'fy' && menu.id !== selectedFiscalYearId) {
+			selectedFiscalYearId = menu.id;
+			fiscalYearChanged();
 		}
-	});
+	}
+
+	/** Pose la période des onglets classiques (et des rapports par compte analytique). */
+	function setPeriod(from: string, to: string): void {
+		periodStart = from;
+		periodEnd = to;
+		periodInvalid = false;
+		syncMenu();
+	}
+
+	/** Vrai si la période des champs est demandable : deux dates complètes, début au plus tard à la fin. */
+	function periodValid(): boolean {
+		return estDateStockable(periodStart) && estDateStockable(periodEnd) && periodStart <= periodEnd;
+	}
 
 	// Story 19-6a code-review Pass 1 (MEDIUM) + Pass 2 (race) — invalide le rapport
 	// projet affiché dès que le projet ou le mode change (sinon la vue montre le
@@ -395,7 +438,8 @@
 	/** Construit la query du rapport projet actif (null si incomplet). */
 	function projectQuery(): ProjectReportQuery | null {
 		if (selectedProjectId === null) return null;
-		if (projectMode === 'fiscal_year' && selectedFiscalYearId === null) return null;
+		// Story 55-1a (AC-15) — en mode exercice, la période doit tenir dans un seul exercice.
+		if (projectMode === 'fiscal_year' && (menu.kind !== 'fy' || !periodValid())) return null;
 		return {
 			projectId: selectedProjectId,
 			mode: projectMode,
@@ -416,27 +460,91 @@
 		};
 	}
 
+	/** La requête d'un onglet classique d'après les champs, `null` si la période n'est pas demandable. */
+	function classicQueryOfFields(): ReportQuery | null {
+		if (menu.kind !== 'fy' || !periodValid()) return null;
+		return { fiscalYearId: menu.id, periodStart, periodEnd };
+	}
+
+	/** La clé (recherche canonique) d'un rapport classique pour une requête. */
+	function classicKey(tab: ClassicTab, q: ReportQuery): string {
+		return buildReportSearch({ tab, fy: q.fiscalYearId, from: q.periodStart, to: q.periodEnd });
+	}
+
+	/** La clé du grand livre pour une requête. */
+	function ledgerKey(q: LedgerQuery): string {
+		return buildReportSearch({
+			tab: 'general-ledger',
+			accountId: q.accountIds?.[0] ?? null,
+			from: q.from,
+			to: q.to,
+			includeZero: q.includeZero,
+		});
+	}
+
 	/**
-	 * @param options.keepDisplay — Story 46-2 : redemande après un changement de
-	 *   présentation ; l'affichage précédent reste jusqu'à la réponse (AC-3).
+	 * La clé du rapport que les champs d'un onglet demandent, `null` s'il n'est pas demandable
+	 * (période invalide ou hors d'un exercice, grand livre sans dates, rapports par compte analytique).
 	 */
-	async function generate(options: { keepDisplay?: boolean } = {}): Promise<void> {
+	function fieldsKey(tab: TabId): string | null {
+		if (isClassicTab(tab)) {
+			const q = classicQueryOfFields();
+			return q ? classicKey(tab, q) : null;
+		}
+		if (tab === 'general-ledger') {
+			const q = ledgerQuery();
+			return q ? ledgerKey(q) : null;
+		}
+		if (tab === 'aged-receivables') return buildReportSearch({ tab });
+		return null;
+	}
+
+	/**
+	 * L'adresse qu'un geste sur un onglet écrit : la clé des champs ; à défaut, l'onglet et ses dates
+	 * (« Plusieurs », « Hors exercice »). Le grand livre, qui ne se charge pas encore seul (55-2),
+	 * écrit la clé de son rapport affiché, ou son onglet seul.
+	 */
+	function urlForTab(tab: TabId): string {
+		if (tab === 'general-ledger') return displayedKeys[tab] ?? buildReportSearch({ tab });
+		return fieldsKey(tab) ?? buildReportSearch({ tab, from: periodStart, to: periodEnd });
+	}
+
+	/**
+	 * Une demande pour l'onglet actif. La dernière demande l'emporte (AC-21) : elle périme celle qui
+	 * est en vol, de quelque onglet qu'elle soit. Elle n'écrit jamais l'URL (ce sont les gestionnaires
+	 * des gestes, `writeUrl`) : elle sert aussi la présentation (46-2) et l'application d'une adresse.
+	 *
+	 * @param options.keepDisplay — Story 46-2 : l'affichage précédent reste jusqu'à la réponse, grisé
+	 *   (AC-3 ; 55-1a AC-24). Par défaut : vrai si l'onglet affiche déjà un rapport.
+	 * @param options.classicQuery — Story 55-1a : la requête d'un rapport classique ; par défaut, les champs.
+	 */
+	async function generate(
+		options: { keepDisplay?: boolean; classicQuery?: ReportQuery } = {},
+	): Promise<void> {
 		const myTab = activeTab;
 		// Story 24-1 — grand livre : période libre, sans exercice.
 		if (isLedgerTab) {
 			const q = ledgerQuery();
 			if (!q) return;
 			const mySeq = invalidateInFlight();
+			inFlightTab = myTab;
+			inFlightKey = ledgerKey(q);
 			loading = true;
 			errorMsg = null;
 			try {
 				const result = await getGeneralLedger(q);
-				if (mySeq === genSeq) generalLedger = result;
+				if (mySeq === genSeq) {
+					generalLedger = result;
+					displayedLedger = q;
+					displayedKeys[myTab] = ledgerKey(q);
+				}
 			} catch (e) {
 				if (mySeq === genSeq) errorMsg = formatError(e);
 			} finally {
 				if (mySeq === genSeq) {
 					loading = false;
+					inFlightTab = null;
+					inFlightKey = null;
 					afterGeneration(myTab);
 				}
 			}
@@ -445,16 +553,23 @@
 		// Story 21-7 — balance âgée : pas de FY/période (arrêté à aujourd'hui).
 		if (isAgedTab) {
 			const mySeq = invalidateInFlight();
+			inFlightTab = myTab;
+			inFlightKey = buildReportSearch({ tab: myTab });
 			loading = true;
 			errorMsg = null;
 			try {
 				const result = await getAgedReceivables();
-				if (mySeq === genSeq) agedReceivables = result;
+				if (mySeq === genSeq) {
+					agedReceivables = result;
+					displayedKeys[myTab] = buildReportSearch({ tab: myTab });
+				}
 			} catch (e) {
 				if (mySeq === genSeq) errorMsg = formatError(e);
 			} finally {
 				if (mySeq === genSeq) {
 					loading = false;
+					inFlightTab = null;
+					inFlightKey = null;
 					afterGeneration(myTab);
 				}
 			}
@@ -465,44 +580,57 @@
 			const q = projectQuery();
 			if (!q) return;
 			const mySeq = invalidateInFlight();
+			inFlightTab = myTab;
 			loading = true;
 			errorMsg = null;
 			try {
 				if (activeTab === 'project-expenses') {
 					const result = await getProjectExpenses(q);
-					if (mySeq === genSeq) projectExpenses = result;
+					if (mySeq === genSeq) {
+						projectExpenses = result;
+						displayedProject['project-expenses'] = q;
+					}
 				} else {
 					const result = await getProjectReturn(q);
-					if (mySeq === genSeq) projectReturn = result;
+					if (mySeq === genSeq) {
+						projectReturn = result;
+						displayedProject['project-return'] = q;
+					}
 				}
 			} catch (e) {
 				if (mySeq === genSeq) errorMsg = formatError(e);
 			} finally {
 				if (mySeq === genSeq) {
 					loading = false;
+					inFlightTab = null;
 					afterGeneration(myTab);
 				}
 			}
 			return;
 		}
-		if (selectedFiscalYearId === null) return;
+		if (!isClassicTab(myTab)) return;
+		const query = options.classicQuery ?? classicQueryOfFields();
+		if (!query) return;
+		const keepDisplay = options.keepDisplay ?? isDisplayed(myTab);
 		const mySeq = invalidateInFlight();
-		inFlightTab = activeTab;
-		if (options.keepDisplay) refreshing = true;
+		inFlightTab = myTab;
+		inFlightKey = classicKey(myTab, query);
+		inFlightClassic = query;
+		if (keepDisplay) refreshing = true;
 		else loading = true;
 		errorMsg = null;
-		const query = {
-			fiscalYearId: selectedFiscalYearId,
-			periodStart: periodStart || undefined,
-			periodEnd: periodEnd || undefined,
+		const accept = () => {
+			displayedKeys[myTab] = classicKey(myTab, query);
+			displayedClassic[myTab] = query;
 		};
 		try {
-			switch (activeTab) {
+			switch (myTab) {
 				case 'balance-sheet': {
 					const params = groupingParamsOf(groupingViews['balance-sheet']);
 					const result = await getBalanceSheet(query, params);
 					if (mySeq === genSeq) {
 						balanceSheet = result;
+						accept();
 						acceptGrouped('balance-sheet', params, result);
 					}
 					break;
@@ -512,6 +640,7 @@
 					const result = await getIncomeStatement(query, params);
 					if (mySeq === genSeq) {
 						incomeStatement = result;
+						accept();
 						acceptGrouped('income-statement', params, result);
 					}
 					break;
@@ -521,18 +650,25 @@
 					const result = await getTrialBalance(query, params);
 					if (mySeq === genSeq) {
 						trialBalance = result;
+						accept();
 						acceptGrouped('trial-balance', params, result);
 					}
 					break;
 				}
 				case 'journals': {
 					const result = await getJournalReport(query);
-					if (mySeq === genSeq) journalReport = result;
+					if (mySeq === genSeq) {
+						journalReport = result;
+						accept();
+					}
 					break;
 				}
 				case 'vat': {
 					const result = await getVatReport(query);
-					if (mySeq === genSeq) vatReport = result;
+					if (mySeq === genSeq) {
+						vatReport = result;
+						accept();
+					}
 					break;
 				}
 			}
@@ -543,9 +679,54 @@
 				loading = false;
 				refreshing = false;
 				inFlightTab = null;
+				inFlightKey = null;
+				inFlightClassic = null;
 				afterGeneration(myTab);
 			}
 		}
+	}
+
+	/** L'onglet affiche-t-il un rapport (en mémoire) ? */
+	function isDisplayed(tab: TabId): boolean {
+		switch (tab) {
+			case 'balance-sheet':
+				return balanceSheet !== null;
+			case 'income-statement':
+				return incomeStatement !== null;
+			case 'trial-balance':
+				return trialBalance !== null;
+			case 'journals':
+				return journalReport !== null;
+			case 'vat':
+				return vatReport !== null;
+			case 'general-ledger':
+				return generalLedger !== null;
+			case 'aged-receivables':
+				return agedReceivables !== null;
+			case 'project-expenses':
+				return projectExpenses !== null;
+			case 'project-return':
+				return projectReturn !== null;
+		}
+	}
+
+	/**
+	 * Story 55-1a (D16, AC-20, AC-22) — montre le rapport de l'onglet actif POUR LES CHAMPS : rien si
+	 * les champs ne le demandent pas, ou si c'est déjà la demande en vol ; repris de la mémoire si c'est
+	 * le rapport affiché — et une demande de CET onglet en vol avec une autre clé est alors périmée
+	 * (l'écran garde le rapport des champs, R-1, R-17) ; demandé sinon. Rend vrai si une requête est partie.
+	 */
+	function loadActiveIfNeeded(): boolean {
+		const tab = activeTab;
+		const key = fieldsKey(tab);
+		if (key === null) return false;
+		if (inFlightTab === tab && inFlightKey === key) return false;
+		if (displayedKeys[tab] === key) {
+			if (inFlightTab === tab) invalidateInFlight();
+			return false;
+		}
+		void generate();
+		return true;
 	}
 
 	// Story 9-2a — Helpers export PDF/CSV.
@@ -572,13 +753,23 @@
 		}
 	}
 
+	// Story 55-1a (AC-25, R-20) — les exports portent sur le rapport AFFICHÉ (sa requête), et sont
+	// désactivés pendant sa demande et tant que les champs diffèrent de lui : un clic sur un export après
+	// des dates tapées (qui fait quitter les dates, donc recharge) n'exporte jamais l'ancienne période.
+	const activeBusy = $derived((loading || refreshing) && inFlightTab === activeTab);
+	// AC-24 — un rechargement (affichage gardé) de l'onglet actif : le rapport est grisé.
+	const reloadingActive = $derived(refreshing && inFlightTab === activeTab);
+	// AC-26 — « Plusieurs » ou « Hors exercice » sur un onglet à un exercice : rapport retiré de l'écran.
+	const hiddenByMenu = $derived(
+		isClassicTab(activeTab) && data.fiscalYears.length > 0 && menu.kind !== 'fy',
+	);
 	let canExport = $derived(
-		!loading &&
-			!refreshing &&
+		!activeBusy &&
 			!exporting &&
-			selectedFiscalYearId !== null &&
-			data.fiscalYears.length > 0 &&
-			activeReportPeriod() !== null,
+			isClassicTab(activeTab) &&
+			activeReportPeriod() !== null &&
+			displayedKeys[activeTab] !== undefined &&
+			displayedKeys[activeTab] === fieldsKey(activeTab),
 	);
 
 	/**
@@ -601,7 +792,8 @@
 		if (exporting) return;
 		// Story 24-1 — branche grand livre (query from/to, pas d'exercice).
 		if (isLedgerTab) {
-			const q = ledgerQuery();
+			// Story 55-1a (AC-25) — la requête du rapport affiché, non les champs.
+			const q = displayedLedger;
 			if (!q || generalLedger === null) return;
 			exporting = true;
 			errorMsg = null;
@@ -624,7 +816,8 @@
 		}
 		// Story 19-6a/b — branche projet.
 		if (isProjectTab) {
-			const q = projectQuery();
+			// Story 55-1a (AC-25, R-10) — la requête du rapport affiché, non les champs.
+			const q = displayedProject[activeTab as ProjectReportType] ?? null;
 			const hasReport =
 				activeTab === 'project-expenses' ? projectExpenses !== null : projectReturn !== null;
 			if (!q || !hasReport) return;
@@ -660,17 +853,15 @@
 			}
 			return;
 		}
-		if (!canExport || selectedFiscalYearId === null) return;
+		if (!canExport || !isClassicTab(activeTab)) return;
 		const period = activeReportPeriod();
-		if (!period) return;
+		// Story 55-1a (AC-25) — la requête du rapport affiché, non les champs.
+		const displayedQuery = displayedClassic[activeTab];
+		if (!period || !displayedQuery) return;
 		exporting = true;
 		errorMsg = null;
 		try {
-			const query: ReportQuery | JournalReportQuery = {
-				fiscalYearId: selectedFiscalYearId,
-				periodStart: periodStart || undefined,
-				periodEnd: periodEnd || undefined,
-			};
+			const query: ReportQuery | JournalReportQuery = { ...displayedQuery };
 			if (activeTab === 'journals') {
 				// Aucun filtre journal exposé v0.1 — laisse undefined.
 			}
@@ -752,48 +943,78 @@
 		{ id: 'general-ledger', labelKey: 'reports-ledger-tab', fallback: 'Grand livre' },
 	];
 
-	// Story 21-7 (D-7c) — synchro URL de l'onglet. Lecture ONE-SHOT au montage
-	// (jamais un $effect réactif qui re-lit page.url → boucle/double-écriture) ;
-	// écriture en replaceState au changement d'onglet.
-	onMount(() => {
-		const raw = page.url.searchParams.get('tab');
-		if (raw && tabs.some((t) => t.id === raw)) {
-			activeTab = raw as TabId;
-		}
-	});
+	// =====================================================================================
+	// Story 55-1a (D1 à D5) — l'URL décrit, pour l'onglet affiché, le rapport demandé.
+	//
+	// Deux sens, jamais mêlés : la page ÉCRIT l'URL à ses propres gestes (`writeUrl`, après avoir
+	// changé son état), et enregistre la recherche écrite comme « déjà traitée » ; elle APPLIQUE
+	// l'URL (`applyUrl`) seulement quand `page.url` porte une recherche qu'elle n'a pas écrite :
+	// chargement, Retour, Suivant, lien (de compte ou d'ailleurs). Remplace l'`onMount` de la 21-7 (qui
+	// ne lisait `?tab=` qu'une fois) et l'effet du lien du grand livre de la 24-1 (qui n'agissait que pour
+	// le grand livre : *Retour* changeait l'adresse sans changer l'écran).
+	// =====================================================================================
+
+	/** La dernière recherche écrite ou appliquée par la page ; jamais consommée. */
+	let lastHandledKey: string | null = null;
 
 	/**
-	 * Story 24-1 (AC11) — arrivée par un lien du bilan ou de la balance.
-	 *
-	 * ⚠️ **Un `onMount` ne suffit PAS ici, et l'échec est silencieux.** Ces liens
-	 * pointent vers `/reports`, donc quand on les clique **depuis la page des
-	 * rapports elle-même** — le cas normal : on regarde un bilan, on veut le
-	 * détail d'une ligne — SvelteKit change l'URL sans remonter le composant.
-	 * `onMount` ne rejoue pas, et l'extrait reste vide sur un onglet pourtant
-	 * sélectionné. Rien ne rougit : la page s'affiche, elle est simplement muette.
-	 *
-	 * D'où un effet réactif, gardé par la **clé du lien** : il n'agit qu'une fois
-	 * par URL distincte. `selectTab` n'écrit que `?tab=…` — sans `from`/`to` —,
-	 * donc un changement d'onglet à la main ne déclenche jamais de génération.
+	 * Écrit l'URL d'un geste : `replace` faux empile une entrée d'historique (clic sur un onglet), vrai la
+	 * remplace (chargement, flèches, normalisation). Aucun `goto` si l'adresse est déjà celle-là.
 	 */
-	let lastLedgerDeepLink: string | null = null;
+	function writeUrl(search: string, replace: boolean): void {
+		lastHandledKey = search;
+		if (page.url.search.replace(/^\?/, '') === search) return;
+		void goto(`?${search}`, { replaceState: replace, keepFocus: true, noScroll: true });
+	}
+
+	/**
+	 * Applique une adresse que la page n'a pas écrite : l'onglet ; les champs de cet onglet (une URL
+	 * incomplète n'en modifie aucun) ; puis le rapport des champs, repris de la mémoire ou demandé
+	 * (`loadActiveIfNeeded`) ; enfin, l'adresse normalisée (D5 : valeurs invalides retirées, sans entrée
+	 * d'historique). Les rapports par compte analytique ne sont jamais touchés (C-55-1-7).
+	 */
+	function applyUrl(sp: URLSearchParams): void {
+		const p = parseReportUrl(
+			sp,
+			data.fiscalYears.map((f) => f.id),
+		);
+		const tab: TabId = p.tab ?? 'balance-sheet';
+		activeTab = tab;
+		errorMsg = null;
+		let requested = false;
+		if (isClassicTab(tab)) {
+			const r = resolveClassicPeriod(p, data.fiscalYears);
+			if (r) setPeriod(r.from, r.to);
+			requested = loadActiveIfNeeded();
+		} else if (tab === 'general-ledger') {
+			// Le grand livre ne se charge seul que sur une adresse complète (sa sortie de la 55-2).
+			if (p.from && p.to) {
+				ledgerFrom = p.from;
+				ledgerTo = p.to;
+				ledgerAccountId = p.accountId;
+				ledgerIncludeZero = p.includeZero;
+				requested = loadActiveIfNeeded();
+			}
+		} else if (tab === 'aged-receivables') {
+			requested = loadActiveIfNeeded();
+		}
+		// Règle de la 46-2 (V8-1) : un rapport groupé repris de la mémoire est remis d'accord.
+		if (!requested) resyncActiveGroupedTab();
+		const canonical =
+			tab === 'general-ledger'
+				? p.from && p.to
+					? (fieldsKey(tab) ?? buildReportSearch({ ...p, tab }))
+					: buildReportSearch({ ...p, tab })
+				: urlForTab(tab);
+		writeUrl(canonical, true);
+	}
+
 	$effect(() => {
-		const sp = page.url.searchParams;
-		const tab = sp.get('tab');
-		const from = sp.get('from');
-		const to = sp.get('to');
-		const acc = sp.get('accountId');
-		if (tab !== 'general-ledger' || !from || !to) return;
-		const key = `${acc ?? ''}|${from}|${to}`;
-		if (key === lastLedgerDeepLink) return;
-		lastLedgerDeepLink = key;
+		const search = page.url.search.replace(/^\?/, '');
 		untrack(() => {
-			activeTab = 'general-ledger';
-			ledgerFrom = from;
-			ledgerTo = to;
-			ledgerAccountId = acc && /^[0-9]+$/.test(acc) ? Number(acc) : null;
-			errorMsg = null;
-			void generate();
+			if (search === lastHandledKey) return;
+			lastHandledKey = search;
+			applyUrl(new URLSearchParams(search));
 		});
 	});
 
@@ -806,30 +1027,91 @@
 		else if (event.key === 'End') nextIndex = tabs.length - 1;
 		if (nextIndex !== null) {
 			event.preventDefault();
-			selectTab(tabs[nextIndex].id);
+			// Story 55-1a (C-55-1-5) — les flèches REMPLACENT l'entrée : une par flèche rendrait Retour inutilisable.
+			selectTab(tabs[nextIndex].id, true);
 			const btn = document.getElementById(`reports-tab-${tabs[nextIndex].id}`);
 			btn?.focus();
 		}
 	}
 
 	/**
-	 * Sélectionne un nouvel onglet et clear `errorMsg` (Pass 1 code-review M10 —
-	 * ECH4-M2 : avant ce patch, une erreur d'export sur l'onglet Bilan restait
-	 * affichée après bascule vers l'onglet Compte de résultat, faux-positif UX).
+	 * Sélectionne un onglet et efface `errorMsg` (Pass 1 code-review M10). Story 55-1a (D2, AC-22) : le
+	 * rapport de l'onglet pour les champs s'affiche — repris de la mémoire, ou chargé (onglets classiques
+	 * et balance âgée ; le grand livre et les rapports par compte analytique gardent *Générer*) ; puis
+	 * l'URL est écrite, **en dernier** : empilée pour un clic (renverse D-7c de la 21-7, demande de
+	 * l'utilisateur), remplacée pour les flèches.
 	 */
-	function selectTab(next: TabId): void {
-		if (activeTab !== next) {
-			activeTab = next;
-			errorMsg = null;
-			// Story 21-7 (D-7c) — rend l'onglet adressable (replaceState, pas d'empilement).
-			void goto(`?tab=${next}`, { replaceState: true, keepFocus: true, noScroll: true });
-			// Story 46-2, revue P1 M2 (b) — retour sur un rapport groupé dont la
-			// redemande a été jetée : l'écran est remis d'accord avec ses contrôles
-			// (ou, si une génération est en vol, à sa fin — revue P2 M1).
-			resyncActiveGroupedTab();
+	function selectTab(next: TabId, replace = false): void {
+		if (activeTab === next) return;
+		activeTab = next;
+		errorMsg = null;
+		const requested =
+			(isClassicTab(next) || next === 'aged-receivables') && loadActiveIfNeeded();
+		// Story 46-2, revue P1 M2 (b) — retour sur un rapport groupé dont la redemande a été jetée :
+		// l'écran est remis d'accord avec ses contrôles (ou, si une génération est en vol, à sa fin).
+		if (!requested) resyncActiveGroupedTab();
+		writeUrl(urlForTab(next), replace);
+	}
+
+	// ----- Gestes de la période (D15, D16) -------------------------------------------------
+
+	/** Un geste sur la période (menu, sortie des dates, Entrée, « Exercice entier ») : charger si demandable. */
+	function commitPeriod(): void {
+		periodInvalid =
+			estDateStockable(periodStart) && estDateStockable(periodEnd) && periodStart > periodEnd;
+		if (!isClassicTab(activeTab)) return;
+		if (loadActiveIfNeeded()) writeUrl(urlForTab(activeTab), true);
+	}
+
+	/** Choix d'un exercice dans le menu : ses bornes, puis le chargement (AC-15, AC-20). */
+	function selectFiscalYear(id: number): void {
+		const fy = data.fiscalYears.find((f) => f.id === id);
+		if (!fy) return;
+		setPeriod(fy.startDate, fy.endDate);
+		commitPeriod();
+	}
+
+	/** « Exercice entier » : les bornes de l'exercice du menu. */
+	function wholeFiscalYear(): void {
+		if (menu.kind === 'fy') selectFiscalYear(menu.id);
+	}
+
+	/** Une date saisie : champs et menu mis à jour, rien n'est chargé avant la sortie ou Entrée. */
+	function onDatesInput(from: string, to: string): void {
+		periodStart = from;
+		periodEnd = to;
+		periodInvalid = false;
+		syncMenu();
+	}
+
+	// R-19 (DE-4) — sous Safari, un clic ne donne pas le focus à un bouton : la sortie des dates vers un
+	// onglet arrive alors avec un `relatedTarget` nul. Le drapeau, posé au `pointerdown` sur la liste
+	// des onglets, dit que le clic va à un onglet, qui chargera lui-même avec les dates tapées.
+	let pointerOnTablist = false;
+	let tablistEl = $state<HTMLElement | null>(null);
+
+	/** Sortie du groupe des dates, ou Entrée. Vers un onglet : rien, l'onglet visé se charge (AC-22). */
+	function onPeriodCommit(via: 'leave' | 'enter', next?: EventTarget | null): void {
+		if (via === 'leave') {
+			if (pointerOnTablist) return;
+			if (next instanceof Node && tablistEl?.contains(next)) return;
 		}
+		commitPeriod();
+	}
+
+	/** Grand livre (24-1) — *Générer* : la demande, puis l'URL de ses champs, remplacée. */
+	function generateLedger(): void {
+		void generate();
+		const key = fieldsKey('general-ledger');
+		if (key) writeUrl(key, true);
 	}
 </script>
+
+<!-- R-19 : le drapeau du `pointerdown` sur la liste des onglets tombe au relâchement, voir `onPeriodCommit`. -->
+<svelte:window
+	onpointerup={() => (pointerOnTablist = false)}
+	onpointercancel={() => (pointerOnTablist = false)}
+/>
 
 <svelte:head>
 	<title>Kesh — Rapports</title>
@@ -841,11 +1123,14 @@
 	{#if !isProjectTab && !isAgedTab && !isLedgerTab}
 		<ReportSelector
 			fiscalYears={data.fiscalYears}
-			bind:selectedFiscalYearId
-			bind:periodStart
-			bind:periodEnd
-			{loading}
-			onGenerate={() => generate()}
+			{menu}
+			{periodStart}
+			{periodEnd}
+			{periodInvalid}
+			onFiscalYearSelect={selectFiscalYear}
+			{onDatesInput}
+			{onPeriodCommit}
+			onWholeFiscalYear={wholeFiscalYear}
 			onExportPdf={exportPdf}
 			onExportCsv={exportCsv}
 			{canExport}
@@ -903,8 +1188,8 @@
 			<button
 				type="button"
 				class="rounded bg-primary px-3 py-1 text-sm text-white disabled:opacity-50"
-				onclick={() => generate()}
-				disabled={loading || !ledgerFrom || !ledgerTo}
+				onclick={generateLedger}
+				disabled={!ledgerFrom || !ledgerTo}
 				data-testid="ledger-generate"
 			>
 				{i18nMsg('reports-button-generate', 'Générer')}
@@ -929,96 +1214,91 @@
 			</button>
 		</div>
 	{:else if isProjectTab}
-		<!-- Story 19-6a — contrôles dédiés du rapport « Dépenses par projet ». -->
-		<div class="flex flex-wrap items-end gap-3 rounded border border-border bg-surface p-3" data-testid="project-report-controls">
-			<label class="text-sm">
-				{i18nMsg('reports-project-selector-label', 'Compte analytique')}
-				<select
-					class="mt-1 block rounded border border-border px-2 py-1 text-sm"
-					bind:value={selectedProjectId}
-					data-testid="project-report-project"
-				>
-					<option value={null}>{i18nMsg('reports-project-selector-placeholder', '— Choisir un compte analytique')}</option>
-					{#each projects.filter((p) => p.parentId === null) as root (root.id)}
-						<option value={root.id}>{root.code} — {root.name}</option>
-						{#each projects.filter((c) => c.parentId === root.id) as child (child.id)}
-							<option value={child.id}>&nbsp;&nbsp;↳ {child.code} — {child.name}</option>
-						{/each}
-					{/each}
-				</select>
-			</label>
+		<!-- Story 19-6a — contrôles dédiés des rapports par compte analytique. Story 55-1a (AC-15) : l'exercice
+		     et les dates sont ceux de ReportSelector (la requête lit la période des rapports classiques) ;
+		     en mode « Cumulé », menu et dates sont masqués. Ces rapports gardent *Générer* (R-15 c). -->
+		<div data-testid="project-report-controls">
+			<ReportSelector
+				fiscalYears={data.fiscalYears}
+				{menu}
+				{periodStart}
+				{periodEnd}
+				{periodInvalid}
+				showPeriod={projectMode === 'fiscal_year'}
+				onFiscalYearSelect={selectFiscalYear}
+				{onDatesInput}
+				{onPeriodCommit}
+				onWholeFiscalYear={wholeFiscalYear}
+			>
+				{#snippet controls()}
+					<label class="block text-sm">
+						{i18nMsg('reports-project-selector-label', 'Compte analytique')}
+						<select
+							class="mt-1 block w-full rounded border border-border px-2 py-1 text-sm"
+							bind:value={selectedProjectId}
+							data-testid="project-report-project"
+						>
+							<option value={null}>{i18nMsg('reports-project-selector-placeholder', '— Choisir un compte analytique')}</option>
+							{#each projects.filter((p) => p.parentId === null) as root (root.id)}
+								<option value={root.id}>{root.code} — {root.name}</option>
+								{#each projects.filter((c) => c.parentId === root.id) as child (child.id)}
+									<option value={child.id}>&nbsp;&nbsp;↳ {child.code} — {child.name}</option>
+								{/each}
+							{/each}
+						</select>
+					</label>
 
-			<label class="text-sm">
-				{i18nMsg('reports-project-mode-label', 'Période')}
-				<select
-					class="mt-1 block rounded border border-border px-2 py-1 text-sm"
-					bind:value={projectMode}
-					data-testid="project-report-mode"
-				>
-					<option value="fiscal_year">{i18nMsg('reports-project-mode-fiscal-year', 'Exercice')}</option>
-					<option value="cumulative">{i18nMsg('reports-project-mode-cumulative', 'Cumulé depuis l’origine')}</option>
-				</select>
-			</label>
-
-			{#if projectMode === 'fiscal_year'}
-				<label class="text-sm">
-					{i18nMsg('reports-fiscal-year-label', 'Exercice')}
-					<select
-						class="mt-1 block rounded border border-border px-2 py-1 text-sm"
-						bind:value={selectedFiscalYearId}
-						data-testid="project-report-fiscal-year"
+					<label class="block text-sm sm:col-span-2">
+						{i18nMsg('reports-project-mode-label', 'Période')}
+						<select
+							class="mt-1 block rounded border border-border px-2 py-1 text-sm"
+							bind:value={projectMode}
+							data-testid="project-report-mode"
+						>
+							<option value="fiscal_year">{i18nMsg('reports-project-mode-fiscal-year', 'Exercice')}</option>
+							<option value="cumulative">{i18nMsg('reports-project-mode-cumulative', 'Cumulé depuis l’origine')}</option>
+						</select>
+					</label>
+				{/snippet}
+				{#snippet actions()}
+					<button
+						type="button"
+						class="rounded bg-primary px-3 py-1 text-sm text-white disabled:opacity-50"
+						onclick={() => generate()}
+						disabled={projectQuery() === null}
+						data-testid="project-report-generate"
 					>
-						{#each data.fiscalYears as fy (fy.id)}
-							<option value={fy.id}>{fy.name}</option>
-						{/each}
-					</select>
-				</label>
-			{/if}
-
-			<button
-				type="button"
-				class="rounded bg-primary px-3 py-1 text-sm text-white disabled:opacity-50"
-				onclick={() => generate()}
-				disabled={loading || selectedProjectId === null}
-				data-testid="project-report-generate"
-			>
-				{i18nMsg('reports-generate', 'Générer')}
-			</button>
-			<button
-				type="button"
-				class="rounded border border-border px-3 py-1 text-sm disabled:opacity-50"
-				onclick={exportPdf}
-				disabled={exporting || !hasProjectReport}
-				data-testid="project-report-export-pdf"
-			>
-				PDF
-			</button>
-			<button
-				type="button"
-				class="rounded border border-border px-3 py-1 text-sm disabled:opacity-50"
-				onclick={exportCsv}
-				disabled={exporting || !hasProjectReport}
-				data-testid="project-report-export-csv"
-			>
-				CSV
-			</button>
+						{i18nMsg('reports-generate', 'Générer')}
+					</button>
+					<button
+						type="button"
+						class="rounded border border-border px-3 py-1 text-sm disabled:opacity-50"
+						onclick={exportPdf}
+						disabled={exporting || !hasProjectReport || activeBusy}
+						data-testid="project-report-export-pdf"
+					>
+						PDF
+					</button>
+					<button
+						type="button"
+						class="rounded border border-border px-3 py-1 text-sm disabled:opacity-50"
+						onclick={exportCsv}
+						disabled={exporting || !hasProjectReport || activeBusy}
+						data-testid="project-report-export-csv"
+					>
+						CSV
+					</button>
+				{/snippet}
+			</ReportSelector>
 		</div>
 	{:else}
 		<!-- Story 21-7 — contrôles balance âgée : pas de FY/période (arrêté à aujourd'hui).
-		     Ne branche NI ReportSelector NI les exports génériques (activeReportPeriod null). -->
+		     Ne branche NI ReportSelector NI les exports génériques (activeReportPeriod null).
+		     Story 55-1a (D16, R-15 b) : chargée à l'arrivée sur l'onglet, plus de bouton Générer. -->
 		<div class="flex flex-wrap items-center gap-3 rounded border border-border bg-surface p-3" data-testid="aged-report-controls">
 			<span class="text-sm text-text-muted">
 				{i18nMsg('reports-aged-instruction', 'Balance âgée arrêtée à ce jour.')}
 			</span>
-			<button
-				type="button"
-				class="rounded bg-primary px-3 py-1 text-sm text-white disabled:opacity-50"
-				onclick={() => generate()}
-				disabled={loading}
-				data-testid="aged-report-generate"
-			>
-				{i18nMsg('reports-button-generate', 'Générer')}
-			</button>
 			{#if canManage}
 				<button
 					type="button"
@@ -1033,7 +1313,12 @@
 		</div>
 	{/if}
 
-	<div role="tablist" class="flex border-b" aria-label={i18nMsg('reports-page-title', 'Rapports comptables')}>
+	<div
+		role="tablist"
+		class="flex border-b"
+		aria-label={i18nMsg('reports-page-title', 'Rapports comptables')}
+		bind:this={tablistEl}
+	>
 		{#each tabs as tab, idx (tab.id)}
 			<button
 				type="button"
@@ -1045,6 +1330,7 @@
 				class="border-b-2 px-4 py-2 text-sm font-medium {activeTab === tab.id
 					? 'border-indigo-600 text-indigo-700'
 					: 'border-transparent text-gray-600 hover:text-gray-900'}"
+				onpointerdown={() => (pointerOnTablist = true)}
 				onclick={() => selectTab(tab.id)}
 				onkeydown={(e) => handleTabKeydown(e, idx)}
 			>
@@ -1061,7 +1347,7 @@
 		role="tabpanel"
 		id="reports-tabpanel-{activeTab}"
 		aria-labelledby="reports-tab-{activeTab}"
-		aria-busy={loading || refreshing}
+		aria-busy={activeBusy}
 		class="space-y-3"
 	>
 		{#if activeGroupingView}
@@ -1077,48 +1363,43 @@
 					: undefined}
 			/>
 		{/if}
-		{#if loading}
-			<p class="text-sm italic text-gray-500" role="status">
-				{i18nMsg('reports-loading', 'Génération du rapport en cours…')}
+		{#if loading && inFlightTab === activeTab}
+			<p class="text-sm italic text-gray-500" role="status" data-testid="report-loading">
+				{i18nMsg('reports-loading', 'Chargement…')}
 			</p>
-		{:else if activeTab === 'balance-sheet' && balanceSheet}
-			<BalanceSheetView dto={balanceSheet} {onToggleGroup} />
-		{:else if activeTab === 'income-statement' && incomeStatement}
-			<IncomeStatementView dto={incomeStatement} {onToggleGroup} />
-		{:else if activeTab === 'trial-balance' && trialBalance}
-			<TrialBalanceView dto={trialBalance} {onToggleGroup} />
-		{:else if activeTab === 'journals' && journalReport}
-			<JournalReportView dto={journalReport} />
-		{:else if activeTab === 'vat' && vatReport}
-			<VatReportView dto={vatReport} />
-		{:else if activeTab === 'project-expenses' && projectExpenses}
-			<ProjectExpensesView report={projectExpenses} />
-		{:else if activeTab === 'project-return' && projectReturn}
-			<ProjectReturnView report={projectReturn} />
-		{:else if activeTab === 'aged-receivables' && agedReceivables}
-			<AgedReceivablesView dto={agedReceivables} />
-		{:else if activeTab === 'general-ledger' && generalLedger}
-			<GeneralLedgerView dto={generalLedger} {letterableAccountIds} />
-		{:else if isLedgerTab}
-			<p class="text-sm italic text-gray-500">
-				{i18nMsg(
-					'reports-ledger-instruction',
-					'Choisissez une période, puis cliquez sur Générer. Le compte est facultatif.',
-				)}
-			</p>
-		{:else if isAgedTab}
-			<!-- Balance âgée : pas d'exercice à sélectionner (arrêté à aujourd'hui) —
-			     message dédié plutôt que « sélectionnez un exercice » (review P2 LOW). -->
-			<p class="text-sm italic text-gray-500">
-				{i18nMsg('reports-aged-instruction-generate', 'Cliquez sur Générer pour afficher la balance âgée arrêtée à ce jour.')}
-			</p>
+		{:else if hiddenByMenu}
+			<!-- AC-26 : « Plusieurs » ou « Hors exercice » sur un onglet à un exercice — le rapport, gardé en
+			     mémoire, est retiré de l'écran ; le message est sous les dates (ReportSelector). -->
 		{:else}
-			<p class="text-sm italic text-gray-500">
-				{i18nMsg(
-					'reports-instruction-select-and-generate',
-					'Sélectionnez un exercice et cliquez sur Générer.',
-				)}
-			</p>
+			<!-- AC-24 : pendant un rechargement, l'ancien rapport reste, grisé ; ses liens restent utilisables. -->
+			<div class={reloadingActive ? 'opacity-60' : ''} data-testid="report-content">
+				{#if activeTab === 'balance-sheet' && balanceSheet}
+					<BalanceSheetView dto={balanceSheet} {onToggleGroup} fiscalYears={data.fiscalYears} />
+				{:else if activeTab === 'income-statement' && incomeStatement}
+					<IncomeStatementView dto={incomeStatement} {onToggleGroup} fiscalYears={data.fiscalYears} />
+				{:else if activeTab === 'trial-balance' && trialBalance}
+					<TrialBalanceView dto={trialBalance} {onToggleGroup} fiscalYears={data.fiscalYears} />
+				{:else if activeTab === 'journals' && journalReport}
+					<JournalReportView dto={journalReport} fiscalYears={data.fiscalYears} />
+				{:else if activeTab === 'vat' && vatReport}
+					<VatReportView dto={vatReport} fiscalYears={data.fiscalYears} />
+				{:else if activeTab === 'project-expenses' && projectExpenses}
+					<ProjectExpensesView report={projectExpenses} />
+				{:else if activeTab === 'project-return' && projectReturn}
+					<ProjectReturnView report={projectReturn} />
+				{:else if activeTab === 'aged-receivables' && agedReceivables}
+					<AgedReceivablesView dto={agedReceivables} />
+				{:else if activeTab === 'general-ledger' && generalLedger}
+					<GeneralLedgerView dto={generalLedger} {letterableAccountIds} fiscalYears={data.fiscalYears} />
+				{:else if isLedgerTab}
+					<p class="text-sm italic text-gray-500">
+						{i18nMsg(
+							'reports-ledger-instruction',
+							'Choisissez une période, puis cliquez sur Générer. Le compte est facultatif.',
+						)}
+					</p>
+				{/if}
+			</div>
 		{/if}
 	</div>
 </div>

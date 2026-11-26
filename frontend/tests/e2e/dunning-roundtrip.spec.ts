@@ -112,8 +112,8 @@ test('round-trip rappels : config → envoi unitaire + lot → historique → su
 	await expect(badge).toHaveAttribute('title', new RegExp(motif));
 
 	// (8) BALANCE ÂGÉE — le débiteur A y figure malgré la suspension (D10).
+	// Story 55-1a (D16) — la balance âgée se charge à l'arrivée sur l'onglet, sans *Générer*.
 	await page.goto('/reports?tab=aged-receivables');
-	await page.getByTestId('aged-report-generate').click();
 	await expect(page.getByTestId('aged-receivables-table')).toBeVisible({ timeout: 5000 });
 	await expect(
 		page.getByTestId('aged-receivables-row').filter({ hasText: nameA }),

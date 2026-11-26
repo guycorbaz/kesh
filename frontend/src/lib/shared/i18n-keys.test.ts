@@ -1245,7 +1245,10 @@ const ATTENDU = {
 	// côtés gardés ; 3746 (pr/40, base 3677) + 25 (main, 3677 → 3702) = **3771**, confirmé par la garde (`kesh-gate-logs/s40-m2d/compteurs-3.log`).
 	// Epic 46 reposé sur main à a914c4823 (branche pr/46-rapports-groupes-v2, 2026-11-25) : les deux côtés
 	// gardés ; 3771 (main) + 18 (Epic 46 : 3508 → 3526) = **3789**, confirmé par la garde (`kesh-gate-logs/s46-pr/front-vitest-a.log`).
-	sitesTotal: 3789,
+	// Story 55-1a (Epic 55, base epic/55-navigation) : sites ajoutés (sélecteur, en-tête, période invalide) et
+	// retirés (invites « cliquez sur Générer », bouton de la balance âgée, en-tête « Période : » des six vues)
+	// = **3788**, recompté par la garde (`kesh-gate-logs/s55-dev/55-1a/front-1/front-test-unit.log`).
+	sitesTotal: 3788,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

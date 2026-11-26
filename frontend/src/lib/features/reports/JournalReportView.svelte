@@ -8,12 +8,16 @@
 		formatSwissDate,
 		isReportEmpty,
 	} from './reports.api';
+	import ReportPeriodHeading from './ReportPeriodHeading.svelte';
+	import type { ExerciceBornes } from './reports-url';
 	import type { JournalEntryLineRow, JournalReportDto } from './reports.types';
 
 	interface Props {
 		dto: JournalReportDto;
+		/** Story 55-1a (AC-17) — les exercices de la société, pour l'en-tête de la période. */
+		fiscalYears?: readonly ExerciceBornes[];
 	}
-	let { dto }: Props = $props();
+	let { dto, fiscalYears = [] }: Props = $props();
 	let empty = $derived(isReportEmpty('journals', dto));
 
 	const fmt = formatReportAmount;
@@ -35,14 +39,14 @@
 </script>
 
 <section class="space-y-4">
-	<header class="text-sm text-gray-600">
-		<strong>{i18nMsg('reports-filter-period', 'Période')}:</strong>
-		{formatSwissDate(dto.period.startDate)} — {formatSwissDate(dto.period.endDate)}
+	<!-- Story 55-1a (AC-17) — la période réelle de la réponse, et l'exercice dont elle est l'entier ou une partie. -->
+	<header>
+		<ReportPeriodHeading from={dto.period.startDate} to={dto.period.endDate} {fiscalYears} />
 	</header>
 
 	{#if empty}
 		<p class="rounded bg-blue-50 p-4 text-blue-900" role="status">
-			{i18nMsg('reports-error-no-entries-in-period', 'Aucune écriture dans la période sélectionnée.')}
+			{i18nMsg('reports-error-no-entries-in-period', 'Aucune écriture sur cette période.')}
 		</p>
 	{:else}
 		{#each dto.journals as section (section.journal)}

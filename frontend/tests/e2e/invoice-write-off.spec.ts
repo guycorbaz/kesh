@@ -261,8 +261,8 @@ test('solder le reste en escompte depuis la fiche, puis annuler le solde', async
 		// les champs des diminutions traverser la frontière HTTP.
 		await page.goto('/reports');
 		await page.waitForLoadState('networkidle');
+		// Story 55-1a (D16) — plus de *Générer* : le clic sur l'onglet charge le décompte.
 		await page.getByRole('tab', { name: /^TVA$/ }).click();
-		await page.getByRole('button', { name: /générer/i }).click();
 		await expect(page.getByTestId('vat-write-off-section')).toBeVisible();
 		await expect(page.getByTestId('vat-total-vat-due-net')).toBeVisible();
 		await page.goto(`/invoices/${invoiceId}`);

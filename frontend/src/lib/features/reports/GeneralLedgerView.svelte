@@ -17,6 +17,8 @@
 		LedgerLine,
 		LedgerSection,
 	} from './reports.types';
+	import ReportPeriodHeading from './ReportPeriodHeading.svelte';
+	import type { ExerciceBornes } from './reports-url';
 
 	interface Props {
 		dto: GeneralLedgerDto;
@@ -29,8 +31,10 @@
 		 * (qui rendrait 409).
 		 */
 		letterableAccountIds?: ReadonlySet<number>;
+		/** Story 55-1a (AC-17) — les exercices de la société, pour l'en-tête de la période. */
+		fiscalYears?: readonly ExerciceBornes[];
 	}
-	let { dto, letterableAccountIds = new Set<number>() }: Props = $props();
+	let { dto, letterableAccountIds = new Set<number>(), fiscalYears = [] }: Props = $props();
 
 	/**
 	 * Story 15-1c-ii (AC9, C-15-1c-20) — les colonnes, **une seule fois** : les
@@ -203,9 +207,9 @@
 {/snippet}
 
 <section class="space-y-6" data-testid="general-ledger">
-	<header class="text-sm text-gray-600">
-		<strong>{i18nMsg('reports-filter-period', 'Période')}:</strong>
-		{formatSwissDate(dto.period.from)} — {formatSwissDate(dto.period.to)}
+	<!-- Story 55-1a (AC-17) — la période réelle de la réponse, et l'exercice dont elle est l'entier ou une partie. -->
+	<header>
+		<ReportPeriodHeading from={dto.period.from} to={dto.period.to} {fiscalYears} />
 	</header>
 
 	{#if dto.sections.length === 0}

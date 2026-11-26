@@ -5,6 +5,7 @@ import { apiClient } from '$lib/shared/utils/api-client';
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 import { todayLocal } from '$lib/shared/utils/local-date';
 import { formatSwissAmount } from '$lib/features/journal-entries/balance';
+import { reportHref } from './reports-url';
 import type {
 	AgedReceivablesDto,
 	BalanceSheetDto,
@@ -639,11 +640,8 @@ export async function downloadGeneralLedger(
  * fait ? » se pose toujours devant un bilan ou une balance.
  */
 export function ledgerHref(accountId: number, from: string, to: string): string {
-	const qs = new URLSearchParams({
-		tab: 'general-ledger',
-		accountId: String(accountId),
-		from,
-		to,
-	});
-	return `/reports?${qs.toString()}`;
+	// Story 55-1a (AC-6, D6) — écrite sur la fonction d'écriture de l'URL des Rapports : sortie
+	// inchangée à l'octet près (`tab`, `accountId`, `from`, `to`), que l'accueil et la réévaluation
+	// emploient et que `homepage-charts.spec.ts` vérifie dans cet ordre.
+	return reportHref({ tab: 'general-ledger', accountId, from, to });
 }
