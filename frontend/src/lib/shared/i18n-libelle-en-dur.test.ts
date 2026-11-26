@@ -497,7 +497,7 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
 // **168** (fusion anticipée de pr/39-wise-v2 dans pr/46-rapports-groupes-v2, 2026-11-26) : 163 (pr/39) + 5
 // (Epic 46 : `toggleLabel`, `fxText`, `typeLabel`, `proposalMessageText`, `kindLabel`) ; `conforme` **146**
 // (141 + 5), `ecartee` **22** ; confirmés par la garde (`kesh-gate-logs/s46-pr2/compteurs-1.log`).
-// **171** (fusion de pr/46-rapports-groupes-v2, ecf6cf835, dans epic/55-navigation, 2026-11-27) : 168 (pr/46)
+// **171** (fusion de pr/46-rapports-groupes-v2, ecf6cf835, dans epic/55-navigation, 2026-11-26) : 168 (pr/46)
 // + 3 (Epic 55 : `keepDisplay`, `entryDocumentKindLabel`, `entryDocumentItemLabel`) ; `conforme` **149** (146 + 3),
 // `ecartee` **22**, confirmés par la garde (`kesh-gate-logs/s55-revue/fusion/gardes-1.log`).
 const CANDIDATES_ATTENDUES = 171;

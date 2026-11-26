@@ -4543,6 +4543,7 @@ reports-nav-documents-close = Close
 reports-nav-documents-empty = The document received is empty.
 reports-nav-documents-not-issued = PDF not yet issued: this invoice has no frozen PDF yet; its next download, or its next sending by e-mail, will freeze it.
 reports-nav-ledger-column-documents = Documents
+
 # Story 39-11d — écrans Wise : réglages du compte, page Wise (import des relevés et du zip), libellés
 wise-csv-line-field-count = number of cells differs from the header
 wise-csv-line-date = unreadable or malformed date (DD-MM-YYYY or YYYY-MM-DD expected)

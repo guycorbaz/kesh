@@ -4537,6 +4537,7 @@ reports-nav-documents-close = Schliessen
 reports-nav-documents-empty = Das erhaltene Dokument ist leer.
 reports-nav-documents-not-issued = PDF noch nicht ausgestellt: Diese Rechnung hat noch kein festgeschriebenes PDF; der nächste Download oder der nächste Versand per E-Mail schreibt es fest.
 reports-nav-ledger-column-documents = Belege
+
 # Story 39-11d — écrans Wise : réglages du compte, page Wise (import des relevés et du zip), libellés
 wise-csv-line-field-count = Zellenzahl weicht von der Kopfzeile ab
 wise-csv-line-date = Datum unlesbar oder im falschen Format (TT-MM-JJJJ oder JJJJ-MM-TT erwartet)
