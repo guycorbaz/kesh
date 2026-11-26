@@ -2208,7 +2208,7 @@ reports-filter-fiscal-year = Fiscal Year
 reports-filter-journal = Journal
 reports-button-generate = Generate
 
-reports-error-no-entries-in-period = No entries in the selected period. Change the dates or pick a different fiscal year.
+reports-error-no-entries-in-period = No entries in this period.
 reports-error-period-out-of-fiscal-year = The selected period exceeds the fiscal year bounds. Pick a period between { $fyStart } and { $fyEnd }.
 reports-error-no-fiscal-year-available = No fiscal year available. Create a fiscal year before generating reports.
 
@@ -2225,8 +2225,7 @@ reports-archived-label = archived
 
 # Reports page — chrome (3 — code review Pass 1 i18n leaks)
 reports-page-title = Accounting Reports
-reports-instruction-select-and-generate = Select a fiscal year and click Generate.
-reports-loading = Generating report…
+reports-loading = Loading…
 
 # Story 9-2a — Export PDF & CSV (10 keys)
 reports-export-pdf-button = Export PDF
@@ -2257,7 +2256,6 @@ reports-project-return-total = Total
 reports-project-selector-label = Analytical account
 reports-project-selector-placeholder = — Choose an analytical account
 reports-aged-instruction = Aged balance as of today.
-reports-aged-instruction-generate = Click Generate to display the aged balance as of today.
 reports-aged-as-of = As of { $date }
 reports-aged-empty = No open customer receivables.
 reports-aged-col-contact = Customer
@@ -4423,3 +4421,15 @@ stripe-gap-already-linked = Sale already linked to another charge
 stripe-gap-payout-entry = Payout entry
 stripe-gap-receipt-link = Link the receipt in the reconciliation
 stripe-gap-receipt-import = Import the statement of the destination account (Wise).
+
+## Story 55-1a (Epic 55, D15, D16) — the reports' fiscal year selector, the period heading
+reports-nav-fy-multiple = Multiple
+reports-nav-fy-outside = Outside fiscal years
+reports-nav-fy-whole = Whole fiscal year
+reports-nav-needs-one-fy = This report covers a single fiscal year: choose two dates in the same fiscal year.
+reports-nav-period-invalid = The start date must be on or before the end date.
+reports-nav-heading-fy = Fiscal year { $years } — from { $from } to { $to }
+reports-nav-heading-named = { $name } — from { $from } to { $to }
+reports-nav-heading-part = From { $from } to { $to } (part of fiscal year { $fiscalYear })
+reports-nav-heading-several = From { $from } to { $to } (fiscal years { $fiscalYears })
+reports-nav-heading-outside = From { $from } to { $to } (outside fiscal years)

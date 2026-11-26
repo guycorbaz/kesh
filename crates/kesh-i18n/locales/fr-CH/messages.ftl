@@ -2297,7 +2297,7 @@ reports-filter-journal = Journal
 reports-button-generate = Générer
 
 # Erreurs UX (3)
-reports-error-no-entries-in-period = Aucune écriture dans la période sélectionnée. Modifiez les dates ou choisissez un autre exercice.
+reports-error-no-entries-in-period = Aucune écriture sur cette période.
 reports-error-period-out-of-fiscal-year = La période sélectionnée dépasse les bornes de l'exercice. Choisissez une période entre { $fyStart } et { $fyEnd }.
 reports-error-no-fiscal-year-available = Aucun exercice comptable disponible. Créez un exercice avant de générer des rapports.
 
@@ -2315,8 +2315,7 @@ reports-archived-label = archivé
 
 # Page rapports — chrome (3 — code review Pass 1 i18n leaks)
 reports-page-title = Rapports comptables
-reports-instruction-select-and-generate = Sélectionnez un exercice et cliquez sur Générer.
-reports-loading = Génération du rapport en cours…
+reports-loading = Chargement…
 
 # Story 9-2a — Export PDF & CSV (10 clés)
 reports-export-pdf-button = Export PDF
@@ -2347,7 +2346,6 @@ reports-project-return-total = Total
 reports-project-selector-label = Compte analytique
 reports-project-selector-placeholder = — Choisir un compte analytique
 reports-aged-instruction = Balance âgée arrêtée à ce jour.
-reports-aged-instruction-generate = Cliquez sur Générer pour afficher la balance âgée arrêtée à ce jour.
 reports-aged-as-of = Arrêté au { $date }
 reports-aged-empty = Aucune créance client ouverte.
 reports-aged-col-contact = Client
@@ -4498,3 +4496,15 @@ stripe-gap-already-linked = Vente déjà rattachée à une autre charge
 stripe-gap-payout-entry = Écriture du versement
 stripe-gap-receipt-link = Rattacher la réception à la réconciliation
 stripe-gap-receipt-import = Importez le relevé du compte de destination (Wise).
+
+## Story 55-1a (Epic 55, D15, D16) — le sélecteur d'exercice des Rapports, l'en-tête de la période
+reports-nav-fy-multiple = Plusieurs
+reports-nav-fy-outside = Hors exercice
+reports-nav-fy-whole = Exercice entier
+reports-nav-needs-one-fy = Ce rapport porte sur un seul exercice : choisissez deux dates du même exercice.
+reports-nav-period-invalid = La date de début doit précéder la date de fin, ou lui être égale.
+reports-nav-heading-fy = Exercice { $years } — du { $from } au { $to }
+reports-nav-heading-named = { $name } — du { $from } au { $to }
+reports-nav-heading-part = Du { $from } au { $to } (partie de l’exercice { $fiscalYear })
+reports-nav-heading-several = Du { $from } au { $to } (exercices { $fiscalYears })
+reports-nav-heading-outside = Du { $from } au { $to } (hors exercice)

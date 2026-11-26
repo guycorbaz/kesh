@@ -2208,7 +2208,7 @@ reports-filter-fiscal-year = Esercizio
 reports-filter-journal = Giornale
 reports-button-generate = Genera
 
-reports-error-no-entries-in-period = Nessuna registrazione nel periodo selezionato. Modifica le date o scegli un altro esercizio.
+reports-error-no-entries-in-period = Nessuna registrazione in questo periodo.
 reports-error-period-out-of-fiscal-year = Il periodo selezionato supera i limiti dell'esercizio. Scegli un periodo tra { $fyStart } e { $fyEnd }.
 reports-error-no-fiscal-year-available = Nessun esercizio contabile disponibile. Crea un esercizio prima di generare i rapporti.
 
@@ -2225,8 +2225,7 @@ reports-archived-label = archiviato
 
 # Pagina rapporti — chrome (3 — code review Pass 1 i18n leaks)
 reports-page-title = Rapporti contabili
-reports-instruction-select-and-generate = Seleziona un esercizio contabile e clicca su Genera.
-reports-loading = Generazione del rapporto in corso…
+reports-loading = Caricamento…
 
 # Story 9-2a — Export PDF & CSV (10 chiavi)
 reports-export-pdf-button = Esporta PDF
@@ -2257,7 +2256,6 @@ reports-project-return-total = Totale
 reports-project-selector-label = Conto analitico
 reports-project-selector-placeholder = — Scegli un conto analitico
 reports-aged-instruction = Scadenziario per età alla data odierna.
-reports-aged-instruction-generate = Clicca su Genera per visualizzare lo scadenziario per età alla data odierna.
 reports-aged-as-of = Al { $date }
 reports-aged-empty = Nessun credito cliente aperto.
 reports-aged-col-contact = Cliente
@@ -4418,3 +4416,15 @@ stripe-gap-already-linked = Vendita già collegata a un altro addebito
 stripe-gap-payout-entry = Registrazione del versamento
 stripe-gap-receipt-link = Collegare la ricezione nella riconciliazione
 stripe-gap-receipt-import = Importate l’estratto del conto di destinazione (Wise).
+
+## Story 55-1a (Epic 55, D15, D16) — selettore dell'esercizio dei rapporti, intestazione del periodo
+reports-nav-fy-multiple = Diversi
+reports-nav-fy-outside = Fuori esercizio
+reports-nav-fy-whole = Esercizio intero
+reports-nav-needs-one-fy = Questo rapporto riguarda un solo esercizio: scegliete due date dello stesso esercizio.
+reports-nav-period-invalid = La data d’inizio deve precedere la data di fine, o esserle uguale.
+reports-nav-heading-fy = Esercizio { $years } — dal { $from } al { $to }
+reports-nav-heading-named = { $name } — dal { $from } al { $to }
+reports-nav-heading-part = Dal { $from } al { $to } (parte dell’esercizio { $fiscalYear })
+reports-nav-heading-several = Dal { $from } al { $to } (esercizi { $fiscalYears })
+reports-nav-heading-outside = Dal { $from } al { $to } (fuori esercizio)
