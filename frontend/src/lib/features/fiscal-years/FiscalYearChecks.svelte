@@ -213,6 +213,11 @@
 												<a class="ml-1 text-primary underline" href="/reconciliation/paypal" data-testid="fiscal-year-checks-k2-paypal-{a.bankAccountId}">
 													{i18nMsg('fiscal-years-checks-k2-link-paypal', 'Ouvrir la page PayPal')}
 												</a>
+											{:else if a.provider === 'stripe'}
+												<!-- Story 40-7d — de même un compte Stripe, par la page Stripe. -->
+												<a class="ml-1 text-primary underline" href="/reconciliation/stripe" data-testid="fiscal-year-checks-k2-stripe-{a.bankAccountId}">
+													{i18nMsg('fiscal-years-checks-k2-link-stripe', 'Ouvrir la page Stripe')}
+												</a>
 											{/if}
 										</li>
 									{/each}

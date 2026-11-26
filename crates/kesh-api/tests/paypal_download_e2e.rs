@@ -1274,6 +1274,8 @@ async fn refus_tache_unique_et_cles_d_api(pool: MySqlPool) {
         );
         assert_eq!(b["error"]["details"]["reason"], motif);
         assert_eq!(b["error"]["details"]["provider"], "paypal");
+        // La profondeur d'historique que dit le texte du refus `too_old`.
+        assert_eq!(b["error"]["details"]["historyYears"], 3);
     }
     assert_eq!(sim.jetons.load(Ordering::SeqCst), 0, "rien lancé");
 

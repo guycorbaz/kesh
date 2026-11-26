@@ -91,6 +91,12 @@ const INVENTAIRE: &[Colonne] = &[
                solde, admis par conception.",
     },
     Colonne {
+        colonne: "bank_accounts.payout_bank_account_id",
+        preuve: Preuve::VersBankAccounts,
+        note: "Story 40-7b — désigne un compte bancaire (la destination des versements \
+               Stripe), non un compte du plan comptable.",
+    },
+    Colonne {
         colonne: "bank_imports.bank_account_id",
         preuve: Preuve::VersBankAccounts,
         note: "Désigne un compte bancaire, non un compte du plan comptable.",

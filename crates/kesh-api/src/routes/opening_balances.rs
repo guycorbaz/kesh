@@ -48,9 +48,10 @@ use kesh_db::entities::{
 use kesh_db::errors::DbError;
 use kesh_db::repositories::fiscal_years::{
     FY_OPENING_ALREADY_HAS_ENTRIES_KEY, FY_OPENING_FIRST_YEAR_CLOSED_KEY,
+    FY_OPENING_NON_BALANCE_ACCOUNT_KEY,
 };
 use kesh_db::repositories::opening_complement::{self, ComplementLine, ComplementStatus};
-use kesh_db::repositories::{accounts, fiscal_years, journal_entries};
+use kesh_db::repositories::{fiscal_years, journal_entries};
 use kesh_i18n::Locale;
 
 use crate::AppState;
@@ -216,8 +217,14 @@ pub struct OpeningComplementLineRequest {
 ///   quel que soit le timing ; PAS le variant `AppError::FiscalYearClosed` qui
 ///   divergerait en `FISCAL_YEAR_CLOSED`).
 ///
+/// - `NON_BALANCE_ACCOUNT` → `AppError::Validation` (**400**, message
+///   `error-opening-balances-non-balance-account`) : le type des comptes se
+///   contrôle **sous verrou**, dans `create_opening_entry` (Story 53-3, #513) ;
+///   le handler ne le lit plus.
+///
 /// Toute autre erreur retombe vers le mapping global (`INACTIVE_OR_INVALID_ACCOUNTS`,
-/// `ACCOUNT_NOT_POSTABLE`, `NotFound` → 404, …).
+/// `ACCOUNT_NOT_POSTABLE`, `NotFound` → 404, …). Une clé `Invariant` non mappée
+/// ici rendrait **500**.
 fn map_opening_balances_error(err: DbError) -> AppError {
     match err {
         DbError::Invariant(ref s) if s == FY_OPENING_ALREADY_HAS_ENTRIES_KEY => {
@@ -230,6 +237,12 @@ fn map_opening_balances_error(err: DbError) -> AppError {
             AppError::Validation(t(
                 "error-opening-balances-first-year-closed",
                 "Le premier exercice est clôturé : avant de saisir les soldes de départ, rouvrez les exercices clôturés jusqu’à celui-ci, en commençant par le plus récent.",
+            ))
+        }
+        DbError::Invariant(ref s) if s == FY_OPENING_NON_BALANCE_ACCOUNT_KEY => {
+            AppError::Validation(t(
+                "error-opening-balances-non-balance-account",
+                "Le bilan d'ouverture ne peut toucher que des comptes de bilan (actifs et passifs) — retirez les comptes de produits et de charges.",
             ))
         }
         other => AppError::from(other),
@@ -357,15 +370,21 @@ fn status_response(
 ///    sur le statut clos, même verdict que `GET /status`), PUIS statut `Open`
 ///    (`400 first-year-closed`, même outcome que le re-check sous lock,
 ///    P3-AA-2) ;
-/// 2. Garde « comptes de bilan » (D4, défense en profondeur) : toute ligne dont
-///    le type **retourné** est `Revenue`/`Expense` → `400
-///    non-balance-account` ; un id absent (inexistant / autre company) retombe
-///    dans `create_in_tx` → `INACTIVE_OR_INVALID_ACCOUNTS` (P3-AA-1/BH3-6) ;
-/// 3. `accounting::validate` (équilibre / ≥2 lignes / montants ≥ 0 /
+/// 2. `accounting::validate` (équilibre / ≥2 lignes / montants ≥ 0 /
 ///    débit⊕crédit) via `map_core_error` (DRY) ;
-/// 4. `create_opening_entry` : sentinel `companies` + garde « company vierge »
-///    puis statut, **sous** les `FOR UPDATE` (autorité anti-course,
-///    P1-C1/P3-BH3-1/P4).
+/// 3. `create_opening_entry` : sentinel `companies` + `fiscal_years`, **type des
+///    comptes lu sous verrou** (Story 53-3, #513, étape 2-bis), puis garde
+///    « company vierge » et statut, **sous** les `FOR UPDATE` (autorité
+///    anti-course, P1-C1/P3-BH3-1/P4), et enfin le **refus** (étape 4-bis) : toute
+///    ligne dont le type lu est `Revenue`/`Expense` → `400 non-balance-account` ;
+///    un id absent — inexistant / autre company — retombe dans `create_in_tx` →
+///    `INACTIVE_OR_INVALID_ACCOUNTS` (P3-AA-1/BH3-6). Sous course, l'ordre sous
+///    verrou s'applique donc aussi au compte de résultat (409 ou
+///    `first-year-closed` avant `non-balance-account`).
+///
+/// ⚠️ Depuis la Story 53-3, `validate` **précède** le contrôle du type : une
+/// requête qui cumule un compte de résultat et un refus de `validate` rend le
+/// refus de `validate` (`ENTRY_UNBALANCED`, `FX_*`, `VALIDATION_ERROR`).
 ///
 /// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe `DbError`
 /// [`kesh_db::retry::retry_on_deadlock`] ; le `NewJournalEntry` est cloné à
@@ -437,28 +456,6 @@ pub async fn generate_opening_balances(
         return Err(AppError::Validation(t(
             "error-opening-balances-first-year-closed",
             "Le premier exercice est clôturé : avant de saisir les soldes de départ, rouvrez les exercices clôturés jusqu’à celui-ci, en commençant par le plus récent.",
-        )));
-    }
-
-    // Garde « comptes de bilan » (D4) : rejet UNIQUEMENT sur un type retourné
-    // Revenue/Expense (fausserait le P&L de l'exercice courant). Les ids
-    // absents retombent dans `create_in_tx` → INACTIVE_OR_INVALID_ACCOUNTS.
-    let account_ids: Vec<i64> = req.lines.iter().map(|l| l.account_id).collect();
-    let mut tx = state
-        .pool
-        .begin()
-        .await
-        .map_err(kesh_db::errors::map_db_error)?;
-    let types = accounts::find_types_by_ids_in_tx(&mut tx, company.id, &account_ids).await?;
-    // Lecture seule : rollback best-effort (le drop-guard SQLx couvre l'échec).
-    let _ = tx.rollback().await;
-    if types
-        .iter()
-        .any(|(_, ty)| ty == "Revenue" || ty == "Expense")
-    {
-        return Err(AppError::Validation(t(
-            "error-opening-balances-non-balance-account",
-            "Le bilan d'ouverture ne peut toucher que des comptes de bilan (actifs et passifs) — retirez les comptes de produits et de charges.",
         )));
     }
 

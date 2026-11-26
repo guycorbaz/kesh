@@ -2683,6 +2683,7 @@ async fn ecriture_au_chf_connu(pool: MySqlPool) {
         account: PAYPAL,
         balances: balances.into_iter().map(|b| (b.account.id, b)).collect(),
         locked_entries: Default::default(),
+        locked_accounts: &[],
     };
     let entry = provider_accept::write_provider_entry(
         &mut tx,

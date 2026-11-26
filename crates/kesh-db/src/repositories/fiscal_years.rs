@@ -274,6 +274,14 @@ pub const FY_OPENING_FIRST_YEAR_CLOSED_KEY: &str = "fiscal_year:opening-first-ye
 /// AUCUN exercice (garde double-ouverture, finding P3-BH3-1).
 pub const FY_OPENING_ALREADY_HAS_ENTRIES_KEY: &str = "fiscal_year:opening-already-has-entries";
 
+/// `create_opening_entry` a lu, **sous verrou**, une ligne visant un compte de
+/// produits ou de charges (`Revenue` / `Expense`) : un bilan d'ouverture ne
+/// touche que des comptes de bilan (Story 53-3, #513). Émise après les gardes
+/// « société vierge » et de statut, avant le contrôle des comptes de
+/// `create_in_tx` ; re-mappée par `map_opening_balances_error` en
+/// `error-opening-balances-non-balance-account`.
+pub const FY_OPENING_NON_BALANCE_ACCOUNT_KEY: &str = "fiscal_year:opening-non-balance-account";
+
 /// Construit le snapshot JSON utilisé par les entrées d'audit log.
 fn snapshot_json(fy: &FiscalYear) -> serde_json::Value {
     json!({

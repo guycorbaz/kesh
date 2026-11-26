@@ -51,6 +51,7 @@ vi.mock('$lib/features/accounts/accounts.api', () => ({
 
 import Page from './+page.svelte';
 import { authState } from '$lib/app/stores/auth.svelte';
+import { companyIdentity } from '$lib/app/stores/company-identity.svelte';
 
 // Story v0172-session (0.17.3, CR #891, AC-8) — la section « Session » n'est
 // rendue que pour l'Administrateur ; les autres rôles ne lisent pas le réglage.
@@ -1497,6 +1498,31 @@ describe('page Paramètres — nom de la société (Story v0190-nom-societe)', (
 		await fireEvent.click(getByTestId('settings-company-name-save'));
 		await vi.waitFor(() => expect(updateCompanyNameMock).toHaveBeenCalledTimes(1));
 		expect(updateCompanyNameMock.mock.calls[0][0]).toEqual({ name: 'Moi SA', version: 2 });
+	});
+
+	// Story 1582 (D8) — le nom corrigé suit dans l'en-tête, sans rechargement.
+	it('Story 1582 : le nom enregistré met le store de l’en-tête à jour ; une réponse périmée, non', async () => {
+		companyIdentity.clear();
+		connecter('Admin');
+		fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+		updateCompanyNameMock.mockResolvedValueOnce(societe({ name: 'Démo SA', version: 2 }).company);
+		const { findByTestId, getByTestId, queryByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-name-edit'));
+		await saisir(getByTestId, 'settings-company-name-input', 'Démo SA');
+		await fireEvent.click(getByTestId('settings-company-name-save'));
+		await vi.waitFor(() => expect(companyIdentity.name).toBe('Démo SA'));
+
+		// Réponse périmée (version 1 < 2) d'un nom DIFFÉRENT : refusée par adoptionDecision.
+		updateCompanyNameMock.mockRejectedValueOnce(CONFLIT);
+		fetchCompanyCurrentMock.mockResolvedValueOnce(societe({ name: 'Périmé SA', version: 1 }));
+		await fireEvent.click(getByTestId('settings-company-name-edit'));
+		await saisir(getByTestId, 'settings-company-name-input', 'Autre SA');
+		await fireEvent.click(getByTestId('settings-company-name-save'));
+		await vi.waitFor(() => expect(fetchCompanyCurrentMock).toHaveBeenCalledTimes(2));
+		await vi.waitFor(() => expect(queryByTestId('settings-company-name-save')).not.toBeNull());
+		await new Promise((r) => setTimeout(r, 30));
+		expect(companyIdentity.name).toBe('Démo SA');
+		companyIdentity.clear();
 	});
 
 	it('le nom porte la classe du champ en vol et passe en lecture seule pendant l’envoi', async () => {

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { companyIdentity } from '$lib/app/stores/company-identity.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Separator } from '$lib/components/ui/separator';
@@ -221,6 +222,8 @@
 			{ version: company.version, seq },
 		);
 		if (!decision.adopt) return false;
+		// #1582 (D8) : le nom de l'en-tête suit toute société adoptée, jamais une réponse périmée.
+		companyIdentity.set(company.name);
 		if (full) data = full;
 		else if (data) data = { ...data, company };
 		dataSeq = decision.seq;

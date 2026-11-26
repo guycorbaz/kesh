@@ -21,7 +21,7 @@ ajoutent des colonnes `NULL`. `account_kind` ne reçoit toujours aucune valeur n
 **Numéro : 38** (35 et 36 réservés ailleurs ; 39 Wise, **40 Stripe**, provisoire en attendant Guy, B25). Une branche par
 story, fusionnée localement dans `epic/38-paypal`, puis **une PR** vers le dépôt de Guy, ouverte depuis le dépôt du contributeur, **après celle
 de l'Epic 37**. Pas d'issue GitHub à ce stade (le responsable de l'epic n'a qu'un accès en lecture) : le détail vit ici et dans les fiches ;
-issues et PR s'ouvrent à la fin.
+issues et PR s'ouvrent à la fin. *(Annoté le 2026-11-24 : PR #1467, issues #1468 à #1490.)*
 
 **Cible** : la release qui suivra celle de l'Epic 37 (numéro, CHANGELOG daté, macros des manuels, tag : par Guy).
 

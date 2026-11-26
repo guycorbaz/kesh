@@ -702,6 +702,13 @@ impl JobHandle {
         self.downloads.update(self.id, |j| j.steps_done += 1);
     }
 
+    /// Pose le nombre d'étapes en tout, inconnu jusque-là (Stripe, Story
+    /// 40-8b : le nombre de versements n'est connu qu'une fois leur liste lue).
+    pub fn set_total(&self, total: u32) {
+        self.downloads
+            .update(self.id, |j| j.steps_total = Some(total));
+    }
+
     /// `n` étapes de plus (une fenêtre coupée en deux en ajoute une).
     pub fn add_steps(&self, n: u32) {
         self.downloads
@@ -1229,6 +1236,17 @@ mod tests {
         // Finie, elle ne bloque plus la suivante ; une fin ne s'écrase pas.
         let h2 = downloads.start("paypal", 1, "Boutique", p, None).unwrap();
         assert!(h2.id > h.id);
+        // Un total inconnu au départ se pose une fois connu (Stripe, 40-8b) ;
+        // `add_steps` ne le crée pas.
+        h2.add_steps(1);
+        assert_eq!(
+            downloads.view("paypal", h2.id, 1).unwrap().steps.total,
+            None
+        );
+        h2.set_total(12);
+        h2.step_done();
+        let v = downloads.view("paypal", h2.id, 1).unwrap();
+        assert_eq!((v.steps.done, v.steps.total), (1, Some(12)));
         h.finish(JobState::Failed, None, None);
         assert_eq!(
             downloads.view("paypal", h.id, 1).unwrap().state,

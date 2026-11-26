@@ -519,7 +519,7 @@ async fn creation_sans_solde_comportement_d_avant(pool: MySqlPool) {
         // `accountKind` et `cardLast4` à tout compte (intégration de la 0.17.6 :
         // les deux stories, écrites en parallèle, se rencontrent ici) ; dix-sept
         // depuis la 38-11b, qui ajoute `provider` et `paypal` (`null` pour un
-        // compte ordinaire).
+        // compte ordinaire) ; dix-huit depuis la 40-7b, qui ajoute `stripe`.
         let mut cles: Vec<&str> = resp
             .as_object()
             .unwrap()
@@ -545,6 +545,7 @@ async fn creation_sans_solde_comportement_d_avant(pool: MySqlPool) {
                 "paypal",
                 "provider",
                 "qrIban",
+                "stripe",
                 "updatedAt",
                 "version",
             ]
