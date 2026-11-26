@@ -1,6 +1,6 @@
 # Story 55-2 : le lien de compte partout — Journaux, Grand livre, TVA, Compte de résultat
 
-Status: in-progress
+Status: review
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D6, D7 (Q3, acceptée par le mainteneur le
 2026-11-25), D8. Issues : #À-VENIR (`enhancement`,
@@ -286,20 +286,20 @@ section lié et non lié ; TVA avec sa ligne de comptes ; Compte de résultat à
 
 ## Tâches
 
-- [ ] **T0** — Base : `epic/55-navigation` avec la 55-1a et la 55-1b ; relever les lignes ; choisir les clés i18n (AC-9).
-- [ ] **T1** — Vitest rouges des vues neuves.
-- [ ] **T2** — `AccountLink.svelte` ; remplacement des sites (cinq sur la base PR 46) ; `link-class.ts` (D17).
-- [ ] **T2bis** — Balayage des liens non soulignés au repos (AC-16), un commit à part, revu fichier par fichier.
-- [ ] **T3** — Compte de résultat, Journaux, Grand livre, TVA. Propriétés neuves : `GeneralLedgerView` reçoit
+- [x] **T0** — Base : `epic/55-navigation` avec la 55-1a et la 55-1b ; relever les lignes ; choisir les clés i18n (AC-9).
+- [x] **T1** — Vitest rouges des vues neuves.
+- [x] **T2** — `AccountLink.svelte` ; remplacement des sites (cinq sur la base PR 46) ; `link-class.ts` (D17).
+- [x] **T2bis** — Balayage des liens non soulignés au repos (AC-16), un commit à part, revu fichier par fichier.
+- [x] **T3** — Compte de résultat, Journaux, Grand livre, TVA. Propriétés neuves : `GeneralLedgerView` reçoit
       `accountIdByNumber: ReadonlyMap<string, number>` (un `$derived` de `accounts`, comme `letterableAccountIds`
       `+page.svelte:137` : la liste arrive de façon asynchrone) ; `VatReportView` reçoit `vatAccounts: { payable:
       AccountRef | null; recoverable: AccountRef | null }` (`AccountRef = { id, number }`), lus par la page **au premier
       affichage du décompte** (clic, URL, Retour), échec silencieux ; un compte désigné absent de la liste des comptes :
       sa paire est omise.
-- [ ] **T3bis** — Grand livre : le bandeau passe à `ReportSelector` de la 55-1a (`unSeulExercice={false}`, contrôles
+- [x] **T3bis** — Grand livre : le bandeau passe à `ReportSelector` de la 55-1a (`unSeulExercice={false}`, contrôles
       propres par *snippet*), préremplissage des dates vides (AC-11 à AC-15).
-- [ ] **T4** — i18n, manuel, E2E, captures.
-- [ ] **T5** — Gates frontend ; E2E de la story et des Rapports ; à la clôture, `nextest -p kesh-i18n` et
+- [x] **T4** — i18n, manuel, E2E, captures.
+- [x] **T5** — Gates frontend ; E2E de la story et des Rapports ; à la clôture, `nextest -p kesh-i18n` et
       `binary(textes_coherents)` (§ *Gates*, R-2).
 
 ## Gates
@@ -347,7 +347,78 @@ onglet. Tous les liens sont soulignés d'un trait léger, pour se voir sans la c
 
 ### Agent Model Used
 
+Opus (agent de développement de la story), 2026-11-27.
+
 ### Completion Notes List
+
+- **Liens de compte** : `AccountLink.svelte` (neuf) rend tout numéro de compte des vues des Rapports — Bilan ×3,
+  Balance, lignes groupées (`account`, `own`), Compte de résultat à plat (produits, charges), Journaux, titre de
+  section du Grand livre (lié seulement s'il y a plusieurs sections), contreparties du Grand livre (carte numéro →
+  compte `accountIdByNumber`, `$derived` de la liste des comptes ; numéro non résolu en texte), comptes de TVA. Garde DRY
+  de l'AC-1 à la fin : `grep -rn "ledgerHref(" frontend/src/lib/features/reports/*.svelte` → `AccountLink.svelte:5`
+  (commentaire) et `:32` seulement ; second contrôle → `GroupedReportRows.svelte:146` (ligne `group`) et
+  `ProjectExpensesView.svelte:70`, comme attendu ; `grep -n "counterpart.join" GeneralLedgerView.svelte` vide.
+  `ledgerHref` inchangée (D6).
+- **TVA (AC-6)** : ligne `vat-accounts` « Comptes au grand livre : TVA due NNNN · TVA récupérable MMMM » après le contenu
+  du décompte (tableau ou message vide), séparateur `·` masqué aux lecteurs d'écran ; comptes lus par
+  `getInvoiceSettings()` une fois, au premier affichage d'un décompte (effet), résolus par la liste des comptes ;
+  compte non désigné ou absent de la liste, ou réglages en échec : sa paire omise ; type `AccountRef` (neuf).
+- **Grand livre (AC-11 à AC-14)** : bandeau `ReportSelector` (`unSeulExercice={false}`, `datesTestIdPrefix="ledger"`,
+  snippets `controls` — compte, « comptes sans mouvement » — et `actions` — *Générer* seulement sans compte, exports),
+  menu déduit de ses dates propres (`ledgerMenu`, `etatDuMenu`) ; choix d'un exercice → bornes, jamais
+  `selectedFiscalYearId` écrit ; préremplissage des deux dates vides à l'entrée (clic, clavier, adresse incomplète,
+  Retour) depuis l'exercice des rapports classiques ; filtré, chargement seul (choix d'exercice, sortie des dates,
+  Entrée, « Exercice entier », compte, « comptes sans mouvement ») si la clé a changé et `from ≤ to`, adresse remplacée ;
+  sans exercice : dates libres, menu désactivé, pas de message « Créez un exercice ». `ReportSelector` gagne
+  `datesTestIdPrefix` et les dates non désactivées sous `unSeulExercice={false}` ; `leavesToTablist` factorise la règle
+  R-19 des deux bandeaux.
+- **D17** : `frontend/src/lib/shared/navigation/link-class.ts` (`LINK_CLASS`, `LINK_UNDERLINE_CLASS`) ; `AccountLink` et
+  « Exercice entier » portent `LINK_CLASS` ; balayage (commit à part) des huit `<a>` non soulignés au repos et de la
+  variante `link` de `button.svelte` (inventaire au T0). Garde : `grep -rnE 'class="[^"]*hover:underline'
+  frontend/src --include=*.svelte` ne rend plus que des `<button>` (`ProjectExpensesView:65`,
+  `ContactPersonsManager:136`, `products/+page:579,590,598`, `contacts/+page:801`, `supplier-invoices/+page:323`,
+  `journal-entries/+page:598,608,618,628` — boutons de tri ou d'action), aucun `<a>`.
+- **Textes** : `reports-nav-vat-accounts` (FR, DE, IT, EN) ; `reports-ledger-instruction` récrite dans les quatre
+  locales et au repli (tous les comptes : *Générer* ; un compte : il s'affiche seul). `sitesTotal` 3788 → **3785**,
+  relevé par la garde (`front-1/front-test-unit.log` : « expected 3785 to be 3788 »).
+- **Manuel** (`.tex` seul) : § *Choisir la période* (une phrase : le Grand livre a le même bandeau), § *Grand livre* (item
+  « L'exercice comme raccourci… », « Compte facultatif » et chargement seul, « Accès direct depuis tous les
+  rapports » et soulignement), § *Journal des écritures* (une phrase), § *Décompte TVA* (« mouvements de la période »
+  au lieu de « solde », paragraphe « Les comptes au grand livre » avec renvoi à l'avertissement). Plus, sur consigne du
+  coordinateur, commit à part `9952b2d30` « fix(manuel) : guillemets du libellé TXN (repris de fix/manuel-guillemets) »
+  (`\og TXN \ldots\fg{}` → `«~TXN \ldots~»`). PDF aplati contrôlé (sept phrases neuves trouvées une fois chacune).
+- **Tests neufs** (recomptés, de `c8592421f` à la tête) : Vitest **39** — `AccountLink.test.ts` 4,
+  `IncomeStatementView` +1, `JournalReportView` +1, `GeneralLedgerView` +6, `VatReportView` +5, `BalanceSheetView` +1,
+  `TrialBalanceView` +1, `GroupedReportRows` +1, `reports-page-55-2.test.ts` 19 ; E2E **+5** dans
+  `reports-navigation.spec.ts` (9 → 14 tests). Rouge avant : `s55-dev/55-2/vitest-rouge-avant.log` (14 rouges sur les
+  vues, dont les trois filets Bilan/Balance/lignes groupées, rouges par la seule classe ; « aucun compte désigné » et
+  « postes ouverts » verts, gardes déclarées). **Mutations : 14 sur 14 tuées**, chacune par une assertion nommée, copie
+  non mutée verte d'abord (`s55-dev/55-2/mutations/run.py`, `resultat.log`).
+- **Specs E2E adaptées** : `reports.spec.ts` (grand livre filtré chargé au choix du compte, clic *Générer* retiré ;
+  commentaire « AUCUN exercice à choisir » récrit ; « TVA récupérable » visée par sa cellule, la ligne des comptes
+  répétant l'étiquette), `reports-currency.spec.ts` (clic *Générer* retiré). Vitest existants : aucune adaptation.
+- **Gates** (dernier commit de code `8db734ef8`, specs E2E seulement depuis `cdee9ebf5`) :
+  fmt et clippy `-D warnings` verts (`s55-dev/55-2/final/`) ; `nextest -p kesh-i18n` 42/42,
+  `binary(textes_coherents)` 34/34 (après le dernier changement du manuel) ; front à `cdee9ebf5` : check 0 erreur,
+  lint-i18n-ownership vert, Vitest **5545/5545** (316 fichiers), build vert (`s55-dev/55-2/final/`) ; `make user` vert
+  (3 passes, stable ; `s55-dev/55-2/manuel-make.log`), PDF remis à l'état d'avant (`git checkout`), aucun PDF commité.
+  **E2E partiel** : 16 specs (`reports-navigation`, `reports`, `reports-currency`, `reports-balance-groupes`,
+  `reports-export-pdf`, `reports-groupes-export`, `reports-groupes`, `homepage-charts`, `open-items`,
+  `dunning-roundtrip`, `smoke`, et pour le balayage D17 `auth`, `password-recovery`, `supplier-invoice-draft-cycle`,
+  `supplier-invoice-duplicate`, `bank-csv-import`) : premier passage 85 passés, 5 échecs, 5 ignorés
+  (`s55-dev/55-2/e2e/`) — les quatre tests neufs (comptes `10xx` absents du preset, corrigé) et
+  `reports.spec.ts:221` (« TVA récupérable » en double, corrigé) ; rejoués `reports-navigation`, `reports`,
+  `invoice-write-off` : 30/30 (`e2e-2/`), puis `reports-navigation` seul après la capture corrigée : 14/14 (`e2e-3/`).
+  E2E complet et `gate-ci.sh` en fin d'epic.
+- **Captures** (`kesh-gate-logs/s55-dev/55-2/captures/55-2-*.png`) : Journal (numéros liés et soulignés), Grand livre de
+  tous les comptes (titres et contreparties liés), une section (titre en texte), TVA (ligne des comptes sous un
+  décompte vide), Compte de résultat à plat, bandeau du Grand livre sur l'exercice entier, sur une partie (« Exercice
+  entier »), sur « Plusieurs » (en-tête « (exercices 2025 et 2026) »), page de connexion (le lien « mot de passe
+  oublié » n'y est pas rendu dans ce montage — SMTP de test : la capture ne montre pas le lien balayé).
+- **Défauts retenus, en attente du mainteneur** : R-7 (`LINK_CLASS` pour les seuls liens de compte, liens déjà soulignés
+  inchangés) ; D16 (a) (chargement au choix du compte et de « comptes sans mouvement ») ; D17 (balayage mécanique accepté,
+  soulignés en plein inchangés, lien icône du journal exclu) ; R-21 (dates du Grand livre propres) ; V4-1 (pas de
+  retentative de la lecture des réglages).
 
 ### Issues à ouvrir
 
@@ -355,8 +426,26 @@ onglet. Tous les liens sont soulignés d'un trait léger, pour se voir sans la c
 
 - (LOW, `enhancement`) La mention « Solde de 2270 … » des comptes miroirs (`MirrorOfNote.svelte`, Epic 47) reste en
   texte quand les numéros des rapports deviennent des liens ; la lier demande de refaire le message Fluent.
+- (LOW, `technical-debt`) La lecture des réglages de facturation pour la ligne des comptes de TVA n'est pas retentée
+  après un échec (`+page.svelte`, effet `vatSettingsRequested`) : la ligne reste omise jusqu'au rechargement de la page.
+- (LOW, `documentation`) La capture de la page de connexion ne montre pas le lien « Mot de passe oublié »
+  (`routes/login/+page.svelte:197`, rendu conditionnel) : la recette visuelle du balayage D17 sur les écrans
+  d'authentification reste à faire sur une installation dont l'envoi de courriels est configuré.
 
 ### File List
+
+- `frontend/src/lib/features/reports/AccountLink.svelte` (neuf), `AccountLink.test.ts` (neuf)
+- `frontend/src/lib/shared/navigation/link-class.ts` (neuf)
+- `frontend/src/routes/(app)/reports/reports-page-55-2.test.ts` (neuf)
+- `frontend/src/routes/(app)/reports/+page.svelte`
+- `frontend/src/lib/features/reports/{BalanceSheetView,TrialBalanceView,GroupedReportRows,IncomeStatementView,JournalReportView,GeneralLedgerView,VatReportView,ReportSelector}.svelte`, `reports.types.ts`
+- `frontend/src/lib/features/reports/{BalanceSheetView,TrialBalanceView,GroupedReportRows,IncomeStatementView,JournalReportView,GeneralLedgerView,VatReportView}.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- Balayage D17 : `frontend/src/lib/components/ui/button/button.svelte`, `lib/features/auth-recovery/{ForgotPasswordForm,ResetPasswordForm}.svelte`, `lib/features/bank-import/BankProfileList.svelte`, `routes/login/+page.svelte`, `routes/(app)/supplier-invoices/new/+page.svelte`, `routes/(app)/supplier-invoices/[id]/edit/+page.svelte`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `docs/manual/fr/user-manual.tex`
+- `frontend/tests/e2e/{reports-navigation,reports,reports-currency}.spec.ts`
+- `_bmad-output/implementation-artifacts/55-2-lien-de-compte-partout.md`, `sprint-status.yaml`
 
 ## Change Log
 
@@ -517,3 +606,8 @@ onglet. Tous les liens sont soulignés d'un trait léger, pour se voir sans la c
   - **Vitest de la page** : les cas de la 55-2 vont dans un fichier propre, `reports-page-55-2.test.ts`, sur le même
     assistant (`page-url.test-helper.svelte.ts`) : ils demandent des simulations que `reports-page-url.test.ts` n'a
     pas (liste des comptes, réglages de facturation, journal, TVA) — écart de forme à la fiche, aucun cas dupliqué.
+- 2026-11-27 — **Développement** (T1 à T5) : `AccountLink`, `link-class.ts`, liens de compte dans sept vues, ligne des
+  comptes de TVA, Grand livre sur `ReportSelector` (préremplissage, chargement filtré), balayage D17 ; une clé neuve,
+  une récrite ; manuel ; 39 Vitest et 5 E2E neufs, 14 mutations tuées ; guillemets du libellé TXN du manuel (consigne du
+  coordinateur, commit à part). Gates de la story verts (Dev Agent Record). Défauts retenus en attente du mainteneur :
+  R-7, D16 (a), D17, R-21, V4-1. Statut `review` (aucune revue de code : accord du mainteneur attendu).
