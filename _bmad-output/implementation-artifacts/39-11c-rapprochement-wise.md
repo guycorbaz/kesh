@@ -366,7 +366,7 @@ Champ `known_chf` de `ProviderEntry` : non employé (le paiement groupé écrit 
 - 9 tests HTTP neufs (`#[sqlx::test]` de `crates/kesh-api/tests/wise_reconciliation_e2e.rs`) : revue et acceptation
   du tout (12 propositions, soldes EUR 160.00 et USD 317.01 égaux à la variation Wise) ; conversion à une écriture,
   annulation d'un côté puis rattachement à nouveau ; paiement partiel groupé (écriture 97.95 / 86.60 / 13.89 USD à
-  0.90 = 12.50 / perte 1.15), annulation d'une ligne (les trois en attente, vue non bloquée), proposition reparue ;
+  0.90 = 12.50 / perte 1.15 *(Annoté le 2026-11-26 : depuis le correctif de la #1595, la perte de change est de 1.11 et le frais de 0.04 va au compte de frais.)*), annulation d'une ligne (les trois en attente, vue non bloquée), proposition reparue ;
   traitement à la main par l'API (décision (c)) ; péremption, contrepartie, `FX_ACCOUNT_INVALID`,
   `card_group_no_rule` ; écarts (`conversion_half_missing` ×2, `fee_without_origin`, un `balance_gap` malgré un relevé
   postérieur chevauchant la fin, aucun pour le chevauchant) ; droits (clé `read` 403) et refus globaux ; interblocage
@@ -517,7 +517,7 @@ Champ `known_chf` de `ProviderEntry` : non employé (le paiement groupé écrit 
   (une ligne d'un paiement groupé se traite à la main, « une écriture par ligne », puis le reste suit la revue : la ligne
   CHF par règle). Prémisse vérifiée au chiffre : il n'y a **pas** de seconde écriture de la même charge. Le groupe passé
   sans la ligne CHF a pour marchand la seule part USD (11.35) ; la ligne CHF par règle, sa seule part (86.60) ; les deux
-  écritures font la charge (97.95), les crédits CHF (86.60) et USD (12.50, 13.89 USD) et la perte de change (1.15) de
+  écritures font la charge (97.95), les crédits CHF (86.60) et USD (12.50, 13.89 USD) et la perte de change (1.15 *(Annoté le 2026-11-26 : depuis le correctif de la #1595, la perte de change est de 1.11 et le frais de 0.04 va au compte de frais.)*) de
   l'écriture unique de `partielle_en_une_ecriture_puis_annulation`. La sonde `p3_sonde_usd_d_abord_puis_chf` devient le
   test `partielle_usd_d_abord_puis_ligne_chf`, qui l'affirme sur le mouvement des quatre comptes. La phrase « jamais une
   seconde écriture » de `docs/api-external.md` devient vraie autrement : deux écritures possibles, **aucun montant compté
