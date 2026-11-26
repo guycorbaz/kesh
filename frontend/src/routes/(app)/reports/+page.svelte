@@ -252,6 +252,16 @@
 		return genSeq;
 	}
 
+	/**
+	 * L'échec d'une demande : son message ne s'affiche que si elle est la dernière ET que son onglet est
+	 * encore l'onglet actif (Story 55-1a1, revue de code P1-1, AC-10) — un *Retour* ou un clic vers un
+	 * rapport déjà affiché ne périme pas la demande d'un autre onglet, dont l'échec ne doit pas paraître
+	 * au-dessus du rapport atteint. Revenu sur l'onglet, son rapport, absent de la mémoire, est redemandé.
+	 */
+	function failureIfCurrent(mySeq: number, myTab: TabId, e: unknown): void {
+		if (mySeq === genSeq && activeTab === myTab) errorMsg = formatError(e);
+	}
+
 	// Story 46-2 — vue groupée du bilan et du compte de résultat (AC-1 à AC-6, AC-10) ;
 	// Story 46-6b — et de la balance, avec sa propre mémoire.
 	// Relue de la mémoire du navigateur AVANT la première requête : la première
@@ -625,7 +635,7 @@
 					displayedKeys[myTab] = ledgerKey(q);
 				}
 			} catch (e) {
-				if (mySeq === genSeq) errorMsg = formatError(e);
+				failureIfCurrent(mySeq, myTab, e);
 			} finally {
 				if (mySeq === genSeq) {
 					loading = false;
@@ -650,7 +660,7 @@
 					displayedKeys[myTab] = buildReportSearch({ tab: myTab });
 				}
 			} catch (e) {
-				if (mySeq === genSeq) errorMsg = formatError(e);
+				failureIfCurrent(mySeq, myTab, e);
 			} finally {
 				if (mySeq === genSeq) {
 					loading = false;
@@ -684,7 +694,7 @@
 					}
 				}
 			} catch (e) {
-				if (mySeq === genSeq) errorMsg = formatError(e);
+				failureIfCurrent(mySeq, myTab, e);
 			} finally {
 				if (mySeq === genSeq) {
 					loading = false;
@@ -774,7 +784,7 @@
 				}
 			}
 		} catch (e) {
-			if (mySeq === genSeq) errorMsg = formatError(e);
+			failureIfCurrent(mySeq, myTab, e);
 		} finally {
 			if (mySeq === genSeq) {
 				loading = false;
@@ -876,8 +886,12 @@
 	// AC-24 — un rechargement (affichage gardé) de l'onglet actif : le rapport est grisé.
 	const reloadingActive = $derived(refreshing && inFlightTab === activeTab);
 	// AC-26 — « Plusieurs » ou « Hors exercice » sur un onglet à un exercice : rapport retiré de l'écran.
+	// Story 55-1a2, revue de code P1-3 : les rapports par compte analytique en mode « Exercice » aussi (un seul
+	// exercice, `projectQuery`) ; en mode « Cumulé », menu et dates sont masqués, rien n'est retiré.
 	const hiddenByMenu = $derived(
-		isClassicTab(activeTab) && data.fiscalYears.length > 0 && menu.kind !== 'fy',
+		(isClassicTab(activeTab) || (isProjectTab && projectMode === 'fiscal_year')) &&
+			data.fiscalYears.length > 0 &&
+			menu.kind !== 'fy',
 	);
 	// Story 55-1b — la présentation n'y entre pas : l'export reprend celle de la réponse affichée
 	// (`displayedGrouping`, 46-2 AC-6), même quand les contrôles en demandent une autre (redemande en erreur).
@@ -1199,6 +1213,9 @@
 		if (activeTab === next) return;
 		activeTab = next;
 		errorMsg = null;
+		// Story 55-1a2, revue de code P1-5 — des dates quittées vers cet onglet n'ont pas été validées par
+		// `commitPeriod` : une période invalide se signale ici, rien n'étant chargé.
+		updatePeriodInvalid();
 		// Story 55-2 (AC-12) — l'arrivée sur le grand livre remplit ses deux dates vides ; filtré, il se charge.
 		if (next === 'general-ledger') prefillLedgerIfEmpty();
 		const requested =
@@ -1217,10 +1234,15 @@
 
 	/** Un geste sur la période (menu, sortie des dates, Entrée, « Exercice entier ») : charger si demandable. */
 	function commitPeriod(): void {
-		periodInvalid =
-			estDateStockable(periodStart) && estDateStockable(periodEnd) && periodStart > periodEnd;
+		updatePeriodInvalid();
 		if (!isClassicTab(activeTab)) return;
 		if (loadActiveIfNeeded()) writeUrl(urlForTab(activeTab), true);
+	}
+
+	/** Signale une date de début postérieure à la date de fin (AC-20), sous les dates. */
+	function updatePeriodInvalid(): void {
+		periodInvalid =
+			estDateStockable(periodStart) && estDateStockable(periodEnd) && periodStart > periodEnd;
 	}
 
 	/** Choix d'un exercice dans le menu : ses bornes, puis le chargement (AC-15, AC-20). */
@@ -1245,18 +1267,31 @@
 	}
 
 	// R-19 (DE-4) — sous Safari, un clic ne donne pas le focus à un bouton : la sortie des dates vers un
-	// onglet arrive alors avec un `relatedTarget` nul. Le drapeau, posé au `pointerdown` sur la liste
-	// des onglets, dit que le clic va à un onglet, qui chargera lui-même avec les dates tapées.
-	let pointerOnTablist = false;
+	// onglet arrive alors avec un `relatedTarget` nul. Le drapeau, posé au `pointerdown` sur un onglet,
+	// dit QUEL onglet le clic vise ; un AUTRE onglet chargera lui-même avec les dates tapées.
+	let pointerTab: TabId | null = null;
 	let tablistEl = $state<HTMLElement | null>(null);
 
-	/** La sortie des dates va-t-elle à un onglet (focus ou pointeur posé sur la liste des onglets, R-19) ? */
-	function leavesToTablist(via: 'leave' | 'enter', next?: EventTarget | null): boolean {
-		if (via !== 'leave') return false;
-		return pointerOnTablist || (next instanceof Node && (tablistEl?.contains(next) ?? false));
+	/** L'onglet qui reçoit le focus (`relatedTarget` dans la liste des onglets), ou `null`. */
+	function tabOfFocus(next?: EventTarget | null): TabId | null {
+		if (!(next instanceof Element) || !(tablistEl?.contains(next) ?? false)) return null;
+		const id = next.closest('[role="tab"]')?.id.replace(/^reports-tab-/, '');
+		return tabs.find((t) => t.id === id)?.id ?? null;
 	}
 
-	/** Sortie du groupe des dates, ou Entrée. Vers un onglet : rien, l'onglet visé se charge (AC-22). */
+	/**
+	 * La sortie des dates va-t-elle à un AUTRE onglet (pointeur posé sur lui, R-19, ou focus reçu par lui) ?
+	 * Story 55-1a2, revue de code P1-1 et P1-2 : vers l'onglet ACTIF — Tab au clavier, qui y mène depuis
+	 * « Au » quand les exports sont désactivés, ou clic sur lui —, la période est validée ici, car
+	 * `selectTab` ne fait rien pour l'onglet déjà actif.
+	 */
+	function leavesToTablist(via: 'leave' | 'enter', next?: EventTarget | null): boolean {
+		if (via !== 'leave') return false;
+		const target = pointerTab ?? tabOfFocus(next);
+		return target !== null && target !== activeTab;
+	}
+
+	/** Sortie du groupe des dates, ou Entrée. Vers un autre onglet : rien, l'onglet visé se charge (AC-22). */
 	function onPeriodCommit(via: 'leave' | 'enter', next?: EventTarget | null): void {
 		if (leavesToTablist(via, next)) return;
 		commitPeriod();
@@ -1358,10 +1393,10 @@
 	}
 </script>
 
-<!-- R-19 : le drapeau du `pointerdown` sur la liste des onglets tombe au relâchement, voir `onPeriodCommit`. -->
+<!-- R-19 : le drapeau du `pointerdown` sur un onglet (`pointerTab`) tombe au relâchement, voir `leavesToTablist`. -->
 <svelte:window
-	onpointerup={() => (pointerOnTablist = false)}
-	onpointercancel={() => (pointerOnTablist = false)}
+	onpointerup={() => (pointerTab = null)}
+	onpointercancel={() => (pointerTab = null)}
 />
 
 <svelte:head>
@@ -1585,7 +1620,7 @@
 				class="border-b-2 px-4 py-2 text-sm font-medium {activeTab === tab.id
 					? 'border-indigo-600 text-indigo-700'
 					: 'border-transparent text-gray-600 hover:text-gray-900'}"
-				onpointerdown={() => (pointerOnTablist = true)}
+				onpointerdown={() => (pointerTab = tab.id)}
 				onclick={() => selectTab(tab.id)}
 				onkeydown={(e) => handleTabKeydown(e, idx)}
 			>

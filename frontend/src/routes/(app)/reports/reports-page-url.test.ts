@@ -270,6 +270,22 @@ describe('Retour et Suivant (AC-1, AC-2, AC-13)', () => {
 		expect(r.queryByRole('alert')).toBeNull();
 	});
 
+	it('revue P1-1 — échec du Compte de résultat APRÈS le Retour au Bilan : aucun message au-dessus du Bilan', async () => {
+		let rejeter!: (e: Error) => void;
+		m.getIncomeStatement.mockImplementationOnce(() => new Promise((_res, rej) => (rejeter = rej)));
+		const r = await monter('/reports');
+		await fireEvent.click(onglet(r, 'Compte de résultat'));
+		await tick();
+		retour(); // le Bilan est affiché : repris de la mémoire, la demande de l'autre onglet reste en vol
+		await tick();
+		await pause();
+		expect(onglet(r, 'Bilan').getAttribute('aria-selected')).toBe('true');
+		rejeter(new Error('réseau'));
+		await pause();
+		expect(r.queryByRole('alert')).toBeNull();
+		expect(r.getByText('Caisse')).toBeTruthy();
+	});
+
 	it('AC-8 b, AC-13 — Retour vers un rapport absent de la mémoire pendant le chargement d’un autre : demandé, l’autre périmé', async () => {
 		m.getIncomeStatement.mockImplementationOnce(async () => {
 			throw new Error('réseau'); // le compte de résultat n'est pas en mémoire
@@ -429,6 +445,40 @@ describe('le chargement sans Générer (D16, AC-20 à AC-26)', () => {
 		expect(appels(m.getBalanceSheet)).toBe(1);
 	});
 
+	it('revue P1-1 — dates tapées puis Tab vers l’onglet ACTIF (exports désactivés) : la période est chargée', async () => {
+		const r = await monter('/reports');
+		await fireEvent.input(au(r), { target: { value: '2026-06-30' } });
+		await fireEvent.focusOut(au(r), { relatedTarget: onglet(r, 'Bilan') });
+		await pause();
+		expect(appels(m.getBalanceSheet)).toBe(2);
+		expect(m.getBalanceSheet.mock.calls[1][0]).toMatchObject({ periodEnd: '2026-06-30' });
+	});
+
+	it('revue P1-2 — dates tapées puis clic sur l’onglet ACTIF (relatedTarget nul) : la période est chargée, une fois', async () => {
+		const r = await monter('/reports');
+		await fireEvent.input(au(r), { target: { value: '2026-06-30' } });
+		const actif = onglet(r, 'Bilan');
+		await fireEvent.pointerDown(actif);
+		await fireEvent.focusOut(au(r), { relatedTarget: null });
+		await fireEvent.click(actif);
+		await pause();
+		expect(appels(m.getBalanceSheet)).toBe(2);
+		expect(m.getBalanceSheet.mock.calls[1][0]).toMatchObject({ periodEnd: '2026-06-30' });
+	});
+
+	it('revue P1-5 — début après fin, puis clic sur un autre onglet : rien n’est chargé, le message est sous les dates', async () => {
+		const r = await monter('/reports');
+		await fireEvent.input(du(r), { target: { value: '2026-09-01' } });
+		await fireEvent.input(au(r), { target: { value: '2026-03-31' } });
+		const cible = onglet(r, 'Compte de résultat');
+		await fireEvent.pointerDown(cible);
+		await fireEvent.focusOut(au(r), { relatedTarget: null });
+		await fireEvent.click(cible);
+		await pause();
+		expect(appels(m.getIncomeStatement)).toBe(0);
+		expect(r.getByTestId('report-period-invalid')).toBeTruthy();
+	});
+
 	it('AC-24 — premier chargement « Chargement… » ; rechargement : ancien rapport grisé, aria-busy', async () => {
 		const finir1 = suspendre(m.getBalanceSheet, bilan);
 		const r = await monter('/reports');
@@ -530,6 +580,29 @@ describe('exercice et rapports par compte analytique (R-8, R-10, AC-9)', () => {
 		await tick();
 		expect((r.getByTestId('project-report-export-csv') as HTMLButtonElement).disabled).toBe(true);
 		expect((r.getByTestId('project-report-project') as HTMLSelectElement).value).toBe('5');
+	});
+
+	it('revue P1-3 (AC-26) — rapport par compte analytique en mode Exercice, dates dans deux exercices : rapport retiré, message', async () => {
+		m.listProjects.mockResolvedValue([{ id: 5, code: 'P5', name: 'Projet', parentId: null }]);
+		m.getProjectExpenses.mockImplementation(async () => ({
+			reportType: 'project-expenses',
+			project: { id: 5, code: 'P5', name: 'Projet' },
+			mode: 'fiscal_year',
+			periodLabel: '2026',
+			sections: [],
+			grandTotal: '0',
+		}));
+		const r = await monter('/reports');
+		await fireEvent.click(onglet(r, 'Dépenses par compte analytique'));
+		await fireEvent.change(r.getByTestId('project-report-project'), { target: { value: '5' } });
+		await fireEvent.click(r.getByTestId('project-report-generate'));
+		await waitFor(() => expect(r.queryByTestId('report-content')).not.toBeNull());
+		await fireEvent.input(du(r), { target: { value: '2025-06-01' } });
+		await fireEvent.focusOut(du(r), { relatedTarget: null });
+		await tick();
+		expect(r.queryByTestId('report-content')).toBeNull();
+		expect(r.getByTestId('report-needs-one-fy')).toBeTruthy();
+		expect(appels(m.getProjectExpenses)).toBe(1);
 	});
 
 	it('AC-9 — une adresse d’un autre exercice : la demande qu’elle lance n’est pas périmée par le changement d’exercice', async () => {
