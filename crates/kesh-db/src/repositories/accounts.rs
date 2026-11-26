@@ -3153,7 +3153,7 @@ mod tests {
         use crate::repositories::journal_entries;
         use rust_decimal::Decimal;
 
-        journal_entries::create(
+        journal_entries::create_with_policy(
             pool,
             fiscal_year_id,
             crate::entities::audit_log::Acteur::utilisateur(admin_user_id),
@@ -3180,6 +3180,8 @@ mod tests {
                     },
                 ],
             },
+            // Story 53-1a : écritures identiques à dessein (décor), politique Confirmed.
+            crate::repositories::duplicate_policy::DuplicatePolicy::Confirmed,
         )
         .await
         .expect("création de l'écriture de test");

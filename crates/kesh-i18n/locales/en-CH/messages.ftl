@@ -4347,6 +4347,16 @@ error-source-document-gone = The supporting document was not restored (metadata 
 error-data-length-or-range = A value provided is too long or out of range.
 error-invalid-input-generic = Invalid input
 
+# Story 53-1a (#1355) — la saisie d'une écriture ne passe pas deux fois
+error-journal-entry-probable-duplicate = An identical entry already exists on this date (same journal, same description, same accounts and amounts). If it is the same one, do not record it a second time; otherwise, confirm that it is not a duplicate.
+journal-entries-duplicate-existing = Entry no. { $number } of { $date }
+journal-entries-duplicate-confirm = It is not a duplicate, save
+journal-entries-duplicate-edit = Edit the entry
+journal-entries-unknown-outcome = The entry may have been saved. Check in the journal whether it exists before entering it again.
+journal-entries-unknown-outcome-link = See the entries of this date
+journal-entries-unknown-outcome-resume = I checked, it does not exist — resume entering
+journal-entries-unknown-outcome-update = The change may have been saved: reload the entry before changing it again.
+audit-log-action-journal-entry-duplicate-confirmed = Entry duplicate confirmed
 # Story 40-7d — écrans du compte Stripe : paramètres, page Stripe, libellés
 nav-stripe = Stripe
 fiscal-years-checks-k2-link-stripe = Open the Stripe page

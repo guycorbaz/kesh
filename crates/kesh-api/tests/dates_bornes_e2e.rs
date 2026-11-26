@@ -291,11 +291,16 @@ impl Monde {
 
     /// Une écriture équilibrée par la route : `(id, version)`.
     async fn ecriture(&self) -> (i64, i64) {
+        // Story 53-1a : la route refuse une écriture identique à une écriture du même
+        // jour ; la grille appelle ce montage plusieurs fois par test, le libellé
+        // porte donc un rang propre à chaque appel.
+        static RANG: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let rang = RANG.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let r = self
             .post(
                 "/api/v1/journal-entries",
                 json!({
-                    "entryDate": aujourd_hui(), "journal": "OD", "description": "Montage",
+                    "entryDate": aujourd_hui(), "journal": "OD", "description": format!("Montage {rang}"),
                     "lines": self.lignes_ecriture(),
                 }),
             )

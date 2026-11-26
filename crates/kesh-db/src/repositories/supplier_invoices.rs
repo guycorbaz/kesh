@@ -446,40 +446,7 @@ macro_rules! in_own_tx {
 // Story 48-12a (#975) — le refus des factures fournisseur en double
 // ---------------------------------------------------------------------------
 
-/// Ce que fait la règle anti-doublon d'un refus **confirmable** (Story 48-12a,
-/// D5 ; patron du `confirm_designated` d'`accounts::archive`).
-///
-/// - [`DuplicatePolicy::Refuse`] : tout doublon est refusé. C'est la politique
-///   des fonctions qui ont gardé leur signature (`create_draft`,
-///   `create_validated`, `create_draft_in_tx`, `update_draft`,
-///   `update_draft_in_tx`, `unvalidate`, `unvalidate_in_tx`) : seeds, tests et
-///   futurs appelants passent par elle sans le savoir.
-/// - [`DuplicatePolicy::Confirmed`] : l'appelant a reçu `confirmNotDuplicate:
-///   true`. Il lève la règle 2 (même date et même total) ; à la création, à la
-///   modification et à la complétion, **jamais** la règle 1 (même numéro dans la
-///   même année civile) ; à la dévalidation d'une annulée, les deux (D6bis) —
-///   la table est [`DuplicateRule::lifted_by_confirmation`], seule source. Un
-///   refus levé ainsi s'inscrit au journal d'audit
-///   (`supplier_invoice.duplicate_confirmed`), dans la même transaction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum DuplicatePolicy {
-    /// Tout doublon est refusé.
-    #[default]
-    Refuse,
-    /// L'utilisateur ou l'intégration a confirmé que ce n'est pas un doublon.
-    Confirmed,
-}
-
-impl DuplicatePolicy {
-    /// La politique que demande le champ `confirmNotDuplicate` d'une requête.
-    pub fn from_confirmation(confirm_not_duplicate: bool) -> Self {
-        if confirm_not_duplicate {
-            Self::Confirmed
-        } else {
-            Self::Refuse
-        }
-    }
-}
+pub use super::duplicate_policy::DuplicatePolicy;
 
 /// La règle anti-doublon qu'une facture enfreint (Story 48-12a, D1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

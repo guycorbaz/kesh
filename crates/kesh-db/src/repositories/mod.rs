@@ -23,6 +23,7 @@ pub mod credit_note_number_sequences;
 pub mod credit_notes;
 pub mod dunning_eligibility;
 pub mod dunning_levels;
+pub mod duplicate_policy;
 pub mod email_templates;
 pub mod exchange_rates;
 pub mod fiscal_years;

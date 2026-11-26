@@ -134,7 +134,7 @@ async fn validated_invoice(
             foreign: None,
         });
     }
-    let je = kesh_db::repositories::journal_entries::create(
+    let je = kesh_db::repositories::journal_entries::create_with_policy(
         pool,
         seeded.fiscal_year_id,
         Acteur::utilisateur(seeded.admin_user_id),
@@ -146,6 +146,8 @@ async fn validated_invoice(
             project_id: None,
             lines: entry_lines,
         },
+        // Story 53-1a : écritures identiques à dessein (décor), politique Confirmed.
+        kesh_db::repositories::duplicate_policy::DuplicatePolicy::Confirmed,
     )
     .await
     .expect("écriture de vente");

@@ -172,11 +172,14 @@ async fn creer(
     dec: &Decor,
     new: NewJournalEntry,
 ) -> Result<kesh_db::entities::JournalEntryWithLines, DbError> {
-    journal_entries::create(
+    // Story 53-1a : les cas de ce fichier saisissent la même écriture de référence
+    // plusieurs fois à dessein (ils jugent les devises, non le doublon) : `Confirmed`.
+    journal_entries::create_with_policy(
         pool,
         dec.s.fiscal_year_id,
         Acteur::utilisateur(dec.s.admin_user_id),
         new,
+        kesh_db::repositories::duplicate_policy::DuplicatePolicy::Confirmed,
     )
     .await
 }

@@ -444,6 +444,9 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  *
  * **Fusion d'origin/main dans epic/50 (2026-11-24)** : 140 (PayPal) + 2 (48-12b) = **142**, `conforme`
  * 119 + 2 = **121**, provisoires, à confirmer par la garde.
+ *
+ * **142 → 143** (Story 53-1a, #1355) : `entryDuplicateText` (`journal-entries/entry-submit-state.ts`, par
+ * `i18nMsg`) ; `conforme` **121 → 122**, relevés par la garde (« expected 143 to be 142 »).
  */
 // **138 → 145** (Story 40-7d) : les libellés de l'écran Stripe (`stripe/stripe-labels.ts`) et les
 // libellés communs aux prestataires (`provider/provider-labels.ts`), tous par `i18nMsg` ;
@@ -452,7 +455,8 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
 // `progressLabel` de la 38-12b ; `conforme` **124 → 126**, relevés par la garde (« expected 147 to be 0 »).
 // **147 → 149** (reprise de main à 1e23edb55, Epics 49 et 50 : 140 → 142 de son côté) ; `conforme`
 // **126 → 128**, confirmés par la garde (`kesh-gate-logs/s40-m2d/compteurs-3.log`).
-const CANDIDATES_ATTENDUES = 149;
+// **149 → 150** (Story 53-1a, #1355) : `entryDuplicateText` ; `conforme` **128 → 129**, à confirmer par la garde.
+const CANDIDATES_ATTENDUES = 150;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -969,7 +973,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 128 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 129 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

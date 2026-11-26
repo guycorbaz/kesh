@@ -4422,6 +4422,16 @@ error-source-document-gone = Le justificatif n'a pas été restauré (métadonn�
 error-data-length-or-range = Une valeur fournie est trop longue ou hors plage.
 error-invalid-input-generic = Entrée invalide
 
+# Story 53-1a (#1355) — la saisie d'une écriture ne passe pas deux fois
+error-journal-entry-probable-duplicate = Une écriture identique existe déjà à cette date (même journal, même libellé, mêmes comptes et montants). Si c’est la même, ne l’enregistrez pas une seconde fois ; sinon, confirmez que ce n’est pas un doublon.
+journal-entries-duplicate-existing = Écriture n° { $number } du { $date }
+journal-entries-duplicate-confirm = Ce n’est pas un doublon, enregistrer
+journal-entries-duplicate-edit = Modifier la saisie
+journal-entries-unknown-outcome = L’enregistrement a peut-être abouti. Vérifiez dans le journal si l’écriture existe avant de la saisir de nouveau.
+journal-entries-unknown-outcome-link = Voir les écritures de cette date
+journal-entries-unknown-outcome-resume = J’ai vérifié, elle n’existe pas — reprendre la saisie
+journal-entries-unknown-outcome-update = La modification a peut-être été enregistrée : rechargez l’écriture avant de la modifier encore.
+audit-log-action-journal-entry-duplicate-confirmed = Doublon d’écriture confirmé
 # Story 40-7d — écrans du compte Stripe : paramètres, page Stripe, libellés
 nav-stripe = Stripe
 fiscal-years-checks-k2-link-stripe = Ouvrir la page Stripe

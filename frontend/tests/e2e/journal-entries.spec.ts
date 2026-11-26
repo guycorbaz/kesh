@@ -357,10 +357,17 @@ test.describe("Page écritures — la liste mène à la fiche, où l'on corrige 
    * le bouton « Valider » du formulaire, déjà inscrit pour ce fichier à
    * `e2e-selecteurs-traduits.test.ts` (KF-043) — aucun couple neuf.
    */
+  let seedEntryRank = 0;
   async function createSeedEntry(page: import("@playwright/test").Page) {
     const { debitNumber, creditNumber } = await getSeedAccountNumbers(page);
     await page.getByRole("button", { name: /Nouvelle écriture/ }).click();
-    await page.fill("#entry-description", "Test 24-4b gel target");
+    // Story 53-1a : la saisie d'une écriture identique à une écriture du même jour est
+    // refusée (J5) ; ce décor est appelé deux fois, le libellé porte donc un rang propre.
+    seedEntryRank += 1;
+    await page.fill(
+      "#entry-description",
+      `Test 24-4b gel target ${seedEntryRank}`,
+    );
     const accountInputs = page.locator('input[aria-autocomplete="list"]');
     await accountInputs.nth(0).fill(debitNumber);
     await page.getByRole("listbox").getByRole("option").first().click();

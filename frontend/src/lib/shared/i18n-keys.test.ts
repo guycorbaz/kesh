@@ -1235,7 +1235,8 @@ const ATTENDU = {
 	// `paypal-to-review-already-posted` de PayPal.
 	// Reprise de main à 1e23edb55 (Epics 49 et 50, #1560 déjà portée) dans pr/40-stripe (2026-11-25) : les deux
 	// côtés gardés ; 3746 (pr/40, base 3677) + 25 (main, 3677 → 3702) = **3771**, confirmé par la garde (`kesh-gate-logs/s40-m2d/compteurs-3.log`).
-	sitesTotal: 3771,
+	// Story 53-1a (#1355) sur main (3771) : + 8 (entry-submit-state.ts : 1 ; JournalEntryForm.svelte : 7) = **3779**, à confirmer par la garde.
+	sitesTotal: 3779,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

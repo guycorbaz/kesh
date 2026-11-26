@@ -6097,6 +6097,12 @@ impl IntoResponse for AppError {
                 // ⚠️ Refuser est VOULU : supprimer une écriture qu'on a corrigée
                 // effacerait la correction. Rendu explicite plutôt que laissé
                 // remonter comme une violation de clé étrangère au message opaque.
+                // Story 53-1a (#1355, D1, D7) — le refus d'une écriture saisie en
+                // double. Toujours levable : `confirmable: true`. Le texte est
+                // celui de l'écran (clé `error-journal-entry-probable-duplicate`).
+                DbError::JournalEntryProbableDuplicate { existing } => {
+                    journal_entry_probable_duplicate_response(&existing)
+                }
                 DbError::EntryIsReversed => build_response(
                     StatusCode::CONFLICT,
                     "ENTRY_IS_REVERSED",
@@ -6771,6 +6777,36 @@ fn supplier_invoice_duplicate_response(
                 "internalNumber": existing.internal_number,
                 "status": existing.status,
                 "confirmable": confirmable,
+            },
+        }
+    });
+    (StatusCode::CONFLICT, Json(body)).into_response()
+}
+
+/// Le texte FR (repli) du refus de doublon à la **saisie d'une écriture** — clé
+/// `error-journal-entry-probable-duplicate` (Story 53-1a, D7) ; le même texte
+/// s'affiche à l'écran, et la conversion le réemploiera (53-1b).
+const JOURNAL_ENTRY_PROBABLE_DUPLICATE_FR: &str = "Une écriture identique existe déjà à cette date (même journal, même libellé, mêmes comptes et montants). Si c’est la même, ne l’enregistrez pas une seconde fois ; sinon, confirmez que ce n’est pas un doublon.";
+
+/// La réponse **409** d'un refus de doublon à la saisie d'une écriture (Story
+/// 53-1a, #1355, D1, D7) : `details : { journalEntryId, entryNumber, entryDate,
+/// confirmable }`, l'écriture **existante** ; `confirmable` vaut toujours `true`
+/// (Q4 : deux écritures identiques le même jour sont légitimes).
+fn journal_entry_probable_duplicate_response(
+    existing: &kesh_db::errors::ExistingJournalEntry,
+) -> Response {
+    let body = serde_json::json!({
+        "error": {
+            "code": "JOURNAL_ENTRY_PROBABLE_DUPLICATE",
+            "message": t(
+                "error-journal-entry-probable-duplicate",
+                JOURNAL_ENTRY_PROBABLE_DUPLICATE_FR,
+            ),
+            "details": {
+                "journalEntryId": existing.id,
+                "entryNumber": existing.entry_number,
+                "entryDate": existing.entry_date,
+                "confirmable": true,
             },
         }
     });

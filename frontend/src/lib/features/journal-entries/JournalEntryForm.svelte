@@ -6,6 +6,9 @@
 	import { X, Plus } from '@lucide/svelte';
 	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { isSettlementOutcomeUnknown } from '$lib/shared/utils/unknown-outcome';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
+	import SupplierInvoiceNotice from '$lib/features/supplier-invoices/SupplierInvoiceNotice.svelte';
 	import { notifyMissingFiscalYearOrFallback } from '$lib/shared/utils/notify';
 	import { todayLocal } from '$lib/shared/utils/local-date';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
@@ -69,6 +72,18 @@
 	import { foreignProblemMessage, fxRefusalMessage, isFxRefusalCode, refusalLine } from './fx-refusals';
 	import { createRateLookupCache, type LookupResult, type RateLookupCache } from './rate-lookup';
 	import { debounce } from './debounce';
+	import {
+		canConfirmFrom,
+		canSendFrom,
+		canWriteEntry,
+		entryDuplicateText,
+		isEntryFrozen,
+		readEntryDuplicateRefusal,
+		stateAfterRejection,
+		unknownOutcomeHref,
+		type EntryDuplicateRefusal,
+		type EntrySubmitState
+	} from './entry-submit-state';
 
 	interface Props {
 		accounts: AccountResponse[];
@@ -242,6 +257,9 @@
 		pendingKeys.add(key);
 		const done: Promise<void> = p
 			.then((r) => {
+				// Story 53-1a (relevé C1, défense en profondeur) : à partir de J2b le
+				// corps est formé et gardé, une écriture tardive le ferait diverger.
+				if (!canWriteEntry(untrack(() => phase))) return;
 				if (monthOf(entryDate) !== month) return;
 				lines = lines.map((l) =>
 					l.foreign && l.foreign.currency === currency
@@ -289,6 +307,9 @@
 	$effect(() => {
 		const d = entryDate;
 		if (d === untrack(() => lastDate)) return;
+		// Story 53-1a (relevé C2) : hors des états de saisie, la date ne programme
+		// aucune recherche (et n'est pas marquée vue : revue P1, E3).
+		if (!canWriteEntry(untrack(() => phase))) return;
 		lastDate = d;
 		refreshOnDate();
 	});
@@ -477,6 +498,8 @@
 
 	/** `RATE_UNAVAILABLE` → « Récupérer le mois », puis le renvoi. */
 	async function fetchMissingMonth() {
+		// Story 53-1a (relevé C3) : rien ne part hors des états de saisie.
+		if (!isEdit && !canSendFrom(phase)) return;
 		const missing = rateUnavailable;
 		if (!missing) return;
 		rateUnavailable = null;
@@ -529,12 +552,32 @@
 
 	let submitting = $state(false);
 
+	// Story 53-1a (#1355, table J) — l'état de l'envoi, à la **création** seulement :
+	// en modification, le comportement reste celui d'avant (le second envoi rend
+	// `OPTIMISTIC_LOCK_CONFLICT`) et `phase` demeure `J1`.
+	let phase = $state<EntrySubmitState>('J1');
+	/** Le refus de doublon lu en J5 : l'écriture existante citée. */
+	let duplicate = $state<EntryDuplicateRefusal | null>(null);
+	/**
+	 * Le **corps gardé** de l'envoi en vol : c'est lui, et nul autre, que renvoie la
+	 * confirmation de J5 (M18 : jamais reformé) ; sa date alimente le lien de J6.
+	 */
+	let kept = $state.raw<{ payload: CreateJournalEntryRequest; sentIndexes: number[] } | null>(null);
+	/** Figé : tous les contrôles qui écrivent la saisie (`<fieldset disabled>`). */
+	const frozen = $derived(!isEdit && isEntryFrozen(phase));
+	/** « Valider » n'est offert ni en J5 ni en J6. */
+	const showSubmit = $derived(isEdit || (phase !== 'J5' && phase !== 'J6'));
+
 	// Assistant TVA achat (Story 18-1c) : lignes en attente de confirmation
 	// de remplacement (si le brouillon n'est pas vierge).
 	let pendingAssistant = $state<{ lines: LineDraft[]; description: string } | null>(null);
 
 	/** Applique les lignes générées par l'assistant : remplace le brouillon. */
 	function applyAssistant(result: { lines: LineDraft[]; description: string }) {
+		// Story 53-1a (D8, revue P1 E1) : la modale de remplacement est hors du
+		// `<fieldset>` ; à partir de J2b elle ne doit plus écrire la saisie (le corps
+		// gardé divergerait de ce que l'écran montre).
+		if (!canWriteEntry(phase)) return;
 		lines = result.lines;
 		// Les lignes sont remplacées : les refus par ligne ne visent plus rien.
 		lineRefusals = {};
@@ -554,6 +597,12 @@
 			applyAssistant(result);
 		}
 	}
+
+	// Story 53-1a (E1) : la confirmation de remplacement se ferme dès que la saisie
+	// n'est plus modifiable (J2a, J2b, J3, J5, J6 : la saisie est figée).
+	$effect(() => {
+		if (!canWriteEntry(phase)) pendingAssistant = null;
+	});
 
 	function confirmAssistantReplace() {
 		if (pendingAssistant) applyAssistant(pendingAssistant);
@@ -586,6 +635,8 @@
 
 	const canSubmit = $derived.by(() => {
 		if (submitting) return false;
+		// Story 53-1a : à la création, l'envoi ne part que des états de saisie.
+		if (!isEdit && !canWriteEntry(phase)) return false;
 		if (description.trim() === '') return false;
 		const validLines = nonEmptyLines.filter((x) => x.status === 'valid');
 		const partialLines = nonEmptyLines.filter((x) => x.status === 'partial');
@@ -624,15 +675,23 @@
 
 	async function handleSubmit() {
 		if (!canSubmit) return;
+		// Story 53-1a : à la création, l'envoi ordinaire ne part que de J1 et J7.
+		if (!isEdit && !canSendFrom(phase)) return;
 		// Story 37-3b (AC-2) : l'envoi attend les `lookup` en cours (provenance) —
 		// y compris celui d'un changement de date encore différé (revue de code
 		// P1, 37-3b-CR-P1-5 : sans quoi la ligne partirait au cours de l'ancien mois).
 		refreshOnDate.flush();
 		if (inflight.size > 0) {
+			// J2a : le formulaire est figé, le corps n'est pas encore formé ; les
+			// recherches en vol peuvent encore écrire la saisie (voulu, `canWriteEntry`).
+			if (!isEdit) phase = 'J2a';
 			submitting = true;
 			await Promise.all([...inflight]);
 			submitting = false;
-			if (!canSubmit) return;
+			if (!canSubmit) {
+				if (!isEdit) phase = 'J1';
+				return;
+			}
 		}
 		lineRefusals = {};
 		rateNotAfc = {};
@@ -653,7 +712,15 @@
 							: { accountId: line.accountId!, debit, credit, projectId: line.projectId };
 					})()
 		);
-		if (payloadLines.some((l) => l === null)) return;
+		if (payloadLines.some((l) => l === null)) {
+			if (!isEdit) phase = 'J1';
+			return;
+		}
+		// J2b : requête en vol, le corps est formé et **gardé**.
+		if (!isEdit) {
+			phase = 'J2b';
+			duplicate = null;
+		}
 		submitting = true;
 
 		const payload: CreateJournalEntryRequest = {
@@ -662,17 +729,77 @@
 			description: description.trim(),
 			lines: payloadLines.map((l) => l!)
 		};
+		kept = { payload, sentIndexes };
+		await transmit(payload, sentIndexes, false);
+	}
 
+	/**
+	 * « Ce n'est pas un doublon, enregistrer » (J5 → J2b) : renvoie le **corps gardé**
+	 * avec `confirmNotDuplicate: true`, une seule fois — la garde est synchrone.
+	 */
+	async function confirmDuplicate() {
+		if (!canConfirmFrom(phase) || kept === null) return;
+		phase = 'J2b';
+		submitting = true;
+		await transmit(kept.payload, kept.sentIndexes, true);
+	}
+
+	/** « Modifier la saisie » (J5 → J1). */
+	function modifyEntry() {
+		if (phase !== 'J5') return;
+		duplicate = null;
+		phase = 'J1';
+	}
+
+	/** « J'ai vérifié, elle n'existe pas — reprendre la saisie » (J6 → J1) : rien n'est envoyé. */
+	function resumeEntry() {
+		if (phase !== 'J6') return;
+		phase = 'J1';
+	}
+
+	/** L'envoi lui-même : succès (J3), refus de doublon (J5), issue inconnue (J6), erreur (J7). */
+	async function transmit(
+		payload: CreateJournalEntryRequest,
+		sentIndexes: number[],
+		confirm: boolean
+	) {
 		try {
 			if (isEdit && initialEntry) {
 				const updatePayload: UpdateJournalEntryRequest = { ...payload, version };
 				await updateJournalEntry(initialEntry.id, updatePayload);
 			} else {
-				await createJournalEntry(payload);
+				await createJournalEntry(confirm ? { ...payload, confirmNotDuplicate: true } : payload);
 			}
+			if (!isEdit) phase = 'J3';
 			toast.success(i18nMsg('journal-entry-saved', 'Écriture enregistrée'));
 			onSuccess();
 		} catch (err) {
+			// Story 53-1a (J6-m) : à la modification, une issue inconnue ne passe plus
+			// pour un échec ; le formulaire reste actif (le second envoi rend
+			// `OPTIMISTIC_LOCK_CONFLICT`).
+			if (isEdit && isSettlementOutcomeUnknown(err)) {
+				toast.error(
+					i18nMsg(
+						'journal-entries-unknown-outcome-update',
+						'La modification a peut-être été enregistrée : rechargez l’écriture avant de la modifier encore.'
+					)
+				);
+				return;
+			}
+			// Table J, sorties de J2b : le refus de doublon (J5), l'issue inconnue (J6).
+			if (!isEdit) {
+				const next = stateAfterRejection(err, isSettlementOutcomeUnknown);
+				if (next === 'J5') {
+					duplicate = readEntryDuplicateRefusal(err);
+					phase = 'J5';
+					return;
+				}
+				if (next === 'J6') {
+					phase = 'J6';
+					return;
+				}
+				phase = 'J7';
+			}
 			if (isApiError(err)) {
 				const code = err.code ?? '';
 				// Story 15-8a (D8) — en édition, un refus qui dit que l'écriture a
@@ -773,6 +900,8 @@
 			// champ. Rendre le focus fait passer un brouillon de compte par le `blur`
 			// d'`AccountAutocomplete`, qui le jette : le champ montre le compte qui part.
 			(document.activeElement as HTMLElement | null)?.blur();
+			// Story 53-1a (E1) : modale de remplacement ouverte, le raccourci n'envoie rien.
+			if (pendingAssistant !== null) return;
 			if (canSubmit) handleSubmit();
 		}
 	}
@@ -793,6 +922,15 @@
 		{i18nMsg('journal-entry-form-title', 'Saisie d\'écriture')}
 	</h2>
 
+	<!-- Story 53-1a (table J) — UN `<fieldset disabled>` enveloppe tous les contrôles qui
+	     écrivent la saisie (date, journal, libellé, lignes, assistant TVA, cours) ; figé en
+	     J2a, J2b, J3, J5, J6, sans rien vider. Atténué : un champ inactif doit en avoir l'air.
+	     Les avis (J5, J6) et les boutons d'action sont hors du fieldset, donc actifs. -->
+	<fieldset
+		class="m-0 min-w-0 space-y-6 border-0 p-0 disabled:opacity-60"
+		disabled={frozen}
+		data-testid="journal-entry-fields"
+	>
 	<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 		<div>
 			<label for="entry-date" class="block text-sm font-medium mb-1">
@@ -1259,13 +1397,83 @@
 		</div>
 	</div>
 
+	</fieldset>
+
+	<!-- Story 53-1a — les avis de J5 (doublon probable) et J6 (issue inconnue). -->
+	{#if phase === 'J5' && duplicate !== null}
+		<SupplierInvoiceNotice
+			testid="journal-entry-probable-duplicate"
+			text={entryDuplicateText()}
+			link={{
+				href: `/journal-entries/${duplicate.journalEntryId}`,
+				label: i18nMsg(
+					'journal-entries-duplicate-existing',
+					'Écriture n° { $number } du { $date }',
+					{ number: duplicate.entryNumber, date: formatSwissDate(duplicate.entryDate) }
+				),
+				testid: 'journal-entry-duplicate-link'
+			}}
+		>
+			<button
+				type="button"
+				class="rounded bg-primary px-3 py-1 text-sm text-primary-foreground"
+				data-testid="journal-entry-confirm-not-duplicate"
+				onclick={() => confirmDuplicate()}
+			>
+				{i18nMsg('journal-entries-duplicate-confirm', 'Ce n’est pas un doublon, enregistrer')}
+			</button>
+			<button
+				type="button"
+				class="rounded border px-3 py-1 text-sm"
+				data-testid="journal-entry-modify-entry"
+				onclick={() => modifyEntry()}
+			>
+				{i18nMsg('journal-entries-duplicate-edit', 'Modifier la saisie')}
+			</button>
+		</SupplierInvoiceNotice>
+	{/if}
+	{#if phase === 'J6'}
+		<SupplierInvoiceNotice
+			testid="journal-entry-unknown-outcome"
+			text={i18nMsg(
+				'journal-entries-unknown-outcome',
+				'L’enregistrement a peut-être abouti. Vérifiez dans le journal si l’écriture existe avant de la saisir de nouveau.'
+			)}
+			link={{
+				href: unknownOutcomeHref(kept?.payload.entryDate ?? entryDate),
+				label: i18nMsg('journal-entries-unknown-outcome-link', 'Voir les écritures de cette date'),
+				testid: 'journal-entry-unknown-outcome-link'
+			}}
+		>
+			<button
+				type="button"
+				class="rounded border px-3 py-1 text-sm"
+				data-testid="journal-entry-resume-entry"
+				onclick={() => resumeEntry()}
+			>
+				{i18nMsg(
+					'journal-entries-unknown-outcome-resume',
+					'J’ai vérifié, elle n’existe pas — reprendre la saisie'
+				)}
+			</button>
+		</SupplierInvoiceNotice>
+	{/if}
+
 	<div class="flex justify-end gap-2">
-		<Button type="button" variant="outline" onclick={onCancel} disabled={submitting}>
+		<Button
+			type="button"
+			variant="outline"
+			onclick={onCancel}
+			disabled={submitting}
+			data-testid="journal-entry-cancel"
+		>
 			{i18nMsg('journal-entry-form-cancel', 'Annuler')}
 		</Button>
-		<Button type="button" onclick={handleSubmit} disabled={!canSubmit} data-testid="journal-entry-submit">
-			{i18nMsg('journal-entry-form-submit', 'Valider')}
-		</Button>
+		{#if showSubmit}
+			<Button type="button" onclick={handleSubmit} disabled={!canSubmit} data-testid="journal-entry-submit">
+				{i18nMsg('journal-entry-form-submit', 'Valider')}
+			</Button>
+		{/if}
 	</div>
 </div>
 

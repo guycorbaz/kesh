@@ -91,10 +91,11 @@ use crate::entities::{
     NewJournalEntryLine, RateProvenance,
 };
 use crate::errors::{
-    ArchivedAccount, DbError, ModificationBlocker, ModificationGuard, NonPostableAccount,
-    ReversalBlocker, map_db_error,
+    ArchivedAccount, DbError, ExistingJournalEntry, ModificationBlocker, ModificationGuard,
+    NonPostableAccount, ReversalBlocker, map_db_error,
 };
 use crate::repositories::audit_log;
+use crate::repositories::duplicate_policy::DuplicatePolicy;
 use crate::repositories::journal_entry_fx::{self, PorteeDevises};
 use crate::util::search::escape_boolean_ft;
 
@@ -333,10 +334,26 @@ pub async fn create(
     acteur: Acteur,
     new: NewJournalEntry,
 ) -> Result<JournalEntryWithLines, DbError> {
+    create_with_policy(pool, fiscal_year_id, acteur, new, DuplicatePolicy::Refuse).await
+}
+
+/// [`create`] avec la politique anti-doublon que demande l'appelant (Story
+/// 53-1a, #1355, D2, D5) : [`DuplicatePolicy::Refuse`] refuse une écriture
+/// identique à une écriture déjà saisie le même jour
+/// ([`DbError::JournalEntryProbableDuplicate`]) ; [`DuplicatePolicy::Confirmed`]
+/// (`confirmNotDuplicate: true`) l'enregistre et inscrit
+/// `journal_entry.duplicate_confirmed` dans la même transaction.
+pub async fn create_with_policy(
+    pool: &MySqlPool,
+    fiscal_year_id: i64,
+    acteur: Acteur,
+    new: NewJournalEntry,
+    policy: DuplicatePolicy,
+) -> Result<JournalEntryWithLines, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     // Point d'entrée MANUEL (unique appelant `routes/journal_entries.rs`) :
     // la garde de postabilité s'applique (Story 14-3b, D-A0).
-    match create_in_tx(&mut tx, fiscal_year_id, acteur, new, true).await {
+    match create_in_tx_with_policy(&mut tx, fiscal_year_id, acteur, new, true, policy).await {
         Ok(result) => {
             tx.commit().await.map_err(map_db_error)?;
             Ok(result)
@@ -349,6 +366,32 @@ pub async fn create(
             Err(e)
         }
     }
+}
+
+/// [`create_in_tx`] **soumise à la règle anti-doublon** (Story 53-1a, D2) : la
+/// seule entrée, dans la transaction de l'appelant, qui passe une politique.
+/// [`create_with_policy`] l'emploie ; la conversion de devises l'emploiera
+/// (Story 53-1b). `pub(crate)` : une saisie ne l'atteint que par la route.
+pub(crate) async fn create_in_tx_with_policy(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    fiscal_year_id: i64,
+    acteur: Acteur,
+    new: NewJournalEntry,
+    enforce_postable: bool,
+    policy: DuplicatePolicy,
+) -> Result<JournalEntryWithLines, DbError> {
+    create_in_tx_inner(
+        tx,
+        fiscal_year_id,
+        acteur,
+        new,
+        enforce_postable,
+        true,
+        None,
+        PorteeDevises::UneSeule,
+        Some(policy),
+    )
+    .await
 }
 
 /// Cœur métier de [`create`] — accepte une transaction ouverte par le
@@ -394,6 +437,7 @@ pub async fn create_in_tx(
         true,
         None,
         PorteeDevises::UneSeule,
+        None,
     )
     .await
 }
@@ -421,6 +465,7 @@ pub(crate) async fn create_opening_in_tx(
         true,
         None,
         PorteeDevises::Ouverture,
+        None,
     )
     .await
 }
@@ -458,6 +503,7 @@ pub(crate) async fn create_copying_projects_in_tx(
         false,
         None,
         PorteeDevises::UneSeule,
+        None,
     )
     .await
 }
@@ -481,6 +527,16 @@ pub(crate) async fn create_copying_projects_in_tx(
 /// `reverses_entry_id` — l'écriture contre-passée, `None` pour toute écriture
 /// ordinaire. L'`UNIQUE` de la colonne porte l'idempotence **structurellement**,
 /// sans pré-`SELECT`, donc elle tient sous concurrence.
+///
+/// `duplicates` (Story 53-1a, #1355, D2) — la règle anti-doublon : `None` pour
+/// tous les flux automatiques (`create_in_tx`, ouverture, copie de projets,
+/// contre-passation), `Some(policy)` pour la saisie
+/// ([`create_in_tx_with_policy`]). **Sur le chemin à politique, aucune lecture
+/// ordinaire ne précède le verrou de l'exercice (étape 1)** : la borne du verrou
+/// de période (étape 0-bis) se lit après lui, pour que l'instantané
+/// `REPEATABLE READ` naisse après l'attente — même idiome que `update`
+/// (« aucune lecture ordinaire avant le verrou »). Preuve : AC-7
+/// (`journal_entry_duplicate.rs`, mutation M2).
 #[allow(clippy::too_many_arguments)]
 async fn create_in_tx_inner(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
@@ -491,8 +547,10 @@ async fn create_in_tx_inner(
     enforce_project_taggable: bool,
     reverses_entry_id: Option<i64>,
     portee: PorteeDevises,
+    duplicates: Option<DuplicatePolicy>,
 ) -> Result<JournalEntryWithLines, DbError> {
     let mut new = new;
+
     // Étape 0 : validation des projets analytiques par-ligne (Story 19-2).
     // Elle précède l'étape 1 (le re-verrou de l'exercice) : sentinelle et
     // projets avant l'exercice, la convention de Pattern 5 (« Global Lock
@@ -514,7 +572,29 @@ async fn create_in_tx_inner(
         super::projects::validate_taggable_in_tx(tx, new.company_id, &line_project_ids).await?;
     }
 
-    // Étape 0-bis (Story 24-4c, #380) : LIRE la borne du verrou de période.
+    // Étape 1 : re-lock de l'exercice contre une clôture concurrente + bornes de dates.
+    // Story 37-3a (AC-4 rang 2) : le mode de l'exercice se lit dans la même
+    // ligne verrouillée (sérialisée avec l'activation de 37-1, qui l'écrit).
+    let fy_row: Option<(i64, String, NaiveDate, NaiveDate, bool)> = sqlx::query_as(
+        "SELECT id, status, start_date, end_date, multi_currency FROM fiscal_years \
+         WHERE id = ? AND company_id = ? FOR UPDATE",
+    )
+    .bind(fiscal_year_id)
+    .bind(new.company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+
+    // Étape 0-bis (Story 24-4c, #380) : LIRE la borne du verrou de période —
+    // **après** le verrou de l'exercice (Story 53-1a, D3).
+    //
+    // ⛔ **Elle se lit ICI, après l'étape 1, et nulle part avant.** C'est la
+    // première lecture ORDINAIRE de la transaction de saisie (l'étape 0 est
+    // verrouillante) : elle fait naître l'instantané `REPEATABLE READ`, qui doit
+    // naître APRÈS l'attente de l'exercice, faute de quoi la comparaison
+    // anti-doublon de l'étape 3-bis ne verrait pas l'écriture qu'une saisie
+    // concurrente vient de valider (AC-7, mutation M2). L'étiquette « 0-bis »
+    // est gardée : `:600` et `update` y renvoient.
     //
     // ⛔ ELLE SE LIT ICI ET S'ÉVALUE PLUS BAS, et cette dissociation est
     // délibérée : le moment de la LECTURE n'est pas l'ordre des REFUS. Le
@@ -534,19 +614,6 @@ async fn create_in_tx_inner(
             .await
             .map_err(map_db_error)?
             .flatten();
-
-    // Étape 1 : re-lock de l'exercice contre une clôture concurrente + bornes de dates.
-    // Story 37-3a (AC-4 rang 2) : le mode de l'exercice se lit dans la même
-    // ligne verrouillée (sérialisée avec l'activation de 37-1, qui l'écrit).
-    let fy_row: Option<(i64, String, NaiveDate, NaiveDate, bool)> = sqlx::query_as(
-        "SELECT id, status, start_date, end_date, multi_currency FROM fiscal_years \
-         WHERE id = ? AND company_id = ? FOR UPDATE",
-    )
-    .bind(fiscal_year_id)
-    .bind(new.company_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(map_db_error)?;
 
     let exercice_multi_devises = fy_row.as_ref().is_some_and(|r| r.4);
     match fy_row {
@@ -671,6 +738,34 @@ async fn create_in_tx_inner(
         super::journal_entry_number_sequences::next_number_for(tx, new.company_id, fiscal_year_id)
             .await?;
 
+    // Étape 3-bis (Story 53-1a, #1355, D1, D3, D6) : la règle anti-doublon, **en
+    // dernier des refus** (après forme, exercice, verrou de période, comptes,
+    // devises) et avant tout `INSERT`. Elle ne s'applique qu'à la saisie
+    // (`Some(policy)`) ; les flux automatiques passent `None` (D2).
+    //
+    // ⛔ **Toutes les lectures ordinaires de cette transaction se font APRÈS le
+    // verrou de l'exercice (étape 1).** Toute écriture d'une société à une date
+    // appartient à l'unique exercice qui la couvre, et tout geste qui fait naître,
+    // disparaître ou change une donnée comparée tient cet exercice `FOR UPDATE`
+    // jusqu'à son `COMMIT` : la comparaison est donc exacte, **pourvu que
+    // l'instantané `REPEATABLE READ` naisse après l'obtention de l'exercice**
+    // (même idiome que `update`, étape 1 : « aucune lecture ordinaire avant le
+    // verrou »). Une lecture ordinaire ajoutée AVANT l'étape 1 fait naître
+    // l'instantané avant l'attente : la saisie concurrente ne voit pas l'écriture
+    // qui vient d'être validée, et écrit un doublon (test
+    // `une_saisie_concurrente_attend_l_exercice_puis_voit_l_ecriture`, mutation
+    // M2). Aucun verrou n'est posé sur `journal_entries` (C-15-8-23 : pas de
+    // verrou d'intervalle sur l'index de date).
+    let doublon_confirme: Option<ExistingJournalEntry> = match duplicates {
+        None => None,
+        Some(policy) => match find_duplicate_in_tx(tx, &new).await? {
+            Some(existing) if policy == DuplicatePolicy::Refuse => {
+                return Err(DbError::JournalEntryProbableDuplicate { existing });
+            }
+            found => found,
+        },
+    };
+
     // Étape 4 : INSERT de l'en-tête.
     //
     // ⛔ **La colonne `reverses_entry_id` n'entre dans l'INSERT que si elle a
@@ -781,7 +876,121 @@ async fn create_in_tx_inner(
     )
     .await?;
 
+    // Story 53-1a (D5) : le refus que la politique `Confirmed` a levé s'inscrit
+    // au journal, dans la même transaction, sur l'écriture créée.
+    if let Some(existing) = doublon_confirme {
+        audit_log::insert_in_tx(
+            tx,
+            NewAuditLogEntry::par(
+                acteur,
+                "journal_entry.duplicate_confirmed".to_string(),
+                "journal_entry".to_string(),
+                entry_id,
+                Some(serde_json::json!({
+                    "journalEntryId": existing.id,
+                    "entryNumber": existing.entry_number,
+                })),
+            ),
+        )
+        .await?;
+    }
+
     Ok(JournalEntryWithLines { entry, lines })
+}
+
+/// La clé d'égalité d'une ligne pour la règle anti-doublon (Story 53-1a, D1) :
+/// compte, débit, crédit (en **valeur** décimale), projet effectif, montant en
+/// devise. La devise suit le compte ; cours et provenance n'entrent pas.
+type CleDeLigne = (i64, Decimal, Decimal, Option<i64>, Option<Decimal>);
+
+/// Une ligne lue pour la comparaison : l'écriture, puis [`CleDeLigne`].
+type LigneLue = (i64, i64, Decimal, Decimal, Option<i64>, Option<Decimal>);
+
+/// Cherche une écriture **identique** à `new` dans la société (Story 53-1a,
+/// #1355, D1) : même date, même journal, même libellé (égalité exacte, casse
+/// comprise, comparée **ici** et non en SQL, dont la collation ignore la casse)
+/// et même multiensemble de lignes. Les écritures contre-passées et les
+/// contre-passations sont **exclues** (Q3) ; aucune fenêtre de temps (Q2). Rend
+/// la plus petite en identifiant.
+///
+/// Lectures **ordinaires** : leur exactitude tient à l'instantané né après le
+/// verrou de l'exercice (cf. l'étape 3-bis de [`create_in_tx_inner`]).
+async fn find_duplicate_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    new: &NewJournalEntry,
+) -> Result<Option<ExistingJournalEntry>, DbError> {
+    // Plage sur `idx_journal_entries_company_date`, sous-requête par
+    // `uq_journal_entries_reverses`.
+    let candidats: Vec<(i64, i64, String)> = sqlx::query_as(
+        "SELECT je.id, je.entry_number, je.description FROM journal_entries je \
+         WHERE je.company_id = ? AND je.entry_date = ? AND je.journal = ? \
+           AND je.reverses_entry_id IS NULL \
+           AND NOT EXISTS (SELECT 1 FROM journal_entries r WHERE r.reverses_entry_id = je.id) \
+         ORDER BY je.id",
+    )
+    .bind(new.company_id)
+    .bind(new.entry_date)
+    .bind(new.journal)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    let candidats: Vec<(i64, i64)> = candidats
+        .into_iter()
+        .filter(|(_, _, libelle)| *libelle == new.description)
+        .map(|(id, numero, _)| (id, numero))
+        .collect();
+    if candidats.is_empty() {
+        return Ok(None);
+    }
+
+    let mut requete = QueryBuilder::<sqlx::MySql>::new(
+        "SELECT entry_id, account_id, debit, credit, project_id, amount_currency \
+         FROM journal_entry_lines WHERE entry_id IN (",
+    );
+    let mut ids = requete.separated(", ");
+    for (id, _) in &candidats {
+        ids.push_bind(*id);
+    }
+    requete.push(")");
+    let lignes: Vec<LigneLue> = requete
+        .build_query_as()
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+
+    let mut voulues: Vec<CleDeLigne> = new
+        .lines
+        .iter()
+        .map(|l| {
+            (
+                l.account_id,
+                l.debit,
+                l.credit,
+                l.project_id.or(new.project_id),
+                l.foreign.as_ref().map(|f| f.amount),
+            )
+        })
+        .collect();
+    voulues.sort();
+
+    for (id, numero) in candidats {
+        let mut existantes: Vec<CleDeLigne> = lignes
+            .iter()
+            .filter(|(entry_id, ..)| *entry_id == id)
+            .map(|(_, compte, debit, credit, projet, devise)| {
+                (*compte, *debit, *credit, *projet, *devise)
+            })
+            .collect();
+        existantes.sort();
+        if existantes == voulues {
+            return Ok(Some(ExistingJournalEntry {
+                id,
+                entry_number: numero,
+                entry_date: new.entry_date,
+            }));
+        }
+    }
+    Ok(None)
 }
 
 /// Compte les écritures d'une company, **tous exercices confondus**.
@@ -3368,6 +3577,8 @@ async fn reverse_in_tx_inner(
         // Exemptée de la règle d'une devise et de `FX_RATE_NOT_AFC` par
         // `reverses_entry_id`, non de `MULTI_CURRENCY_DISABLED` (Story 37-3a).
         PorteeDevises::UneSeule,
+        // Aucun flux automatique ne change de règle (Story 53-1a, D2).
+        None,
     )
     .await?;
 
@@ -3698,6 +3909,14 @@ mod tests {
         }
     }
 
+    /// Story 53-1a (#1355) — la même écriture sous un **libellé distinct** : la saisie
+    /// (`create`) refuse une écriture identique à une écriture du même jour ; un test
+    /// qui en crée plusieurs sans que le doublon soit son objet les rend distinctes.
+    fn avec_libelle(mut e: NewJournalEntry, libelle: &str) -> NewJournalEntry {
+        e.description = libelle.to_string();
+        e
+    }
+
     /// Story 3.5 — vérifie que `create` insère bien une entrée `audit_log`
     /// avec `action = "journal_entry.created"` et un `details_json`
     /// contenant le snapshot direct (PAS de wrapper `{before, after}`).
@@ -3849,9 +4068,16 @@ mod tests {
                     },
                 ],
             );
-            let created = create(&pool, fy_id, Acteur::utilisateur(admin_user_id), new)
-                .await
-                .unwrap();
+            let created = create_with_policy(
+                &pool,
+                fy_id,
+                Acteur::utilisateur(admin_user_id),
+                new,
+                // Story 53-1a : écritures identiques à dessein (décor), politique Confirmed.
+                DuplicatePolicy::Confirmed,
+            )
+            .await
+            .unwrap();
             match attendu {
                 None => attendu = Some(created.entry.entry_number + 1),
                 Some(n) => {
@@ -3911,7 +4137,7 @@ mod tests {
             &pool,
             fy_id,
             Acteur::utilisateur(admin),
-            mk_entry(company_id, today, paire(a1, a2)),
+            avec_libelle(mk_entry(company_id, today, paire(a1, a2)), "Numéro 1"),
         )
         .await
         .unwrap();
@@ -3919,7 +4145,7 @@ mod tests {
             &pool,
             fy_id,
             Acteur::utilisateur(admin),
-            mk_entry(company_id, today, paire(a1, a2)),
+            avec_libelle(mk_entry(company_id, today, paire(a1, a2)), "Numéro 2"),
         )
         .await
         .unwrap();
@@ -3927,7 +4153,7 @@ mod tests {
             &pool,
             fy_id,
             Acteur::utilisateur(admin),
-            mk_entry(company_id, today, paire(a1, a2)),
+            avec_libelle(mk_entry(company_id, today, paire(a1, a2)), "Numéro 3"),
         )
         .await
         .unwrap();
@@ -3981,7 +4207,7 @@ mod tests {
             &pool,
             fy_id,
             Acteur::utilisateur(admin),
-            mk_entry(company_id, today, paire(a1, a2)),
+            avec_libelle(mk_entry(company_id, today, paire(a1, a2)), "Trou 1"),
         )
         .await
         .unwrap();
@@ -3989,7 +4215,7 @@ mod tests {
             &pool,
             fy_id,
             Acteur::utilisateur(admin),
-            mk_entry(company_id, today, paire(a1, a2)),
+            avec_libelle(mk_entry(company_id, today, paire(a1, a2)), "Trou 2"),
         )
         .await
         .unwrap();
@@ -3997,7 +4223,7 @@ mod tests {
             &pool,
             fy_id,
             Acteur::utilisateur(admin),
-            mk_entry(company_id, today, paire(a1, a2)),
+            avec_libelle(mk_entry(company_id, today, paire(a1, a2)), "Trou 3"),
         )
         .await
         .unwrap();
@@ -4024,7 +4250,7 @@ mod tests {
             &pool,
             fy_id,
             Acteur::utilisateur(admin),
-            mk_entry(company_id, today, paire(a1, a2)),
+            avec_libelle(mk_entry(company_id, today, paire(a1, a2)), "Trou 4"),
         )
         .await
         .unwrap();
@@ -4043,18 +4269,23 @@ mod tests {
         let (company_id, fy_id, admin, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
 
+        // L'objet est la numérotation concurrente, non le doublon (Story 53-1a) : les
+        // deux créations sont identiques à dessein, la politique `Confirmed` lève le
+        // refus de doublon (des libellés distincts conviendraient aussi).
         let (g, d) = tokio::join!(
-            create(
+            create_with_policy(
                 &pool,
                 fy_id,
                 Acteur::utilisateur(admin),
-                mk_entry(company_id, today, paire(a1, a2))
+                mk_entry(company_id, today, paire(a1, a2)),
+                DuplicatePolicy::Confirmed
             ),
-            create(
+            create_with_policy(
                 &pool,
                 fy_id,
                 Acteur::utilisateur(admin),
-                mk_entry(company_id, today, paire(a1, a2))
+                mk_entry(company_id, today, paire(a1, a2)),
+                DuplicatePolicy::Confirmed
             ),
         );
 
@@ -4984,7 +5215,7 @@ mod tests {
 
         // Créer 3 écritures à la même date.
         for _ in 0..3 {
-            create(
+            create_with_policy(
                 &pool,
                 fy_id,
                 Acteur::utilisateur(admin_user_id),
@@ -5008,6 +5239,8 @@ mod tests {
                         },
                     ],
                 ),
+                // Story 53-1a : écritures identiques à dessein (décor), politique Confirmed.
+                DuplicatePolicy::Confirmed,
             )
             .await
             .unwrap();
@@ -5384,7 +5617,7 @@ mod tests {
         let (a1, a2) = two_accounts(&pool, company_id).await;
 
         // Créer 2 écritures Banque + 1 Ventes.
-        for _ in 0..2 {
+        for i in 0..2 {
             let mut e = mk_entry(
                 company_id,
                 today,
@@ -5406,6 +5639,8 @@ mod tests {
                 ],
             );
             e.journal = CoreJournal::Banque.into();
+            // Libellés distincts : le test filtre par journal, non par doublon (53-1a).
+            e.description = format!("Banque {i}");
             create(&pool, fy_id, Acteur::utilisateur(admin_user_id), e)
                 .await
                 .unwrap();
@@ -5454,7 +5689,7 @@ mod tests {
 
         // Créer 5 écritures.
         for _ in 0..5 {
-            create(
+            create_with_policy(
                 &pool,
                 fy_id,
                 Acteur::utilisateur(admin_user_id),
@@ -5478,6 +5713,8 @@ mod tests {
                         },
                     ],
                 ),
+                // Story 53-1a : écritures identiques à dessein (décor), politique Confirmed.
+                DuplicatePolicy::Confirmed,
             )
             .await
             .unwrap();
@@ -5530,7 +5767,7 @@ mod tests {
         let (a1, a2) = two_accounts(&pool, company_id).await;
 
         for _ in 0..3 {
-            create(
+            create_with_policy(
                 &pool,
                 fy_id,
                 Acteur::utilisateur(admin_user_id),
@@ -5554,6 +5791,8 @@ mod tests {
                         },
                     ],
                 ),
+                // Story 53-1a : écritures identiques à dessein (décor), politique Confirmed.
+                DuplicatePolicy::Confirmed,
             )
             .await
             .unwrap();

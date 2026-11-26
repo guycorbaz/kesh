@@ -64,7 +64,7 @@ async fn post_fy(
     amount: Decimal,
     label: &str,
 ) {
-    journal_entries::create(
+    journal_entries::create_with_policy(
         pool,
         fiscal_year_id,
         Acteur::utilisateur(seeded.admin_user_id),
@@ -91,6 +91,8 @@ async fn post_fy(
                 },
             ],
         },
+        // Story 53-1a : écritures identiques à dessein (décor), politique Confirmed.
+        kesh_db::repositories::duplicate_policy::DuplicatePolicy::Confirmed,
     )
     .await
     .expect("écriture postée");

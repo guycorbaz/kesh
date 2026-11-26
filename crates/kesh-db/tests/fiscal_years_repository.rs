@@ -1025,9 +1025,16 @@ async fn reopen_reactivates_entry_editability(pool: MySqlPool) {
     fiscal_years::reopen(&pool, user_id, company_id, fy.id, "motif".to_string())
         .await
         .unwrap();
-    journal_entries::create(&pool, fy.id, Acteur::utilisateur(user_id), make_entry(d))
-        .await
-        .expect("create after reopen should succeed");
+    journal_entries::create_with_policy(
+        &pool,
+        fy.id,
+        Acteur::utilisateur(user_id),
+        make_entry(d),
+        // Story 53-1a : écritures identiques à dessein (décor), politique Confirmed.
+        kesh_db::repositories::duplicate_policy::DuplicatePolicy::Confirmed,
+    )
+    .await
+    .expect("create after reopen should succeed");
 
     // Re-clos : re-bloqué.
     fiscal_years::close(&pool, user_id, company_id, fy.id)

@@ -164,6 +164,7 @@ pub const ACTIONS: &[&str] = &[
     "invoice.written_off",
     "journal_entry.created",
     "journal_entry.deleted",
+    "journal_entry.duplicate_confirmed",
     "journal_entry.reversed",
     "journal_entry.updated",
     "lettering.created",
