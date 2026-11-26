@@ -1275,7 +1275,9 @@ const ATTENDU = {
 	// Fusion anticipée de pr/39-wise-v2 (0ce721569) dans pr/46-rapports-groupes-v2 (2026-11-26) : les deux côtés
 	// gardés ; total relevé par la garde, non additionné : **3956** (« expected 3956 to be +0 »,
 	// `kesh-gate-logs/s46-pr2/compteurs-1.log`) ; il égale 3856 (pr/39) + 18 (Epic 46) + 82 (46-5).
-	sitesTotal: 3956,
+	// Garde de la 46-5 (compte désigné par un compte bancaire, 2026-11-26) : **3958** (« expected 3958 to be 3956 »,
+	// `kesh-gate-logs/s46-pr2/garde-vitest-1.log`) — `numberBankLinked` et `parentBankLinked` (`accounts/groups/messages.ts`).
+	sitesTotal: 3958,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

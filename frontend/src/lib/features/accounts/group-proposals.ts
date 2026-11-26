@@ -24,6 +24,35 @@
  */
 
 import type { AccountResponse, AccountType } from './accounts.types';
+import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
+import { bankAccountName } from '$lib/features/bank-accounts/format';
+
+/**
+ * Les comptes du plan qu'un compte bancaire **désigne** (Epic 46, garde du
+ * mainteneur du 2026-11-26) : le compte du plan d'un compte bancaire, et le
+ * compte de frais d'un compte PayPal, Wise ou Stripe — par identifiant de
+ * compte, le nom affiché du premier compte bancaire qui le désigne. Ces comptes
+ * reçoivent des écritures automatiques : ils ne deviennent pas groupes (le
+ * serveur le refuse, `409 ACCOUNT_PARENT_BANK_LINKED`). Les comptes bancaires
+ * archivés n'en désignent plus ; les clos, si (à charger par
+ * `listBankAccounts(false, true)`).
+ */
+export type BankLinks = ReadonlyMap<number, string>;
+
+/** {@link BankLinks} d'une liste de comptes bancaires (premier par identifiant). */
+export function bankLinkedAccounts(bankAccounts: readonly BankAccountSummary[]): Map<number, string> {
+	const links = new Map<number, string>();
+	for (const b of [...bankAccounts].sort((x, y) => x.id - y.id)) {
+		if (b.archived) continue;
+		const fee = b.paypal?.feeAccountId ?? b.wise?.feeAccountId ?? b.stripe?.feeAccountId ?? null;
+		for (const id of [b.journalAccountId, fee]) {
+			if (id !== null && !links.has(id)) links.set(id, bankAccountName(b));
+		}
+	}
+	return links;
+}
+
+const NO_LINKS: BankLinks = new Map();
 
 /** Les deux règles de proposition. */
 export type GroupMode = 'digit' | 'one';
@@ -62,6 +91,8 @@ export type ProposalMessageCode =
 	| 'groupIsMember'
 	| 'parentMissing'
 	| 'parentHasEntries'
+	| 'numberBankLinked'
+	| 'parentBankLinked'
 	// avertissements
 	| 'root'
 	| 'mixedNames'
@@ -331,8 +362,11 @@ export function checkProposals(
 	accounts: readonly AccountResponse[],
 	selection: ReadonlySet<number>,
 	mode: GroupMode,
+	links: BankLinks = NO_LINKS,
 ): CheckedProposal[] {
-	const base = set.skeletons.map((s) => judgeAlone(s, editOf(s, edits), accounts, selection, mode, set.singles));
+	const base = set.skeletons.map((s) =>
+		judgeAlone(s, editOf(s, edits), accounts, selection, mode, set.singles, links),
+	);
 	const accepted = base.filter((p) => p.edit.state === 'accepted');
 	for (const p of base) {
 		if (p.edit.state !== 'accepted') continue;
@@ -364,6 +398,7 @@ function judgeAlone(
 	selection: ReadonlySet<number>,
 	mode: GroupMode,
 	singles: readonly AccountResponse[],
+	links: BankLinks,
 ): CheckedProposal {
 	const excluded = new Set(edit.excluded);
 	const included = skeleton.members.filter((m) => !excluded.has(m.id));
@@ -400,12 +435,16 @@ function judgeAlone(
 		} else if (isGroupAccount(existing, accounts)) {
 			p.kind = 'attach';
 			push(p, 'info', 'attachExisting', params);
+			const bank = links.get(existing.id);
+			if (bank !== undefined) push(p, 'error', 'numberBankLinked', { ...params, bank });
 			if (existing.currencyLocked === true) push(p, 'error', 'groupHasEntries', params);
 			if (memberType && existing.accountType !== memberType) {
 				push(p, 'error', 'groupTypeMismatch', { ...params, type: existing.accountType });
 			}
 		} else if (existing.currencyLocked === true) {
 			push(p, 'error', 'numberTakenEntries', params);
+		} else if (links.has(existing.id)) {
+			push(p, 'error', 'numberBankLinked', { ...params, bank: links.get(existing.id) as string });
 		} else {
 			p.canReuse = true;
 			if (edit.reuse) {
@@ -431,6 +470,10 @@ function judgeAlone(
 			const parent = accounts.find((a) => a.id === parentId);
 			if (parent?.currencyLocked === true) {
 				push(p, 'error', 'parentHasEntries', { number: parent.number, name: parent.name });
+			}
+			const bank = links.get(parentId);
+			if (parent && bank !== undefined) {
+				push(p, 'error', 'parentBankLinked', { number: parent.number, name: parent.name, bank });
 			}
 		}
 	}
@@ -680,12 +723,14 @@ export function previewTree(
 
 /**
  * Les comptes que peut prendre pour parent un groupe à créer : actifs, sans
- * écriture (règle du `PUT`, #1351), hors des membres de la proposition — plus le
- * parent déjà choisi, pour qu'il reste lisible.
+ * écriture (règle du `PUT`, #1351), non désignés par un compte bancaire
+ * ({@link BankLinks}), hors des membres de la proposition — plus le parent déjà
+ * choisi, pour qu'il reste lisible.
  */
 export function parentOptionsFor(
 	accounts: readonly AccountResponse[],
 	proposal: Pick<CheckedProposal, 'members' | 'edit'>,
+	links: BankLinks = NO_LINKS,
 ): AccountResponse[] {
 	const memberIds = new Set(proposal.members.map((m) => m.id));
 	const current = proposal.edit.parent;
@@ -694,7 +739,7 @@ export function parentOptionsFor(
 			(a) =>
 				a.active &&
 				!memberIds.has(a.id) &&
-				(a.currencyLocked !== true || a.id === current),
+				((a.currencyLocked !== true && !links.has(a.id)) || a.id === current),
 		)
 		.sort(byNumber);
 }

@@ -564,3 +564,53 @@ async fn erreur_existante_portee_avec_son_etape(pool: MySqlPool) {
         "aucun groupe créé par les trois refus"
     );
 }
+
+/// Epic 46, garde du mainteneur du 2026-11-26 : un compte désigné par un compte
+/// bancaire ne devient pas groupe — `409 ACCOUNT_PARENT_BANK_LINKED`, ses
+/// `details` (compte et compte bancaire) augmentés de `groupStep`, message qui
+/// nomme le compte et le compte bancaire ; rien n'est écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn compte_d_un_compte_bancaire_refuse_en_groupe(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let lie = compte(&pool, &c, c.company_id, "102", None).await;
+    let a1 = compte(&pool, &c, c.company_id, "1021", None).await;
+    let banque = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, description, iban, journal_account_id) \
+         VALUES (?, 'Banque Test', 'Courant', 'CH9300762011623852957', ?)",
+    )
+    .bind(c.company_id)
+    .bind(lie)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let m1 = membre(&pool, a1).await;
+    let avant = nombre_de_comptes(&pool, c.company_id).await;
+
+    let (status, json) = post(
+        &app,
+        &c.jwt,
+        &json!({ "groups": [ { "kind": "reuse", "accountId": lie, "accounts": [m1] } ] }),
+    )
+    .await;
+    assert_eq!(status, 409, "{json}");
+    let e = &json["error"];
+    assert_eq!(e["code"], "ACCOUNT_PARENT_BANK_LINKED");
+    assert_eq!(e["details"]["parentAccountId"], lie);
+    assert_eq!(e["details"]["parentNumber"], "102");
+    assert_eq!(e["details"]["bankAccountId"], banque);
+    assert_eq!(e["details"]["bankName"], "Banque Test — Courant");
+    assert_eq!(
+        e["details"]["groupStep"],
+        json!({ "groupIndex": 0, "accountId": a1 })
+    );
+    let message = e["message"].as_str().unwrap();
+    assert!(
+        message.contains("102") && message.contains("Banque Test — Courant"),
+        "{message}"
+    );
+    assert_eq!(nombre_de_comptes(&pool, c.company_id).await, avant);
+    let relu = accounts::find_by_id(&pool, lie).await.unwrap().unwrap();
+    assert!(relu.postable, "rien n'est écrit");
+}

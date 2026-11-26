@@ -230,6 +230,13 @@ jamais un gate ciblé seul.
 - **Added** — `POST /api/v1/accounts/groups` : crée des comptes de groupe et y range des comptes, en une seule
   opération tout ou rien, avec les contrôles de la création et du changement de parent ; réservée à l'interface web
   (`403 API_KEY_OPERATION_FORBIDDEN` pour toute clé d'API) ; refus propres `400 ACCOUNT_GROUP_INVALID`.
+- **Changed (API)** — *(garde du mainteneur du 2026-11-26)* Un compte du plan désigné par un compte bancaire — son
+  compte du plan, ou le compte de frais d'un compte PayPal, Wise ou Stripe, même partagé — ne devient plus parent :
+  `PUT /accounts/{id}` avec `parentId` et `POST /accounts/groups` (groupe réutilisé, rattaché ou parent d'un groupe
+  créé) le refusent en `409 ACCOUNT_PARENT_BANK_LINKED` (`details { parentAccountId, parentNumber, bankAccountId,
+  bankName }`, plus `groupStep` pour l'aide), message qui nomme le compte et le compte bancaire. Ces comptes reçoivent
+  des écritures automatiques ; devenus groupes, ils passeraient non imputables. Rangés **comme membres**, ils restent
+  acceptés. L'écran « Créer des groupes » le signale avant la confirmation.
 
 ## Dev Agent Record
 
@@ -379,3 +386,11 @@ Journaux hors dépôt, `kesh-gate-logs/s46-5a/` : `clippy-t3.log`, `fmt-t3.log` 
   **22/22** (`cible-clot.log`).
   **Tendance de la revue de code** : P1 (complète, Opus) 0/0/1/5 → P2 (complète, Sonnet) 0/0/0/3. Statut `done` ;
   fusion dans `epic/46-rapports-groupes` après l'accord de Guy (fiche mère).
+- 2026-11-26 — **Garde du mainteneur : un compte désigné par un compte bancaire ne devient pas groupe.** Placée dans
+  `guard_parent_change_in_tx` (`refuse_bank_linked_parent_in_tx`), qui sert le groupe réutilisé et rattaché (au
+  déplacement du premier membre), le parent d'un groupe créé et `PUT /accounts/{id}` avec `parentId` ; membres
+  acceptés (ils restent imputables). Nouveau `DbError::AccountParentBankLinked`, `409 ACCOUNT_PARENT_BANK_LINKED`,
+  clé `error-account-parent-bank-linked` (quatre locales). Le motif des lots (`failed[]`) ne s'applique pas : la route
+  est tout ou rien (§ *Choix*). Écran : `bankLinkedAccounts`, codes `numberBankLinked` et `parentBankLinked`, parent
+  désigné non offert (46-5b). Journal : `kesh-gate-logs/s46-pr2/`.
+

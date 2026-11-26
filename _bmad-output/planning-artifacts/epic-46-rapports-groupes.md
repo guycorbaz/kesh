@@ -311,3 +311,21 @@ La page pour Guy (`data-not-committed/epic-46-revue-pour-guy.html`) porte ces r�
   C-46-6a-5, 46-4 C-46-4-5). La 46-6b repasse en `drafted` (phrase de manuel adossée à C-46-6a-3) ; ligne
   `trial_balance.rs` des fichiers communs corrigée (aucune story). Passe P2 à suivre
   (`kesh-gate-logs/s46-specs/validation-p2-prompt.md`).
+
+## Dette en suivi (issues ouvertes le 2026-11-26)
+
+Les dix suivis de l'epic (repères E46-01 à E46-10 de la préparation de la PR), toutes P4, non réglées par la PR :
+
+| Repère | Issue | Objet | Constaté |
+|---|---|---|---|
+| E46-01 | #1636 | Outils MCP par groupes : le test de fidélité ne couvre que les lignes de compte | 46-4, revue P2 (F2) |
+| E46-02 | #1637 | PDF par groupes : la limite de 48 caractères ne vaut que pour la capitale moyenne | 46-3, revue P1 (L2) |
+| E46-03 | #1638 | Extraction du texte d'un PDF (tests) : deux textes de même ordonnée de pages consécutives fusionnés | 46-3, revue P1 (L4) |
+| E46-04 | #1639 | Export groupé : le test de fidélité JSON/PDF ne joue qu'un jeu de paramètres | 46-3, revue P1 (L5) |
+| E46-05 | #1640 | Rapports : la redemande du bilan efface l'erreur affichée de l'autre onglet | 46-2, revue P3 (L3) |
+| E46-06 | #1641 | Rapports : changer la vue du bilan pendant le chargement d'un autre rapport interrompt ce chargement | 46-2, revue P3 (L2) |
+| E46-07 | #1642 | Balance par groupes en PDF : le premier compte d'un groupe peut passer seul en haut de la page suivante | 46-6b, revue P2 (LOW-3) |
+| E46-08 | #1643 | Rapports par groupes : un groupe à sous-total nul, ouvert à la main puis fermé d'un clic, disparaît | 46-7, revue P1 (LOW-3) |
+| E46-09 | #1644 | Balance par groupes en PDF : nom de la ligne « solde propre » réduit aux profondeurs 2 et 3 | 46-7, revue P1 (LOW-5) |
+| E46-10 | #1645 | Test Vitest de la table d'ouverture : dépend du répertoire courant | 46-7 |
+

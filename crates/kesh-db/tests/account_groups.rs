@@ -849,3 +849,187 @@ fn forme_de_la_demande() {
     ];
     assert_eq!(shape(&gros), (1, AccountGroupReason::TooMany, None));
 }
+
+// --- Epic 46, garde du mainteneur du 2026-11-26 : un compte désigné par un
+// compte bancaire (son compte du plan, ou le compte de frais d'un prestataire)
+// ne devient pas parent — ni groupe réutilisé, ni parent d'un groupe créé, ni
+// parent au `PUT` ; rangé comme membre, il reste accepté et imputable.
+
+/// Un compte bancaire ordinaire de la société, lié au compte du plan `compte`.
+async fn banque_liee(pool: &MySqlPool, s: &SeededCompany, nom: &str, compte: i64) -> i64 {
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, journal_account_id) \
+         VALUES (?, ?, 'CH9300762011623852957', ?)",
+    )
+    .bind(s.company_id)
+    .bind(nom)
+    .bind(compte)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+/// Un compte de prestataire (`paypal`, `wise`, `stripe`) dont `frais` est le
+/// compte de frais, sans compte du plan lié.
+async fn prestataire(pool: &MySqlPool, s: &SeededCompany, provider: &str, frais: i64) -> i64 {
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, provider, provider_account, fee_account_id) \
+         VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(s.company_id)
+    .bind(format!("Solde {provider}"))
+    .bind(provider)
+    .bind(format!("{provider} principal"))
+    .bind(frais)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+/// Le refus attendu : `(parentAccountId, numéro, compte bancaire, nom affiché)`.
+fn lie(e: &DbError) -> (i64, String, i64, String) {
+    match e {
+        DbError::AccountParentBankLinked {
+            parent_account_id,
+            parent_number,
+            bank_account_id,
+            bank_name,
+        } => (
+            *parent_account_id,
+            parent_number.clone(),
+            *bank_account_id,
+            bank_name.clone(),
+        ),
+        other => panic!("ACCOUNT_PARENT_BANK_LINKED attendu, reçu {other:?}"),
+    }
+}
+
+/// Le compte du plan d'un compte bancaire : refusé en groupe réutilisé, en
+/// parent d'un groupe créé et en parent au `PUT`, sans rien écrire ; accepté
+/// comme membre (il reste imputable) ; un compte ordinaire, réutilisé, accepté.
+#[sqlx::test(migrations = "./test-schema")]
+async fn compte_d_un_compte_bancaire_ne_devient_pas_groupe(pool: MySqlPool) {
+    let s = seed_accounting_company(&pool).await.unwrap();
+    let lie_id = compte(&pool, &s, "102", None).await;
+    let c1 = compte(&pool, &s, "1021", None).await;
+    let banque = banque_liee(&pool, &s, "Banque Test", lie_id).await;
+    let avant = etat(&pool, &s).await;
+
+    // Groupe réutilisé : refusé au rangement de son premier membre.
+    let e = appliquer(
+        &pool,
+        &s,
+        &[reutiliser(lie_id, membres(&pool, &[c1]).await)],
+    )
+    .await
+    .unwrap_err();
+    assert_eq!((e.group_index, e.account_id), (Some(0), Some(c1)));
+    assert_eq!(
+        lie(&e.source),
+        (lie_id, "102".into(), banque, "Banque Test".into())
+    );
+    assert_eq!(etat(&pool, &s).await, avant, "tout ou rien");
+
+    // Parent d'un groupe créé : refusé, étape sans compte.
+    let e = appliquer(
+        &pool,
+        &s,
+        &[creer("103", Some(lie_id), membres(&pool, &[c1]).await)],
+    )
+    .await
+    .unwrap_err();
+    assert_eq!((e.group_index, e.account_id), (Some(0), None));
+    assert_eq!(lie(&e.source).0, lie_id);
+    assert_eq!(etat(&pool, &s).await, avant, "tout ou rien");
+
+    // `PUT /accounts/{id}` avec `parentId` : même refus.
+    let err = ranger(&pool, &s, c1, lie_id).await.unwrap_err();
+    assert_eq!(lie(&err).2, banque);
+    assert!(lire(&pool, lie_id).await.postable, "rien n'est écrit");
+
+    // Membre : accepté, et il reste imputable.
+    let out = appliquer(
+        &pool,
+        &s,
+        &[creer("10", None, membres(&pool, &[lie_id]).await)],
+    )
+    .await
+    .unwrap();
+    let apres = lire(&pool, lie_id).await;
+    assert_eq!(apres.parent_id, Some(out.created[0].id));
+    assert!(apres.postable, "un membre lié reste imputable");
+
+    // Un compte ordinaire réutilisé reste accepté.
+    let ordinaire = compte(&pool, &s, "105", None).await;
+    let c2 = compte(&pool, &s, "1051", None).await;
+    appliquer(
+        &pool,
+        &s,
+        &[reutiliser(ordinaire, membres(&pool, &[c2]).await)],
+    )
+    .await
+    .unwrap();
+    assert!(!lire(&pool, ordinaire).await.postable);
+}
+
+/// Le compte de frais partagé par deux prestataires : refusé, le refus nomme le
+/// premier compte bancaire (par identifiant). Un compte bancaire clos le
+/// désigne encore ; un compte bancaire archivé, non.
+#[sqlx::test(migrations = "./test-schema")]
+async fn compte_de_frais_partage_ne_devient_pas_groupe(pool: MySqlPool) {
+    let s = seed_accounting_company(&pool).await.unwrap();
+    let frais = compte_dans(
+        &pool,
+        s.admin_user_id,
+        s.company_id,
+        "684",
+        AccountType::Expense,
+        None,
+    )
+    .await;
+    let membre_frais = compte_dans(
+        &pool,
+        s.admin_user_id,
+        s.company_id,
+        "6841",
+        AccountType::Expense,
+        None,
+    )
+    .await;
+    let paypal = prestataire(&pool, &s, "paypal", frais).await;
+    let wise = prestataire(&pool, &s, "wise", frais).await;
+    assert!(paypal < wise);
+
+    let e = appliquer(
+        &pool,
+        &s,
+        &[reutiliser(frais, membres(&pool, &[membre_frais]).await)],
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        lie(&e.source),
+        (frais, "684".into(), paypal, "Solde paypal".into())
+    );
+
+    // Le compte PayPal clos : le compte Wise le désigne toujours.
+    sqlx::query("UPDATE bank_accounts SET closed_on = '2026-06-30' WHERE id = ?")
+        .bind(paypal)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let e = ranger(&pool, &s, membre_frais, frais).await.unwrap_err();
+    assert_eq!(lie(&e).2, paypal, "un compte bancaire clos désigne encore");
+
+    // Les deux archivés : plus aucune désignation, le rangement passe.
+    sqlx::query("UPDATE bank_accounts SET archived = TRUE WHERE id IN (?, ?)")
+        .bind(paypal)
+        .bind(wise)
+        .execute(&pool)
+        .await
+        .unwrap();
+    ranger(&pool, &s, membre_frais, frais).await.unwrap();
+    assert!(!lire(&pool, frais).await.postable);
+}

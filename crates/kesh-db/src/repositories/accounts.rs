@@ -961,6 +961,10 @@ where
 ///    qui porte une ligne d'écriture → [`DbError::AccountParentHasEntries`]
 ///    (`ACCOUNT_PARENT_HAS_ENTRIES`, revue P1-2 — **plus strict que
 ///    [`create`]**, qui l'accepte) ;
+///    — et, avant ces deux derniers, un compte du plan désigné par un compte
+///    bancaire (son compte du plan ou son compte de frais de prestataire) →
+///    [`DbError::AccountParentBankLinked`] (`ACCOUNT_PARENT_BANK_LINKED`, Epic
+///    46, décision du mainteneur du 2026-11-26) ;
 /// 5. l'un des comptes propres **résultants** du compte → `FX_ACCOUNT_INVALID`
 ///    `notPostable` (il deviendrait non imputable — revue de code P2 de la
 ///    37-1, 37-1-CR-P2-8, appliquée à la création).
@@ -1036,6 +1040,7 @@ async fn guard_parent_change_in_tx(
         fx_designations_excluding_in_tx(tx, company_id, state, new_parent_id, exclude_holder)
             .await?;
     refuse_designated(hits, |_| true)?;
+    refuse_bank_linked_parent_in_tx(tx, company_id, new_parent_id, &parent_number).await?;
     refuse_foreign_parent_with_entries_in_tx(tx, new_parent_id).await?;
     // Revue P1-2 (décision du responsable de l'epic) : un parent qui porte des
     // écritures, en quelque devise, passerait non imputable avec son solde, que
@@ -3090,6 +3095,54 @@ pub async fn refuse_foreign_currency_accounts_in_tx(
         Some((account_id, currency)) => Err(DbError::AccountInForeignCurrency {
             account_id: Some(account_id),
             currency,
+        }),
+        None => Ok(()),
+    }
+}
+
+/// Refuse comme parent un compte du plan qu'un compte bancaire **désigne** —
+/// son compte du plan (`journal_account_id`) ou, pour un compte de prestataire
+/// (PayPal, Stripe, Wise), son compte de frais (`fee_account_id`), même partagé
+/// par plusieurs prestataires ; un compte bancaire clos compte, un archivé non
+/// (Epic 46, décision du mainteneur du 2026-11-26). Ces comptes reçoivent des
+/// écritures automatiques (imports, rapprochements, acceptations de
+/// prestataire, dont certaines écrivent sans contrôler `postable`) : devenus
+/// parents, ils passeraient non imputables et ressortiraient en « solde propre »
+/// aux rapports par groupes. Le compte de versement d'un compte Stripe est un
+/// compte bancaire : son compte du plan est couvert par `journal_account_id`.
+/// Le compte de conversion et les comptes de change de la société sont refusés
+/// avant, par les désignations de change.
+///
+/// Rangé **sous** un groupe (membre), un tel compte reste imputable : seul le
+/// fait d'en devenir le parent est refusé. Lecture verrouillante (`LOCK IN
+/// SHARE MODE`), comme les autres lectures de `bank_accounts` du dépôt : une
+/// liaison concurrente est vue, ou s'interbloque avec ce changement, que la
+/// route rejoue.
+async fn refuse_bank_linked_parent_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    parent_id: i64,
+    parent_number: &str,
+) -> Result<(), DbError> {
+    use crate::entities::bank_account::bank_account_display_name;
+    let row: Option<(i64, String, Option<String>)> = sqlx::query_as(
+        "SELECT id, bank_name, description FROM bank_accounts \
+         WHERE company_id = ? AND archived = FALSE \
+         AND (journal_account_id = ? OR fee_account_id = ?) \
+         ORDER BY id LIMIT 1 LOCK IN SHARE MODE",
+    )
+    .bind(company_id)
+    .bind(parent_id)
+    .bind(parent_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    match row {
+        Some((bank_account_id, bank_name, description)) => Err(DbError::AccountParentBankLinked {
+            parent_account_id: parent_id,
+            parent_number: parent_number.to_string(),
+            bank_account_id,
+            bank_name: bank_account_display_name(&bank_name, description.as_deref()),
         }),
         None => Ok(()),
     }

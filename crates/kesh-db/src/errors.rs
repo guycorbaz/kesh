@@ -1846,6 +1846,23 @@ pub enum DbError {
         parent_number: String,
     },
 
+    /// Changement de parent refusé : le parent demandé est désigné par un
+    /// compte bancaire — son compte du plan ou son compte de frais de
+    /// prestataire. Il reçoit des écritures automatiques : devenu parent, il
+    /// passerait non imputable (Epic 46, décision du mainteneur du
+    /// 2026-11-26). HTTP 409 `ACCOUNT_PARENT_BANK_LINKED`.
+    #[error("Le compte {parent_number} est désigné par le compte bancaire {bank_name}")]
+    AccountParentBankLinked {
+        /// Identifiant du parent demandé.
+        parent_account_id: i64,
+        /// Numéro du parent demandé.
+        parent_number: String,
+        /// Le premier compte bancaire (par identifiant) qui le désigne.
+        bank_account_id: i64,
+        /// Nom affiché de ce compte bancaire (nom, et description s'il en a une).
+        bank_name: String,
+    },
+
     /// Une proposition de la route groupée du plan est refusée pour un motif
     /// que ni la création ni la modification d'un compte ne contrôlent (Story
     /// 46-5a, AC-3). HTTP 400 `ACCOUNT_GROUP_INVALID`, `details: { groupIndex,
@@ -2737,6 +2754,7 @@ impl DbError {
             Self::AccountParentArchived { .. } => "ACCOUNT_PARENT_ARCHIVED",
             Self::AccountParentCycle { .. } => "ACCOUNT_PARENT_CYCLE",
             Self::AccountParentHasEntries { .. } => "ACCOUNT_PARENT_HAS_ENTRIES",
+            Self::AccountParentBankLinked { .. } => "ACCOUNT_PARENT_BANK_LINKED",
             Self::AccountGroupInvalid { .. } => "ACCOUNT_GROUP_INVALID",
             Self::AccountParentNotFound => "VALIDATION_ERROR",
             Self::AccountRoleInvalidForType { .. } => "ACCOUNT_ROLE_INVALID_FOR_TYPE",

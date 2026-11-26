@@ -166,3 +166,4 @@ des issues à ouvrir de l'epic ; aucun retiré sans correctif.
 - 2026-11-22 — Développement (`bmad-dev-story`) : amendement daté (dix points de dette, plafond 2 : D10 et D4
   retenus), deux correctifs, LOW de la revue de fusion de la 46-6b corrigés, D3 versé à la liste ; gates ci-dessus ;
   statut `review`. Prompt de la revue P1 : `kesh-gate-logs/s46-7/revue-p1-prompt.md`.
+- 2026-11-26 — **Suivis ouverts** (dette de la story, non réglée par la PR de l'epic) : #1643 (LOW-3 de la revue P1 : un groupe à sous-total nul disparaît après ouverture puis fermeture) ; #1644 (LOW-5 de la revue P1 : nom de la ligne « solde propre » abrégé aux profondeurs 2 et 3) ; #1645 (constat de la story : test Vitest de la table d'ouverture dépendant du répertoire courant).

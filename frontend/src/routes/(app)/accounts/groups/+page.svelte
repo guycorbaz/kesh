@@ -13,11 +13,14 @@
 	import { toast } from 'svelte-sonner';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { fetchAccounts, applyGroups } from '$lib/features/accounts/accounts.api';
+	import { listBankAccounts } from '$lib/features/bank-accounts/bank-accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import {
 		applyEdit,
 		buildGroupsRequest,
 		checkProposals,
+		bankLinkedAccounts,
+		type BankLinks,
 		parentOptionsFor,
 		previewTree,
 		proposalSkeletons,
@@ -61,7 +64,10 @@
 	let refusal = $state<ServerRefusal | null>(null);
 
 	let set = $derived(proposalSkeletons(accounts, selection, mode));
-	let checked = $derived(checkProposals(set, edits, accounts, selection, mode));
+	// Les comptes désignés par un compte bancaire (clos compris) : l'aperçu les
+	// refuse comme groupes, comme le serveur (`ACCOUNT_PARENT_BANK_LINKED`).
+	let links = $state<BankLinks>(new Map());
+	let checked = $derived(checkProposals(set, edits, accounts, selection, mode, links));
 	let summary = $derived(proposalSummary(checked));
 	let tree = $derived(previewTree(accounts, checked, onlyTouched));
 	// Le plan à cocher : l'arbre actuel, sans proposition appliquée.
@@ -72,7 +78,14 @@
 	async function loadAccounts() {
 		loading = true;
 		try {
-			accounts = await fetchAccounts(true);
+			const [plan, banks] = await Promise.all([
+				fetchAccounts(true),
+				// Sans la liste des comptes bancaires, l'aperçu ne les signale pas ;
+				// le serveur refuse quand même (`ACCOUNT_PARENT_BANK_LINKED`).
+				listBankAccounts(false, true).catch(() => []),
+			]);
+			accounts = plan;
+			links = bankLinkedAccounts(banks);
 		} catch (err) {
 			toast.error(isApiError(err) ? err.message : i18nMsg('error-unexpected', 'Erreur inattendue.'));
 		} finally {
@@ -382,7 +395,7 @@
 								>
 									<option value="">{i18nMsg('accounts-groups-parent-choose', '(à choisir)')}</option>
 									<option value="root">{i18nMsg('accounts-groups-parent-root', '(racine)')}</option>
-									{#each parentOptionsFor(accounts, p) as o (o.id)}
+									{#each parentOptionsFor(accounts, p, links) as o (o.id)}
 										<option value={String(o.id)}>{o.number} {o.name}</option>
 									{/each}
 								</select>

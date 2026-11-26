@@ -2,9 +2,11 @@
 // plan synthétique de la maquette (`kesh-gate-logs/s46-5/maquette/`, hors dépôt).
 import { describe, it, expect } from 'vitest';
 import type { AccountResponse, AccountType } from './accounts.types';
+import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 import {
 	applyEdit,
 	appliedProposals,
+	bankLinkedAccounts,
 	buildGroupsRequest,
 	checkProposals,
 	commonLeadingWords,
@@ -531,5 +533,69 @@ describe('readGroupRefusal', () => {
 		expect(readGroupRefusal({ groupStep: { groupIndex: '1' } })).toBeNull();
 		expect(readGroupRefusal(undefined)).toBeNull();
 		expect(readGroupRefusal({})).toBeNull();
+	});
+});
+
+describe('comptes désignés par un compte bancaire (Epic 46, garde du mainteneur du 2026-11-26)', () => {
+	/** Un compte bancaire minimal : seuls les champs que lit `bankLinkedAccounts`. */
+	const banque = (b: Partial<BankAccountSummary> & { id: number }): BankAccountSummary =>
+		({
+			bankName: `Banque ${b.id}`,
+			description: null,
+			journalAccountId: null,
+			archived: false,
+			paypal: null,
+			wise: null,
+			stripe: null,
+			...b,
+		}) as BankAccountSummary;
+
+	it('compte du plan et compte de frais, premier compte bancaire par identifiant, archivés ignorés', () => {
+		const links = bankLinkedAccounts([
+			banque({ id: 3, bankName: 'Wise', wise: { account: 'w', feeAccountId: 50 } }),
+			banque({ id: 1, bankName: 'Banque A', description: 'Courant', journalAccountId: 10 }),
+			banque({ id: 2, bankName: 'PayPal', paypal: { account: 'p', feeAccountId: 50 }, journalAccountId: 11 }),
+			banque({ id: 4, bankName: 'Ancienne', journalAccountId: 12, archived: true }),
+		]);
+		expect(links.get(10)).toBe('Banque A — Courant');
+		expect(links.get(11)).toBe('PayPal');
+		expect(links.get(50)).toBe('PayPal'); // frais partagés : le premier par identifiant
+		expect(links.has(12)).toBe(false);
+	});
+
+	it('groupe à réutiliser désigné → refus, la coche « réutiliser » ne s’offre pas', () => {
+		const set = proposalSkeletons(accounts, sel('10400', '10401'), 'digit');
+		const links = new Map([[idOf('1040'), 'Banque A']]);
+		const p = byKey(checkProposals(set, {}, accounts, sel('10400', '10401'), 'digit', links), 'digit:1040');
+		expect(codes(p, 'error')).toEqual(['numberBankLinked']);
+		expect(p.canReuse).toBe(false);
+		expect(p.messages[0].params.bank).toBe('Banque A');
+	});
+
+	it('groupe à rattacher désigné → refus', () => {
+		const set = proposalSkeletons(accounts, sel('1081'), 'digit');
+		const links = new Map([[idOf('108'), 'Banque A']]);
+		const p = byKey(checkProposals(set, {}, accounts, sel('1081'), 'digit', links), 'digit:108');
+		expect(p.kind).toBe('attach');
+		expect(codes(p, 'error')).toContain('numberBankLinked');
+	});
+
+	it('parent désigné → refus, et absent des parents offerts ; un membre désigné reste accepté', () => {
+		const selection = sel('1030', '1031');
+		const set = proposalSkeletons(accounts, selection, 'digit');
+		const first = byKey(checkProposals(set, {}, accounts, selection, 'digit'), 'digit:103');
+		const links = new Map([
+			[idOf('1040'), 'Banque B'],
+			[idOf('1030'), 'Banque A'],
+		]);
+		const choisi = checkProposals(set, edit(first, { parent: idOf('1040') }), accounts, selection, 'digit', links);
+		const p = byKey(choisi, 'digit:103');
+		expect(codes(p, 'error')).toContain('parentBankLinked');
+		// 1030, membre désigné, ne lève rien d'autre.
+		const sans = byKey(checkProposals(set, {}, accounts, selection, 'digit', links), 'digit:103');
+		expect(sans.hasError).toBe(false);
+		const options = parentOptionsFor(accounts, sans, links).map((a) => a.number);
+		expect(options).not.toContain('1040');
+		expect(parentOptionsFor(accounts, sans).map((a) => a.number)).toContain('1040');
 	});
 });

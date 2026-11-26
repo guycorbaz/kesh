@@ -23,6 +23,13 @@ vi.mock('$lib/features/accounts/accounts.api', () => ({
 	applyGroups: (req: unknown) => applyGroupsMock(req),
 }));
 
+// Epic 46, garde du mainteneur du 2026-11-26 : la page lit les comptes bancaires (clos compris)
+// pour ne pas proposer comme groupe un compte qu'un compte bancaire désigne.
+const listBankAccountsMock = vi.fn<(a?: boolean, c?: boolean) => Promise<unknown[]>>();
+vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
+	listBankAccounts: (a?: boolean, c?: boolean) => listBankAccountsMock(a, c),
+}));
+
 import Page from './+page.svelte';
 
 function account(id: number, number: string, name: string, parentId: number | null): AccountResponse {
@@ -72,6 +79,7 @@ describe('page Créer des groupes', () => {
 	beforeEach(() => {
 		authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
 		fetchAccountsMock.mockResolvedValue(PLAN);
+		listBankAccountsMock.mockResolvedValue([]);
 	});
 	afterEach(async () => {
 		vi.clearAllMocks();
@@ -208,3 +216,29 @@ describe('page Créer des groupes', () => {
 		expect(screen.queryByTestId('account-groups-refusal')).toBeNull();
 	});
 });
+
+describe('page Créer des groupes — comptes désignés par un compte bancaire', () => {
+	beforeEach(() => {
+		authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
+	});
+	afterEach(async () => {
+		vi.clearAllMocks();
+		await authState.logout();
+	});
+
+	it('un numéro pris par un compte lié à un compte bancaire est refusé et ne s’accepte pas', async () => {
+		fetchAccountsMock.mockResolvedValue(PLAN_WIDE.map((a) => (a.number === '1040' ? { ...a, currencyLocked: false } : a)));
+		listBankAccountsMock.mockResolvedValue([
+			{ id: 9, bankName: 'Banque Test', description: null, journalAccountId: 5, archived: false, paypal: null, wise: null, stripe: null },
+		]);
+		const card = await renderWithProposal();
+		expect(listBankAccountsMock).toHaveBeenCalledWith(false, true);
+		// Le numéro du groupe porté sur 1040, sans écriture mais lié au compte bancaire.
+		await fireEvent.input(card.querySelector('[data-testid="account-groups-number"]')!, { target: { value: '1040' } });
+		const err = card.querySelector('[data-code="numberBankLinked"]');
+		// `i18nMsg` est simulé sans interpolation : le nom du compte bancaire se vérifie au calcul (`group-proposals.test.ts`).
+		expect(err).not.toBeNull();
+		expect((card.querySelector('[data-testid="account-groups-accept"]') as HTMLButtonElement).disabled).toBe(true);
+	});
+});
+

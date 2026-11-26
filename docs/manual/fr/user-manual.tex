@@ -489,8 +489,9 @@ c'est pourquoi il ne doit porter \textbf{aucune écriture} --- son solde ne se c
 L'ancien parent garde son état, et redevient postable si vous cochez \textbf{Postable} une fois
 qu'il n'a plus de sous-compte actif. Le champ ne propose ni le compte lui-même, ni ses
 sous-comptes (un compte ne se range pas sous lui-même), ni les comptes qui portent des écritures.
-Kesh refuse aussi, comme à la création, un parent archivé et un compte de différence de change
---- le message dit lequel. (À la \emph{création} d'un compte, un parent qui porte des écritures
+Kesh refuse aussi, comme à la création, un parent archivé et un compte de différence de change,
+et le compte d'un compte bancaire (son compte du plan, ou le compte de frais d'un compte
+PayPal, Wise ou Stripe), qui reçoit des écritures automatiques --- le message dit lequel. (À la \emph{création} d'un compte, un parent qui porte des écritures
 est encore accepté~: créez plutôt vos comptes de groupe sans écriture.)
 
 \begin{keshwarning}
@@ -538,6 +539,14 @@ trois zones. \textbf{Rien n'est créé ni déplacé avant votre confirmation.}
         \item c'est un compte qui \textbf{porte des écritures}, ou un compte archivé : refus, saisissez un
         autre numéro.
     \end{itemize}
+    \textbf{Le compte d'un compte bancaire ne devient jamais un groupe} : ni groupe réutilisé ou
+    rattaché, ni parent d'un groupe créé. Cela vaut pour le compte du plan d'un compte bancaire et,
+    pour un compte PayPal, Wise ou Stripe, pour son compte de frais, même partagé par plusieurs
+    prestataires (un compte bancaire clos compte encore, un compte bancaire archivé non). Ces comptes
+    reçoivent des écritures automatiques ; devenus groupes, ils ne seraient plus imputables. La page
+    le signale par une erreur qui nomme le compte bancaire, et ne les offre pas comme parent ; Kesh
+    le refuse aussi à la confirmation, et à \emph{Modifier le compte} quand on y range un compte
+    dessous. Ranger ces comptes \emph{dans} un groupe reste possible : ils restent imputables.
     Un groupe ne réunit que des comptes \textbf{d'un même type} : des types mêlés sont refusés ;
     décochez les comptes d'un type pour lever le refus. Kesh signale aussi, sans bloquer, des devises
     mêlées (le groupe s'affiche en CHF), les comptes de même préfixe non cochés et deux banques

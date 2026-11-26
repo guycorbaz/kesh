@@ -5357,6 +5357,35 @@ impl IntoResponse for AppError {
                         }),
                     )
                 }
+                // Epic 46, décision du mainteneur du 2026-11-26 : un compte
+                // désigné par un compte bancaire ne devient pas parent.
+                DbError::AccountParentBankLinked {
+                    parent_account_id,
+                    parent_number,
+                    bank_account_id,
+                    bank_name,
+                } => {
+                    let mut args = FluentArgs::new();
+                    args.set("number", parent_number.clone());
+                    args.set("bank", bank_name.clone());
+                    coded_response(
+                        StatusCode::CONFLICT,
+                        "ACCOUNT_PARENT_BANK_LINKED",
+                        t_args(
+                            "error-account-parent-bank-linked",
+                            &format!(
+                                "Le compte {parent_number} est désigné par le compte bancaire « {bank_name} » : il reçoit des écritures automatiques et ne peut pas devenir un compte de groupe. Choisissez un autre compte de groupe."
+                            ),
+                            &args,
+                        ),
+                        serde_json::json!({
+                            "parentAccountId": parent_account_id,
+                            "parentNumber": parent_number,
+                            "bankAccountId": bank_account_id,
+                            "bankName": bank_name,
+                        }),
+                    )
+                }
                 // Story 46-5a (AC-3) — un refus propre à la route groupée du plan.
                 DbError::AccountGroupInvalid {
                     group_index,
