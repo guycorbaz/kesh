@@ -2682,3 +2682,100 @@ async fn groupes_parametre_repete(pool: MySqlPool) {
         );
     }
 }
+
+// ============================================================
+// Story 55-3a (#1607) — `hasDocuments` du journal et du grand livre
+// ============================================================
+
+/// L'identifiant de l'écriture de libellé `description` de la société.
+async fn ecriture_de(pool: &MySqlPool, company_id: i64, description: &str) -> i64 {
+    sqlx::query_scalar("SELECT id FROM journal_entries WHERE company_id = ? AND description = ?")
+        .bind(company_id)
+        .bind(description)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// AC-1, AC-2 (55-3a) — par la route : l'écriture qui porte une facture validée
+/// a `hasDocuments: true` au journal et sur ses deux lignes du grand livre ;
+/// les autres n'ont pas le champ (JSON d'avant).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s55_3a_has_documents_au_journal_et_au_grand_livre(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "co_55_3a", Role::Consultation).await;
+    let justifiee = ecriture_de(&pool, ctx.company_id, "Encaissement vente").await;
+    let contact: i64 = sqlx::query(
+        "INSERT INTO contacts (company_id, contact_type, name) VALUES (?, 'Entreprise', 'Client')",
+    )
+    .bind(ctx.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO invoices (company_id, contact_id, invoice_number, status, date, \
+             journal_entry_id) VALUES (?, ?, 'F-1', 'validated', '2026-12-31', ?)",
+    )
+    .bind(ctx.company_id)
+    .bind(contact)
+    .bind(justifiee)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let app = spawn_app(pool).await;
+
+    let body: Value = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reports/journals?fiscalYearId={}",
+            ctx.fy_id
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let mut vues = 0;
+    for e in body["journals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|j| j["entries"].as_array().unwrap())
+    {
+        vues += 1;
+        if e["entryId"] == justifiee {
+            assert_eq!(e["hasDocuments"], true, "{e}");
+        } else {
+            assert!(e.get("hasDocuments").is_none(), "champ omis : {e}");
+        }
+    }
+    assert_eq!(vues, 3, "les trois écritures du jeu");
+
+    let body: Value = app
+        .client
+        .get(app.url("/api/v1/reports/general-ledger?from=2026-07-01&to=2027-06-30"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let mut sections_justifiees = 0;
+    for s in body["sections"].as_array().unwrap() {
+        for l in s["lines"].as_array().unwrap() {
+            if l["entryId"] == justifiee {
+                assert_eq!(l["hasDocuments"], true, "{l}");
+                sections_justifiees += 1;
+            } else {
+                assert!(l.get("hasDocuments").is_none(), "champ omis : {l}");
+            }
+        }
+    }
+    assert_eq!(
+        sections_justifiees, 2,
+        "l'écriture porte le booléen dans ses deux sections (1000 et 4000)"
+    );
+}

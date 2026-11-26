@@ -154,6 +154,7 @@ fn make_journal_report(n_entries: usize) -> JournalReport {
         let entries: Vec<JournalEntryRow> = (0..per_section)
             .map(|i| JournalEntryRow {
                 entry_id: (idx * per_section + i) as i64,
+                has_documents: false,
                 entry_number: i as i64,
                 entry_date: NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
                 description: format!("Écriture test #{i}"),

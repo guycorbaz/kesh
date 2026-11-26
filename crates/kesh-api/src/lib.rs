@@ -1227,6 +1227,12 @@ pub fn build_router_avec_registre(
             "/api/v1/journal-entries/{id}",
             get(routes::journal_entries::get_journal_entry),
         )
+        // Story 55-3a (#1607) — les justificatifs d'une écriture (lecture, tout
+        // rôle authentifié, comme le détail ; aucun PDF n'est figé).
+        .route(
+            "/api/v1/journal-entries/{id}/documents",
+            get(routes::journal_entries::get_journal_entry_documents),
+        )
         // Story 15-1a-i (#518) — lecture d'un groupe de lettrage (tout rôle).
         .route(
             "/api/v1/letterings/{key}",
