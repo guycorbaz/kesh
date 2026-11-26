@@ -376,13 +376,13 @@ test('grand livre : une écriture postée réapparaît dans l’extrait de son c
 		await page.locator('#reports-tab-general-ledger').click();
 		await expect(page.getByTestId('ledger-controls')).toBeVisible();
 
-		// Période libre — et surtout : AUCUN exercice à choisir. C'est le seul
-		// rapport dans ce cas, et c'est ce qui le rend concordant avec le bilan.
+		// Story 55-2 (AC-11) — l'exercice n'est qu'un raccourci : des dates choisies à la main franchissent la
+		// borne, et le rapport reste concordant avec le bilan. Filtré sur un compte, il se charge au choix du
+		// compte (D16), sans Générer.
 		const year = today.slice(0, 4);
 		await page.getByTestId('ledger-from').fill(`${year}-01-01`);
 		await page.getByTestId('ledger-to').fill(`${year}-12-31`);
 		await page.getByTestId('ledger-account').selectOption(String(debit.id));
-		await page.getByTestId('ledger-generate').click();
 
 		const section = page.getByTestId(`ledger-section-${debit.number}`);
 		await expect(section).toBeVisible({ timeout: 5000 });

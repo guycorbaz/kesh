@@ -306,6 +306,152 @@ test('55-1b AC-1, AC-4 — la présentation dans l’adresse : lien dans un nouv
 	await capture1b(page, '2-apres-retour');
 });
 
+// =====================================================================================
+// Story 55-2 — le lien de compte partout (Journaux, contreparties du Grand livre, TVA, Compte de résultat
+// à plat) et le style des liens (D17). Données : le preset `with-company` désigne les deux comptes de TVA
+// (lus par `GET /company/invoice-settings`, jamais codés en dur) ; deux écritures sur trois comptes AUTRES
+// que ceux de la TVA, pour que le grand livre « tous les comptes » rende plusieurs sections.
+// =====================================================================================
+
+async function capture552(page: Page, nom: string): Promise<void> {
+	if (!process.env.KESH_CAPTURES_DIR) return;
+	await page.screenshot({ path: `${process.env.KESH_CAPTURES_DIR}/55-2-${nom}.png`, fullPage: true });
+}
+
+interface Donnees552 {
+	fy: { id: number; startDate: string; endDate: string };
+	a: { id: number; number: string };
+	b: { id: number; number: string };
+	c: { id: number; number: string };
+	tvaDue: { id: number; number: string };
+	impotPrealable: { id: number; number: string };
+}
+
+/** Deux écritures (a/b et a/c) ; les comptes de TVA du preset ; l'exercice par défaut. */
+async function preparer552(page: Page): Promise<Donnees552> {
+	const ctx = await authedApiContext(page);
+	try {
+		const reglages = await (await ctx.get('/api/v1/company/invoice-settings')).json();
+		const comptes: Array<{ id: number; number: string; postable: boolean; active: boolean }> = await (
+			await ctx.get('/api/v1/accounts?includeArchived=false')
+		).json();
+		const parId = (id: number) => {
+			const x = comptes.find((k) => k.id === id);
+			expect(x, `compte ${id} désigné au preset`).toBeTruthy();
+			return { id: x!.id, number: x!.number };
+		};
+		const tvaDue = parId(reglages.defaultVatPayableAccountId);
+		const impotPrealable = parId(reglages.defaultVatRecoverableAccountId);
+		const libres = comptes.filter((k) => k.postable && k.active && k.id !== tvaDue.id && k.id !== impotPrealable.id);
+		const choisir = (re: RegExp) => {
+			const x = libres.find((k) => re.test(k.number));
+			expect(x, `compte ${re}`).toBeTruthy();
+			return { id: x!.id, number: x!.number };
+		};
+		const a = choisir(/^10[0-9]{2}$/);
+		const b = choisir(/^3[0-9]{3}$/);
+		const c = choisir(/^6[0-9]{3}$/);
+		// a/b (un produit) et c/a (une charge) : trois sections au grand livre de tous les comptes.
+		for (const [debit, credit, montant] of [
+			[a, b, '700.00'],
+			[c, a, '120.00'],
+		] as const) {
+			const res = await ctx.post('/api/v1/journal-entries', {
+				data: {
+					entryDate: todayInZurich(),
+					journal: 'OD',
+					description: `E2E 55-2 — ${debit.number}/${credit.number}`,
+					lines: [
+						{ accountId: debit.id, debit: montant, credit: '0.00' },
+						{ accountId: credit.id, debit: '0.00', credit: montant },
+					],
+				},
+			});
+			expect(res.ok(), `écriture : ${res.status()} ${await res.text()}`).toBeTruthy();
+		}
+		const fys: Array<{ id: number; startDate: string; endDate: string }> = await (await ctx.get('/api/v1/fiscal-years')).json();
+		const fy = fys.sort((x, y) => y.startDate.localeCompare(x.startDate))[0];
+		return { fy, a, b, c, tvaDue, impotPrealable };
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}
+
+const periodeDe = (d: Donnees552) => `fy=${d.fy.id}&from=${d.fy.startDate}&to=${d.fy.endDate}`;
+
+test('55-2 AC-3, AC-7 — Journal : le numéro d’une ligne ouvre le grand livre du compte, Retour ramène au Journal ; axe peuplé', async ({ page }) => {
+	await seedTestState('with-company');
+	await page.goto('/login');
+	await capture552(page, '9-connexion-lien-souligne');
+	await login(page);
+	const d = await preparer552(page);
+	await page.goto(`/reports?tab=journals&${periodeDe(d)}`);
+	const lien = page.getByTestId('report-content').getByRole('link', { name: d.b.number }).first();
+	await expect(lien).toBeVisible({ timeout: 10000 });
+	await capture552(page, '1-journal-liens');
+	const axe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+	expect(axe.violations).toEqual([]);
+	await lien.click();
+	await expect(page).toHaveURL(new RegExp(`tab=general-ledger&accountId=${d.b.id}&from=${d.fy.startDate}&to=${d.fy.endDate}`));
+	await expect(page.getByTestId(`ledger-section-${d.b.number}`)).toBeVisible({ timeout: 10000 });
+	await page.goBack();
+	await ongletActif(page, 'journals');
+	await expect(page.getByTestId('report-content').getByRole('link', { name: d.b.number }).first()).toBeVisible();
+});
+
+test('55-2 AC-4, AC-5, AC-7 — Grand livre de tous les comptes : titres et contreparties liés, Retour ; axe peuplé', async ({ page }) => {
+	await seedTestState('with-company');
+	await login(page);
+	const d = await preparer552(page);
+	await page.goto(`/reports?tab=general-ledger&from=${d.fy.startDate}&to=${d.fy.endDate}`);
+	const sectionB = page.getByTestId(`ledger-section-${d.b.number}`);
+	await expect(sectionB).toBeVisible({ timeout: 10000 });
+	// Plusieurs sections : le numéro du titre est un lien (AC-5).
+	await expect(page.getByTestId(`ledger-title-${d.a.number}`).getByRole('link')).toHaveCount(1);
+	await capture552(page, '2-grand-livre-contreparties-et-titres');
+	const axe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+	expect(axe.violations).toEqual([]);
+	const contrepartie = sectionB.locator('[data-testid^="ledger-counterpart-"]').getByRole('link', { name: d.a.number }).first();
+	await contrepartie.click();
+	await expect(page).toHaveURL(new RegExp(`tab=general-ledger&accountId=${d.a.id}&from=${d.fy.startDate}&to=${d.fy.endDate}`));
+	await expect(page.getByTestId(`ledger-section-${d.a.number}`)).toBeVisible({ timeout: 10000 });
+	// Une seule section : le titre est du texte (AC-5).
+	await expect(page.getByTestId(`ledger-title-${d.a.number}`).getByRole('link')).toHaveCount(0);
+	await capture552(page, '3-grand-livre-une-section-titre-non-lie');
+	await page.goBack();
+	await expect(page.getByTestId(`ledger-section-${d.b.number}`)).toBeVisible();
+	await expect(page.locator('[data-testid^="ledger-section-"]')).toHaveCount(3);
+});
+
+test('55-2 AC-6, AC-7 — TVA : la ligne des comptes ouvre le grand livre de l’impôt préalable, Retour ramène au décompte', async ({ page }) => {
+	await seedTestState('with-company');
+	await login(page);
+	const d = await preparer552(page);
+	await page.goto(`/reports?tab=vat&${periodeDe(d)}`);
+	const ligne = page.getByTestId('vat-accounts');
+	// Rouge sans le correctif : aucune ligne `vat-accounts`.
+	await expect(ligne).toBeVisible({ timeout: 10000 });
+	await expect(ligne.getByRole('link')).toHaveCount(2);
+	await capture552(page, '4-tva-ligne-des-comptes');
+	await ligne.getByRole('link', { name: d.impotPrealable.number }).click();
+	await expect(page).toHaveURL(new RegExp(`tab=general-ledger&accountId=${d.impotPrealable.id}&from=${d.fy.startDate}&to=${d.fy.endDate}`));
+	await expect(page.getByTestId('general-ledger')).toBeVisible({ timeout: 10000 });
+	await page.goBack();
+	await ongletActif(page, 'vat');
+	await expect(page.getByTestId('vat-accounts')).toBeVisible();
+});
+
+test('55-2 AC-2 — Compte de résultat à plat : le numéro de chaque compte est un lien', async ({ page }) => {
+	await seedTestState('with-company');
+	await login(page);
+	const d = await preparer552(page);
+	await page.goto(`/reports?tab=income-statement&${periodeDe(d)}&view=flat`);
+	const lien = page.getByTestId('report-content').getByRole('link', { name: d.c.number });
+	await expect(lien).toBeVisible({ timeout: 10000 });
+	await expect(lien).toHaveAttribute('href', `/reports?tab=general-ledger&accountId=${d.c.id}&from=${d.fy.startDate}&to=${d.fy.endDate}`);
+	await capture552(page, '5-compte-de-resultat-a-plat');
+});
+
 test('D15 — le sélecteur : libellé, exercice choisi → dates, « Exercice entier », « Plusieurs », « Hors exercice »', async ({ page }) => {
 	// Deux exercices civils : le preset ne porte qu'un exercice très large. Reseed d'une société sans
 	// exercice — d'où la place de ce test, le DERNIER du fichier.
@@ -361,4 +507,40 @@ test('D15 — le sélecteur : libellé, exercice choisi → dates, « Exercice e
 	await menu.selectOption({ label: String(ANNEE) });
 	await expect(menu.locator('option[value="__outside"]')).toHaveCount(0);
 	await expect(page.getByTestId('report-content')).toBeVisible();
+});
+
+test('55-2 AC-11 à AC-14 — le sélecteur du Grand livre : exercice des rapports à l’arrivée, partie, « Plusieurs » générée', async ({ page }) => {
+	// Deux exercices civils (même montage que le test D15, qui précède).
+	await seedTestState('with-company-no-fy');
+	await login(page);
+	await deuxExercices(page);
+	const n = compter(page);
+	await page.goto('/reports');
+	await expect(page.getByTestId('report-period-heading')).toContainText(`du 01.01.${ANNEE} au 31.12.${ANNEE}`, { timeout: 10000 });
+	await page.locator('#reports-tab-general-ledger').click();
+	const controles = page.getByTestId('ledger-controls');
+	const menu = controles.getByTestId('report-fiscal-year');
+	// Rouge sans le correctif : aucun menu dans ledger-controls.
+	await expect(menu.locator('option:checked')).toHaveText(String(ANNEE));
+	await expect(page.getByTestId('ledger-from')).toHaveValue(`${ANNEE}-01-01`);
+	await expect(page.getByTestId('ledger-to')).toHaveValue(`${ANNEE}-12-31`);
+	await expect(page.getByTestId('ledger-generate')).toBeEnabled();
+	expect(n['general-ledger'] ?? 0).toBe(0);
+	await page.getByTestId('ledger-generate').click();
+	await expect(page.getByTestId('report-period-heading')).toContainText(`Exercice ${ANNEE}`, { timeout: 10000 });
+	await capture552(page, '6-grand-livre-exercice-entier');
+
+	await page.getByTestId('ledger-from').fill(`${ANNEE}-04-01`);
+	await page.locator('h1').click();
+	await expect(page.getByTestId('report-fy-whole')).toBeVisible();
+	await expect(menu.locator('option:checked')).toHaveText(String(ANNEE));
+	await capture552(page, '7-grand-livre-partie-exercice-entier');
+
+	await page.getByTestId('ledger-from').fill(`${PRECEDENTE}-07-01`);
+	await page.locator('h1').click();
+	await expect(menu).toHaveValue('__multiple');
+	await expect(page.getByTestId('report-needs-one-fy')).toHaveCount(0);
+	await page.getByTestId('ledger-generate').click();
+	await expect(page.getByTestId('report-period-heading')).toContainText(`(exercices ${PRECEDENTE} et ${ANNEE})`, { timeout: 10000 });
+	await capture552(page, '8-grand-livre-plusieurs-et-en-tete');
 });

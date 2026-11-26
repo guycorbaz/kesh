@@ -1,7 +1,8 @@
 <script lang="ts">
 	// Story 24-1 — Vue Grand livre : l'extrait d'un compte, ligne à ligne.
 	//
-	// ⚠️ Ce rapport ne prend PAS d'exercice — il franchit la borne, sans quoi
+	// ⚠️ Ce rapport ne prend PAS d'exercice (l'API ; à l'écran, l'exercice n'est qu'un raccourci pour la
+	// période, Story 55-2) — il franchit la borne, sans quoi
 	// il ne concorderait pas avec le bilan (cumulatif depuis l'origine). Les
 	// ruptures d'exercice sont matérialisées dans le tableau, à l'endroit où
 	// le solde d'un compte de résultat repart de zéro.

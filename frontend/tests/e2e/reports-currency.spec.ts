@@ -129,8 +129,8 @@ test('grand livre, balance, bilan, compte de résultat et journal d’un compte 
 		await expect(page.getByTestId('ledger-controls')).toBeVisible();
 		await page.getByTestId('ledger-from').fill(`${year}-01-01`);
 		await page.getByTestId('ledger-to').fill(`${year}-12-31`);
+		// Story 55-2 (D16) — filtré sur un compte, le grand livre se charge au choix du compte, sans Générer.
 		await page.getByTestId('ledger-account').selectOption(String(usd));
-		await page.getByTestId('ledger-generate').click();
 		const section = page.getByTestId(`ledger-section-${USD_NUMBER}`);
 		await expect(section).toBeVisible({ timeout: 5000 });
 		await expect(page.getByTestId(`ledger-currency-${USD_NUMBER}`)).toHaveText('USD');

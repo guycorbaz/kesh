@@ -4182,7 +4182,9 @@ tout exercice, \emph{Hors exercice}. Le bilan, le compte de résultat, la balanc
 rapports par compte analytique en mode \emph{Exercice} ne portent que sur \textbf{un seul exercice}~: avec
 \emph{Plusieurs} ou \emph{Hors exercice}, rien n'est chargé, le rapport affiché est retiré de l'écran et un
 message le dit~; revenir à deux dates du même exercice le recharge. Une date de début postérieure à la date de
-fin est signalée sous les dates, et rien n'est chargé.
+fin est signalée sous les dates, et rien n'est chargé. Le \textbf{grand livre} a le même bandeau, l'exercice
+n'y étant qu'un raccourci pour la période~: il franchit la borne, si bien que \emph{Plusieurs} et \emph{Hors
+exercice} n'y empêchent rien (\S\ref{sec:grand-livre}).
 
 Le rapport \textbf{se charge seul}, sans bouton~: à l'ouverture de la page et à l'arrivée sur un onglet, au choix
 d'un exercice, quand vous quittez les dates (passer de \emph{Du} à \emph{Au} ne compte pas), ou par la touche
@@ -4399,8 +4401,13 @@ libellé, sa \textbf{contrepartie} — les autres comptes de la même écriture 
 progressif} après chaque mouvement et, en dernière colonne, son \textbf{lettrage}.
 
 \begin{itemize}
-    \item \textbf{Période libre, sans exercice.} C'est le seul rapport qui ne demande pas de
-          choisir un exercice : il en franchit la borne. Quand la période en traverse deux, une
+    \item \textbf{L'exercice comme raccourci pour la période~; des dates choisies à la main pour
+          franchir la borne, le menu indiquant alors «~Plusieurs~» ou «~Hors exercice~».} Le bandeau
+          est celui des autres rapports (voir «~Choisir la période~», au début de cette section)~:
+          choisir un exercice met \emph{Du} et \emph{Au} à ses bornes, et \emph{Exercice entier}
+          les remet. En arrivant sur l'onglet avec des dates vides, elles prennent les bornes de
+          l'exercice choisi pour les autres rapports~; des dates déjà saisies restent, et celles
+          que vous tapez sur un autre onglet ne passent pas au grand livre. Quand la période en traverse deux, une
           ligne de rupture marque la clôture, et le solde d'un compte de charges ou de produits
           y \textbf{repart de zéro} — c'est ce que fait un bouclement. Le solde d'ouverture
           appartient à l'exercice qui contient le premier jour de la période~: si la première
@@ -4414,16 +4421,23 @@ progressif} après chaque mouvement et, en dernière colonne, son \textbf{lettra
           plus les mouvements~: le cumul de la période se lit dans le \textbf{total des
           mouvements}. Pour un compte de bilan, rien ne change~: la clôture est l'ouverture plus
           les mouvements.
-    \item \textbf{Compte facultatif.} Sans sélection, tous les comptes mouvementés sont rendus.
+    \item \textbf{Compte facultatif.} Sans sélection, tous les comptes mouvementés sont rendus,
+          par le bouton \emph{Générer}~: ce rapport est lourd. Un compte choisi se charge
+          \textbf{seul}, comme les autres rapports~: au choix du compte, de \emph{Inclure les comptes
+          sans mouvement} ou d'un exercice, quand vous quittez les dates, ou par Entrée.
     \item \textbf{Les comptes archivés apparaissent} s'ils portent encore un solde, signalés
           comme tels. Ce n'est pas un oubli de filtrage : un compte archivé à solde résiduel est
           précisément l'anomalie que l'on cherche.
     \item \textbf{Solde contre nature.} Un compte dont le solde tombe du côté opposé à sa nature
           — une caisse créditrice, un fournisseur débiteur — est signalé. C'est une alerte, pas
           une erreur : elle mérite un regard.
-    \item \textbf{Accès direct depuis le bilan et la balance} : le numéro de compte y est un
-          lien qui ouvre son grand livre sur la même période~; le retour arrière du navigateur ramène
-          au rapport d'où vous veniez, avec son exercice et sa période, sans le recharger.
+    \item \textbf{Accès direct depuis tous les rapports} : dans le bilan, le compte de résultat, la
+          balance, les journaux et les comptes de TVA du décompte, le numéro de compte est un lien
+          qui ouvre son grand livre sur la même période~; dans le grand livre, chaque
+          \textbf{contrepartie} ouvre le sien, et le numéro en tête d'un compte aussi quand plusieurs
+          comptes sont affichés. Le retour arrière du navigateur ramène au rapport d'où vous veniez,
+          avec son exercice et sa période, sans le recharger. Un lien se reconnaît à son
+          soulignement léger, sans compter sur la couleur.
     \item \textbf{Lettrage.} La colonne \emph{Lettrage} porte le \textbf{code} du groupe d'une
           ligne lettrée, en lien vers ce groupe~; une ligne ouverte l'a vide
           (\S\ref{sec:lettrage}). L'en-tête d'un compte lettrable porte le lien
@@ -4520,7 +4534,7 @@ Les factures dont les rappels sont \textbf{suspendus restent comptées} dans la 
 
 \subsection{Journal des écritures}
 
-\emph{Mensuel} → \emph{Rapports} → \emph{Journal}. Liste chronologique de toutes les écritures de la période sélectionnée. Vue brute, idéale pour audit ou contrôle.
+\emph{Mensuel} → \emph{Rapports} → \emph{Journal}. Liste chronologique de toutes les écritures de la période sélectionnée. Vue brute, idéale pour audit ou contrôle. Le numéro de compte de chaque ligne ouvre le grand livre de ce compte sur la période du journal (\S\ref{sec:grand-livre}).
 
 \subsection{Décompte TVA}\label{sec:decompte-tva}
 
@@ -4528,10 +4542,17 @@ Les factures dont les rappels sont \textbf{suspendus restent comptées} dans la 
 
 \begin{itemize}
     \item \textbf{TVA due} : la TVA facturée sur les ventes, ventilée par taux (8.1\%, 3.8\%, 2.6\%, 0\%). Elle est comptabilisée automatiquement lors de la validation de chaque facture de vente (compte \emph{TVA due}, p.~ex. 2200).
-    \item \textbf{TVA récupérable} (impôt préalable) : la TVA payée sur les achats, lue du solde du compte d'impôt préalable (p.~ex. 1171). Elle s'alimente via l'assistant de saisie d'achat (cf. \emph{Saisie d'une écriture}), qui pré-remplit la ligne d'impôt préalable à partir d'un taux.
+    \item \textbf{TVA récupérable} (impôt préalable) : la TVA payée sur les achats, lue des \textbf{mouvements de la période} du compte d'impôt préalable (débit moins crédit, p.~ex. 1171), sans son solde d'ouverture. Elle s'alimente via l'assistant de saisie d'achat (cf. \emph{Saisie d'une écriture}), qui pré-remplit la ligne d'impôt préalable à partir d'un taux.
     \item \textbf{Diminutions de contre-prestation (soldes)} : la TVA corrigée par les \emph{soldes} (escompte accordé, perte sur débiteur --- \S\ref{sec:reglement-client}) datés dans la période, ventilée par taux. La section n'apparaît que s'il y a de tels soldes, suivie de la \textbf{TVA due nette} (TVA due − TVA des soldes).
     \item \textbf{Solde net dû à l'AFC} : TVA due \textbf{nette} − TVA récupérable. Un solde négatif signifie un crédit d'impôt en votre faveur.
 \end{itemize}
+
+\paragraph{Les comptes au grand livre.} Sous le décompte, la ligne «~Comptes au grand livre~» donne le compte
+de \emph{TVA due} et celui d'\emph{impôt préalable} désignés dans \emph{Administration} → \emph{Facturation}~;
+chaque numéro ouvre le grand livre du compte sur la période du décompte. Un compte non désigné n'y figure pas.
+Le \textbf{total des mouvements} de la période du compte d'impôt préalable égale la TVA récupérable~; son solde
+de clôture y ajoute l'ouverture. La TVA due, elle, vient des factures~: le grand livre du compte de TVA due peut
+s'en écarter (voir l'avertissement ci-dessous).
 
 \paragraph{Alerte d'écart --- ce qu'elle voit, et ce qu'elle ne voit pas.} Kesh compare le
 montant de TVA due nette calculé depuis les factures et les soldes aux écritures comptables de ces mêmes factures et de ces mêmes soldes.
