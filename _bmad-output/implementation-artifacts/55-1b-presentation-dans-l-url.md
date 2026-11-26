@@ -9,6 +9,16 @@ la 55-1a). Release : la prochaine planifiée après la 0.20.0. **Frontend seulem
 *Découpée de la 55-1 à sa validation P3 (signal de recyclage) : la 55-1a porte l'URL des rapports, la 55-1b y ajoute la
 présentation de l'Epic 46 (hiérarchie, niveau, place des sous-totaux, groupes ouverts ou fermés à la main).*
 
+## ⚠️ D16 (2026-11-26, soir) — le rapport se charge seul
+
+Décision de l'utilisateur et avis UX (fichier d'epic, D16 ; 55-1a, AC-20 à AC-26) : plus de bouton *Générer* sur les
+onglets groupés (Bilan, Compte de résultat, Balance). Partout où cette fiche dit « *Générer* sur un onglet groupé » (le
+gestionnaire qui écrit les paramètres et la vue, le tableau des compteurs, AC-5, AC-12), lire « le chargement de la
+55-1a, AC-20 » — même écriture de l'URL (remplace), mêmes compteurs ; le scénario X1 de la 46-2 se rejoue avec un
+changement d'exercice ou une sortie des dates au lieu du clic. Les contrôles de présentation redemandent comme
+aujourd'hui (46-2), et cette redemande est une demande comme une autre : la dernière l'emporte (55-1a, AC-21). **R-4
+(au T0, fiche au plafond)** : récrire ces sites, ligne lue citée au Change Log.
+
 ## ⚠️ Points renvoyés au développement (validation P6)
 
 La validation s'est arrêtée à la **sixième passe** sur deux MEDIUM (`kesh-gate-logs/s55-kickoff/55-1b-validation-p6.md`),
@@ -309,3 +319,5 @@ lien ou revenir par *Retour* remplace la présentation retenue. (refs #À-VENIR)
 - 2026-11-26 — Validation P8 ciblée (Sonnet, `kesh-gate-logs/s55-decisions-2/55-2-55-1b-validation-p8.md`, commune aux 55-2 et 55-1b) sur les
   décisions du 2026-11-26 : 0/0/0/1 — P8-3 (V7-1 au passé, après « tranché »). **Validation terminée**, dernière passe permise ; les LOW se reprennent au **T0**, ligne
   lue citée au Change Log.
+- 2026-11-26 (soir) — **D16 versée** (le rapport se charge seul) : note d'en-tête et R-4 au T0, sans passe de
+  remédiation (fiche au plafond) ; relue par la passe ciblée hors décompte du même jour.

@@ -61,6 +61,19 @@ décision. Le correctif proposé par la passe est la résolution par défaut.
     au mainteneur le vrai choix avant le T0 (story séparée avec dérogation à la borne de six, ou 55-1a en L).
   - LOW : SE-4 (restes de P17 : AC-9, mutation, T3, Pièges), SE-7 (`fiscalYears` des six vues, doublon dans l'en-tête),
     SE-8 (format jour-mois sans test de forme ; DE/IT/EN de six clés à écrire).
+- **R-14 (D16, 2026-11-26, soir) — Le chargement sans *Générer*, versé au-delà du plafond de huit passes** (une passe
+  ciblée seulement, hors décompte ; ses points au-dessus de LOW s'ajoutent ici en R-16 et suivants) : au T0, avant le
+  code, récrire dans le sens de D16 (§ *Le chargement sans Générer*, AC-20 à AC-26, **qui priment**) chaque site qui
+  suppose encore *Générer* ou l'invite d'un onglet jamais généré : *Appliquer une URL*, point 3 (« l'utilisateur clique
+  *Générer* quand le bouton se réactive ») ; AC-8 (a) et (b) ; AC-9 ; AC-10 ; AC-11 (« *Générer* ensuite », « un champ
+  modifié sans *Générer* ») ; AC-13 (le clic sur un onglet ne génère rien) ; AC-15 (*Générer* désactivé) ; AC-16 (le
+  périmé) ; AC-19 (« Paramètres modifiés ») ; les tests et mutations qui les constatent ; C-55-1-1, C-55-1-4 ; la
+  note de version (déjà récrite) ; D5 du fichier d'epic (`from > to` n'est plus envoyé à l'API, AC-20). Ligne lue
+  et décision citées au Change Log.
+- **R-15 (D16)** — Les choix de la fiche que la décision ne tranche pas, posés au mainteneur avec D16 (fichier d'epic,
+  *Questions au mainteneur*) : Grand livre filtré chargé au choix du compte et de « comptes sans mouvement » ; balance
+  âgée chargée à l'arrivée ; rapports par compte analytique gardant *Générer* ; ancien rapport retiré sur « Plusieurs »
+  ou « Hors exercice » ; exports du rapport affiché ; message de période invalide (`reports-nav-period-invalid`).
 - **R-6 (décision Q6 du mainteneur, 2026-11-25, versée sans passe : plafond atteint)** — § *Gates* aligné sur la
   *Dérogation* du fichier d'epic (story purement écran : specs des Rapports et de la navigation à la story, E2E complet et
   `gate-ci.sh` en fin d'epic) ; le T0 relit la phrase contre le fichier d'epic et le cite au Change Log.
@@ -196,10 +209,10 @@ Le modèle est en même temps **simplifié** : la page n'applique jamais l'URL q
 
 | Geste | Ce que fait la page (comme aujourd'hui) | URL écrite | Appels de `goto` |
 |---|---|---|---|
-| Clic sur un onglet | `selectTab` : onglet changé, `errorMsg` effacé, règle de la 46-2 (`resyncActiveGroupedTab`) ; **aucune requête** | **empile** : l'onglet et la clé du **rapport affiché** de cet onglet, ou `?tab=<id>` seul s'il n'en a pas ; les champs du formulaire ne changent pas | 1 |
+| Clic sur un onglet | `selectTab` : onglet changé, `errorMsg` effacé, règle de la 46-2 (`resyncActiveGroupedTab`) ; **aucune requête** *(remplacé par D16, AC-22 : le rapport des champs, repris de la mémoire s'il a la même clé, chargé sinon)* | **empile** : l'onglet et la clé du **rapport affiché** de cet onglet, ou `?tab=<id>` seul s'il n'en a pas ; les champs du formulaire ne changent pas | 1 |
 | Flèches, Origine, Fin sur les onglets | idem | **remplace** | 1 |
-| *Générer* | `generate()` (une génération à la fois, comme aujourd'hui) | **remplace**, avec la requête partie — écrit par le **gestionnaire** du bouton, après l'appel de `generate()`, jamais par `generate()` elle-même (qui sert aussi `changeGrouping`, `resyncActiveGroupedTab` et `applyUrl`) | 1 |
-| Exercice, date, compte, « comptes sans mouvement », compte analytique, mode modifiés | choix d'un exercice : dates aux bornes (AC-15) ; rapport affiché grisé (AC-16) ; l'effet du compte analytique vide comme aujourd'hui, P17 ne vide plus que les rapports par compte analytique | **aucune** : l'URL reste celle du dernier rapport demandé, jusqu'à *Générer* | 0 |
+| *Générer* *(depuis D16 : le Grand livre de tous les comptes et les rapports par compte analytique seulement ; ailleurs, le chargement de l'AC-20 tient ce rôle et écrit l'URL de la même façon)* | `generate()` (une génération à la fois, comme aujourd'hui) | **remplace**, avec la requête partie — écrit par le **gestionnaire** du bouton, après l'appel de `generate()`, jamais par `generate()` elle-même (qui sert aussi `changeGrouping`, `resyncActiveGroupedTab` et `applyUrl`) | 1 |
+| Exercice, date, compte, « comptes sans mouvement », compte analytique, mode modifiés | choix d'un exercice : dates aux bornes (AC-15) ; rapport affiché grisé (AC-16) ; l'effet du compte analytique vide comme aujourd'hui, P17 ne vide plus que les rapports par compte analytique | **aucune** : l'URL reste celle du dernier rapport demandé, jusqu'à *Générer* *(depuis D16 : jusqu'au chargement de l'AC-20 — choix d'un exercice, sortie des dates, Entrée, compte du Grand livre filtré)* | 0 |
 | Contrôles de présentation et accordéons (Epic 46) | la 46-2 redemande, comme aujourd'hui | **aucune** dans la 55-1a (la présentation entre dans l'URL à la 55-1b) | 0 |
 | Clic sur un lien de compte (`<a href={ledgerHref(…)}>`) | — | **empile** (navigation SvelteKit, inchangée) : URL **non écrite par la page**, donc appliquée | 0 |
 
@@ -267,11 +280,12 @@ d'aujourd'hui.
 1. **AC-1 — Retour après un lien de compte.** Bilan de l'exercice E, période P, affiché ; clic sur un numéro de compte →
    grand livre de ce compte sur P ; *Retour* → **le Bilan de E sur P**, sans clic sur *Générer*, **sans nouvelle requête**
    `GET /api/v1/reports/balance-sheet` ; *Suivant* → le grand livre, sans nouvelle requête. Même chose depuis la Balance.
-2. **AC-2 — Retour entre onglets.** Bilan généré (E) ; clic sur l'onglet *Compte de résultat* (jamais généré) → une entrée
+2. **AC-2 — Retour entre onglets.** *(Amendé par D16 : le clic sur l'onglet jamais affiché **charge** son rapport — une
+   requête, l'URL complète empilée — au lieu de l'invite ; *Retour* et *Suivant* restent sans requête.)* Bilan généré (E) ; clic sur l'onglet *Compte de résultat* (jamais généré) → une entrée
    d'historique de plus, URL `?tab=income-statement`, invite, **aucune requête** ; *Générer* → URL
    `?tab=income-statement&fy=E…` (remplacée) ; *Retour* (bouton du navigateur) → le Bilan, onglet *Bilan* `aria-selected`,
    sans requête ; *Suivant* → le compte de résultat, sans requête.
-3. **AC-3 — *Générer* remplace.** Bilan de E affiché ; période changée, *Générer* → l'URL porte la nouvelle période,
+3. **AC-3 — *Générer* remplace.** *(Amendé par D16 : « période changée, puis sortie des dates » au lieu de *Générer*.)* Bilan de E affiché ; période changée, *Générer* → l'URL porte la nouvelle période,
    `history.length` est inchangé, **une** requête.
 4. **AC-4 — Lien partagé et rechargement.** Une URL copiée — classique (onglet, exercice, période), grand livre (compte,
    dates, comptes sans mouvement) — ouverte dans un nouveau
@@ -287,7 +301,8 @@ d'aujourd'hui.
    clic** ; les Vitest `reports-page.test.ts` et `reports-page-groupes.test.ts` (PR 46) passent **sans modification**, et le
    scénario X1 de la 46-2 (niveau changé sur le Bilan, *Générer* sur le Compte de résultat, retour sur le Bilan : redemande)
    est **rejoué** dans le Vitest neuf avec un `page.url` qui suit `goto` (il ne doit plus passer à vide).
-7. **AC-7 — Requêtes et `goto`.** Par geste, comptés (Vitest) : *Générer* — 1 requête, 1 `goto` ; clic sur un onglet —
+7. **AC-7 — Requêtes et `goto`.** *(Amendé par D16 : le clic sur un onglet dont la clé affichée n'est pas celle des
+   champs compte 1 requête ; le chargement de l'AC-20 compte comme *Générer*, 1 requête et 1 `goto` qui remplace.)* Par geste, comptés (Vitest) : *Générer* — 1 requête, 1 `goto` ; clic sur un onglet —
    0 requête, 1 `goto` ; clic sur *Balance âgée* jamais générée — 0 requête, 1 `goto` ; arrivée sur `?tab=aged-receivables`
    — 1 requête, 0 `goto` ; Retour vers une URL dont le rapport est affiché ou en vol — 0 requête, 0 `goto` ; arrivée sur une
    URL invalide ou valide mais **non canonique** (p. ex. `?tab=general-ledger&from=…&to=…&accountId=…` de
@@ -323,7 +338,8 @@ d'aujourd'hui.
 
 ### Exigences de l'utilisateur (2026-11-25), critères explicites
 
-13. **AC-13 — Une adresse affiche son rapport sans « Générer » (D3).** *Récrit le 2026-11-25 sur la réponse de
+13. **AC-13 — Une adresse affiche son rapport sans « Générer » (D3).** *(Amendé par D16 : les puces du clic sur un
+    onglet — « aucune requête, jamais », « reste à son invite » — sont remplacées par l'AC-22 ; le reste tient.)* *Récrit le 2026-11-25 sur la réponse de
     l'utilisateur (partie A, point 1)* : revenir par un **clic** sur un onglet déjà généré montre **déjà** son rapport
     aujourd'hui (`selectTab`, aucune requête) ; cette story ne le change pas et ne régénère rien au changement d'onglet.
     Ce qui reste à faire :
@@ -407,7 +423,8 @@ page ne font que les appeler (DRY : un seul endroit pour le texte d'un exercice,
       message dit pourquoi (`reports-nav-needs-one-fy`, « Ce rapport porte sur un seul exercice : choisissez deux dates du
       même exercice. », `role="status"`). Le Grand livre, qui franchit la borne, génère dans tous les cas (55-2).
       *Choix de la fiche, à confirmer avec la décision* : la décision ne dit pas ce que fait *Générer* sur ces onglets ;
-      désactiver est la seule issue sans changement d'API.
+      désactiver est la seule issue sans changement d'API. *(Remplacé par D16 : il n'y a plus de *Générer* sur ces
+      onglets ; rien n'est chargé et le message dit pourquoi, AC-26.)*
     - **Le même composant sur tous les onglets à période** : `ReportSelector` porte le libellé, le menu, « Du », « Au »,
       « Exercice entier », *Générer* et les exports ; les contrôles propres d'un onglet (compte et « comptes sans
       mouvement » du Grand livre, compte analytique et mode des rapports par compte analytique) lui sont passés par un
@@ -421,7 +438,9 @@ page ne font que les appeler (DRY : un seul endroit pour le texte d'un exercice,
       que si `from` et `to` manquent (les bornes de `fy` sont alors le défaut de la période, au lieu d'une période vide,
       *Appliquer une URL*, point 2) ; un `fy` qui contredit les dates est corrigé à la normalisation. Une URL classique dont
       les dates tombent dans plusieurs exercices n'est pas complète : l'invite, « Plusieurs », aucune requête.
-16. **AC-16 — Rapport périmé.** Si l'exercice ou les dates — ou, au Grand livre, le compte et « comptes sans mouvement » —
+16. **AC-16 — Rapport périmé.** *(Remplacé par D16 : AC-24 pour le grisé, qui ne vaut plus que pendant un
+    rechargement, AC-26 pour « Plusieurs » et « Hors exercice », AC-25 pour les exports ; la clé `reports-nav-stale`
+    n'est pas créée. Texte d'origine gardé ci-dessous pour l'historique.)* Si l'exercice ou les dates — ou, au Grand livre, le compte et « comptes sans mouvement » —
     changent après *Générer*, le rapport affiché reste à l'écran, **grisé** (`opacity-60`, `aria-disabled` non posé : ses
     liens restent utilisables), et porte au-dessus de lui « Paramètres modifiés — cliquez sur Générer »
     (`reports-nav-stale`, `role="status"`, `data-testid="report-stale"`). Le critère est **la clé des champs différente de
@@ -456,6 +475,88 @@ page ne font que les appeler (DRY : un seul endroit pour le texte d'un exercice,
     un exercice ; le rapport grisé « Paramètres modifiés » ; l'en-tête). Les phrases qui disent encore « période — début »
     ou que changer d'exercice vide les dates se corrigent (grep `période\|exercice` du § au T0). `.tex` seul, PDF aplati
     contrôlé avant.
+
+### Le chargement sans *Générer* (D16 — décision de l'utilisateur et avis UX du 2026-11-26, soir)
+
+*Prime sur tout site de la fiche qui suppose encore *Générer* ou l'invite d'un onglet jamais affiché (R-14).* Le
+chargement passe par `generate()` d'aujourd'hui et écrit l'URL comme son gestionnaire le faisait (**remplace**, D2) ; la
+règle « une génération à la fois » devient « **la dernière demande l'emporte** ». Aucun module neuf.
+
+20. **AC-20 — Quand le rapport se charge.** Sur le Bilan, le Compte de résultat, la Balance, les Journaux, la TVA et le
+    Grand livre filtré sur un compte (55-2), le rapport de l'onglet affiché se charge :
+    - à l'ouverture de la page (`/reports` compris : le Bilan de l'exercice par défaut) et à l'arrivée sur l'onglet ;
+    - au choix d'un exercice dans le menu (son gestionnaire, après les bornes de l'AC-15) ;
+    - quand le focus **quitte le groupe** des deux dates : « Du » et « Au » sont dans un `<fieldset>` dont la `<legend>`,
+      visuellement masquée, est « Période » (`reports-filter-period`, existante) ; un `focusout` dont le `relatedTarget`
+      est dans le groupe (« Du » → « Au », et retour) ne déclenche rien ; `relatedTarget` nul (clic hors de tout élément
+      focalisable, fenêtre quittée) vaut une sortie ;
+    - à **Entrée** dans un champ de date (`keydown`, `Enter`, sans attendre la sortie).
+    **Conditions** : la clé des champs diffère de la clé affichée **et** de la clé en vol de l'onglet (*Appliquer une
+    URL*, point 4) ; la période est valide (`estDateStockable` pour les deux dates, `from ≤ to`). Période invalide : aucune
+    requête, le rapport affiché reste tel quel (non grisé), et un message `role="status"` le dit sous les dates
+    (`reports-nav-period-invalid`, « La date de début doit précéder la date de fin, ou lui être égale. ») ; une date vide ou
+    incomplète pendant la saisie n'affiche rien. *Amende D5* : `from > to` n'est plus jugé par l'API.
+    *Constat* : Vitest de la page, un compteur de requêtes par cas — ouverture (1) ; choix d'exercice (1) ; « Du » changé
+    puis Tab vers « Au » (0), puis Tab hors du groupe (1) ; dates inchangées puis sortie (0) ; Entrée (1) ; Entrée puis
+    sortie du groupe (1 seule) ; `from > to` (0, message) ; retour aux dates du rapport affiché puis sortie (0).
+    Mutations : `relatedTarget` non consulté → test « Du → Au » rouge ; clé affichée non comparée → test « inchangées »
+    rouge.
+21. **AC-21 — La dernière demande l'emporte.** Une demande neuve **annule** la précédente encore en vol, de quelque
+    onglet qu'elle soit : `AbortController` dont le `signal` passe aux fonctions de lecture de `reports.api.ts` (paramètre
+    facultatif, en fin), et `invalidateInFlight()` qui périme sa réponse. Une requête annulée ne montre ni erreur ni
+    message (`AbortError` ignorée) ; son onglet garde son rapport affiché, ou rien. *Remplace* la règle « une génération à
+    la fois » et les branches « génération d'un autre onglet en vol » du point 3 (*Appliquer une URL*), avec R-1 à R-3.
+    *Constat* : Vitest à réponses différées — deux demandes de suite : le `signal` de la première est `aborted`, seule la
+    seconde s'affiche, même si la première répond après ; une erreur `AbortError` n'affiche rien. Mutation : signal non
+    transmis → la première réponse s'affiche, test rouge.
+22. **AC-22 — Le clic sur un onglet montre le rapport des champs.** *Remplace* « clic sur un onglet : aucune requête »
+    (tableau des gestes, AC-13, C-55-1-4). Le clic (ou les flèches) affiche le rapport de l'onglet **pour les champs
+    d'aujourd'hui** : repris de la mémoire si sa clé affichée est celle des champs (0 requête), chargé sinon (1). L'URL
+    empilée (clic) ou remplacée (flèches) est la clé des champs. **Des dates tapées puis quittées par un clic sur un autre
+    onglet** : le `focusout` vers un onglet (`relatedTarget` dans `role="tablist"`) ne charge pas l'onglet quitté ; le clic
+    charge l'onglet visé avec ces dates, qui passent dans son URL. L'onglet quitté garde son rapport et sa clé : *Retour*
+    le montre sans requête. La règle de la 46-2 (`resyncActiveGroupedTab`) reste ; elle ne s'applique qu'à un rapport
+    repris de la mémoire. *Constat* : Vitest — onglet déjà affiché aux mêmes champs (0) ; onglet jamais affiché (1, URL
+    complète empilée) ; dates tapées puis clic sur un autre onglet (1 requête, pour l'onglet visé, avec les dates tapées ;
+    0 pour l'onglet quitté) ; X1 de la 46-2 rejoué (AC-6).
+23. **AC-23 — Ce qui garde un bouton.** Le Grand livre **non filtré** (aucun compte choisi) garde *Générer*
+    (`ledger-generate`) et ne se charge pas seul ; son invite devient « Choisissez un compte, ou cliquez sur Générer pour
+    afficher tous les comptes. » (`reports-ledger-instruction`, récrite). Les deux rapports par compte analytique
+    gardent *Générer* (R-15). La balance âgée, sans période, se charge à l'arrivée sur l'onglet (R-15) ;
+    `reports-aged-instruction-generate` est retirée. Le Grand livre filtré est décrit par la 55-2 (AC-11, AC-12).
+24. **AC-24 — Les états.** Premier chargement d'un onglet : « Chargement… » en `role="status"` (`reports-loading`, texte
+    récrit : « Chargement… », « Wird geladen… », « Caricamento… », « Loading… ») ; **rechargement** : l'ancien rapport
+    reste affiché, grisé (`opacity-60`), son conteneur porte `aria-busy="true"`, ses liens restent utilisables ; réponse
+    sans ligne : « Aucune écriture sur cette période. » (`reports-error-no-entries-in-period`, texte récrit dans les quatre
+    locales : « Keine Buchungen in diesem Zeitraum. », « Nessuna registrazione in questo periodo. », « No entries in this
+    period. »). « Sélectionnez un exercice et cliquez sur Générer » disparaît (`reports-instruction-select-and-generate`
+    retirée) ; seul reste, sans exercice, `reports-error-no-fiscal-year-available`. *Constat* : Vitest de chaque état
+    (`aria-busy` posé puis retiré à la réponse, `opacity-60`, `role="status"`) ; mutation : `aria-busy` jamais posé → rouge.
+25. **AC-25 — Les exports suivent le rapport affiché.** Export PDF et Export CSV prennent les paramètres de la **clé
+    affichée** de l'onglet, non ceux des champs ; ils sont désactivés pendant un premier chargement et quand rien n'est
+    affiché. *Ferme* l'issue préexistante « export d'une autre période » (section *Issues à ouvrir*, retirée). *Constat* :
+    Vitest — dates tapées sans sortie, export : l'URL d'export porte la période affichée.
+26. **AC-26 — « Plusieurs » et « Hors exercice » sur un onglet à un exercice.** Rien n'est chargé ; le rapport affiché est
+    **retiré** de l'écran (il ne correspond plus aux dates) et le message `reports-nav-needs-one-fy` (`role="status"`) dit
+    pourquoi ; l'URL reste celle du dernier rapport chargé ; revenir à des dates d'un seul exercice charge le rapport.
+    *Remplace* *Générer* désactivé (AC-15, C-55-1-8). *Constat* : Vitest et E2E de l'AC-15 adaptés.
+
+**Textes (AC-18 amendé)** : `reports-nav-stale` n'est pas créée ; `reports-nav-period-invalid` s'ajoute (dix clés neuves
+en tout) ; `reports-loading`, `reports-error-no-entries-in-period` et `reports-ledger-instruction` sont récrites ;
+`reports-instruction-select-and-generate` et `reports-aged-instruction-generate` sont retirées si plus aucun site ne les
+emploie (grep au T0) ; `sitesTotal` recompté par la garde.
+
+**E2E** : les specs qui cliquent *Générer* sur un rapport à période sont adaptées (le clic disparaît, ou devient la sortie
+des dates), adaptation nommée au Change Log (fichier d'epic, *Fichiers communs*) ; `reports-navigation.spec.ts` gagne
+AC-20 (sortie des dates, Entrée), AC-22 (dates tapées puis autre onglet) et AC-24 (`aria-busy`).
+
+**Manuel (AC-11 et AC-19 amendés)** : le paragraphe « Choisir la période » dit que le rapport se charge au choix d'un
+exercice, en quittant les dates ou par Entrée, et que seul le Grand livre de tous les comptes a un bouton *Générer* ; les
+phrases « cliquez sur Générer » du § *Rapports comptables* se corrigent (grep `Générer` du § au T0).
+
+**Recette visuelle** : en plus des captures de D15, le premier chargement, un rechargement grisé, le rapport vide, la
+période invalide, « Plusieurs » sur le Bilan (rapport retiré et message), le Grand livre de tous les comptes avec son
+bouton.
 
 ## Tests à écrire, et la preuve du rouge
 
@@ -550,8 +651,10 @@ un utilisateur connecté, sans cliquer sur *Générer* (comme les liens de l'éc
 qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène au Bilan. Le sélecteur d'exercice est le même
 sur tous les onglets : il montre l'exercice seul, en gras (ses années, ou son nom s'il a été renommé) ; « Du » et « Au » sont
 toujours remplis, « Exercice entier » remet les bornes, « Plusieurs » ou « Hors exercice » s'affichent quand les dates
-sortent d'un exercice ; un rapport dont les paramètres ont changé est grisé jusqu'à *Générer*, et son en-tête dit la
-période réelle. (refs #À-VENIR)
+sortent d'un exercice, et l'en-tête du rapport dit la période réelle. Le bouton *Générer* disparaît : le rapport se
+charge à l'ouverture, au choix d'un exercice, en quittant les dates ou par Entrée, et reste affiché, grisé, pendant qu'il
+se recharge ; seul le Grand livre de tous les comptes garde un bouton. Les exports portent sur le rapport affiché.
+(refs #À-VENIR)
 
 ## Dev Notes
 
@@ -572,7 +675,8 @@ période réelle. (refs #À-VENIR)
 - **C-55-1-2** — Un rapport en mémoire par onglet (sa réponse et sa clé) : *Retour* plus loin qu'une vue de l'onglet
   redemande à l'API (une trace d'audit de plus, assumée).
 - **C-55-1-3** — `goto` plutôt que le routage superficiel de `$app/navigation`.
-- **C-55-1-4** — Le clic sur un onglet ne génère pas (validation P1) ; il passe par `selectTab` d'aujourd'hui, non par
+- **C-55-1-4** — *(Renversé par D16, AC-22 : le clic montre le rapport des champs, chargé s'il n'est pas en mémoire.)*
+  Le clic sur un onglet ne génère pas (validation P1) ; il passe par `selectTab` d'aujourd'hui, non par
   `applyUrl` (validation P3, V3-1 : appliquer l'URL écrite par le clic recopiait dans les contrôles l'état de l'ancien
   rapport et faisait passer à vide la règle de la 46-2).
 - **C-55-1-5** — Clavier en `replace` : une entrée par flèche rendrait *Retour* inutilisable.
@@ -580,8 +684,12 @@ période réelle. (refs #À-VENIR)
   avait corrigé la prémisse fausse « *Générer* interrompt » — le bouton est désactivé pendant `loading` — par une demande
   différée, retirée en P5) : l'onglet montre son invite, comme si l'on y arrivait par un clic.
 - **C-55-1-7** — Rapports par compte analytique hors de l'URL (validation P4, V4-1), issue à ouvrir.
-- **C-55-1-8** (D15) — Sur un onglet à un seul exercice, « Plusieurs » et « Hors exercice » désactivent *Générer* : l'API
+- **C-55-1-8** (D15, *récrit par D16*) — Sur un onglet à un seul exercice, « Plusieurs » et « Hors exercice » ne
+  chargent rien, retirent le rapport affiché et disent pourquoi (AC-26). *Texte d'avant* : désactivent *Générer* : l'API
   exige un exercice qui contienne la période ; la décision ne le dit pas, c'est la seule issue sans changement d'API.
+- **C-55-1-10** (D16) — Les choix de R-15 (Grand livre filtré, balance âgée, rapports par compte analytique, rapport
+  retiré, exports, message de période invalide) : la décision ne les tranche pas ; ce sont les lectures les plus proches
+  de « le rapport se charge seul quand ses paramètres sont complets », posées au mainteneur.
 - **C-55-1-9** (D15) — Un menu natif entièrement en gras plutôt que `components/ui/select` : le menu ne montre plus les
   dates, le gras partiel n'a plus d'objet ; le natif garde le clavier, le lecteur d'écran et les E2E d'aujourd'hui.
 
@@ -603,7 +711,7 @@ période réelle. (refs #À-VENIR)
 
 - (LOW, `enhancement`) Les rapports par compte analytique (dépenses, rendement) ne sont pas dans l'URL : *Retour* et un
   lien n'y ramènent que l'onglet (C-55-1-7) (Epic 55, story 55-1a).
-- (LOW, `bug` P3, préexistant ; **réduit par D15** : exports désactivés tant que le rapport est grisé, AC-16 — à
+- *(Retirée par D16 : l'AC-25 fait suivre aux exports le rapport affiché.)* (LOW, `bug` P3, préexistant ; **réduit par D15** : exports désactivés tant que le rapport est grisé, AC-16 — à
   reformuler ou retirer au T0) L'export d'un rapport classique reprend la période des champs, et le nom de fichier celle
   du rapport affiché (`+page.svelte` PR 46 `:660-690`) : un champ modifié sans *Générer* exporte une autre période que
   l'écran (Epic 55, story 55-1a, relevé de validation).
@@ -702,3 +810,11 @@ période réelle. (refs #À-VENIR)
   (R-8 et suivants).
 - 2026-11-26 — Passe ciblée D15 (Sonnet, `kesh-gate-logs/s55-selecteur/selecteur-2026-11-26-validation.md`), hors décompte : 0/0/5/3 (SE-1, SE-2, SE-3, SE-5, SE-6 MEDIUM ; SE-4,
   SE-7, SE-8 LOW). **Aucune remédiation** (fiche au plafond) : renvoi au **T0** en R-9 à R-13, LOW listés avec eux.
+- 2026-11-26 (soir) — **Décision de l'utilisateur et avis UX versés** (D16, fichier d'epic) : le rapport se charge seul,
+  sans *Générer* — à l'ouverture, au choix d'un exercice, à la sortie du groupe « Période » (`focusout`, `relatedTarget`
+  hors du groupe) et à Entrée, si les dates ont changé et que la période est valide ; la dernière demande l'emporte
+  (`AbortController`) ; le clic sur un onglet montre le rapport des champs ; états « Chargement… », grisé `aria-busy`,
+  « Aucune écriture sur cette période. » ; le Grand livre de tous les comptes garde son bouton. AC-20 à AC-26 ajoutés ;
+  AC-2, AC-3, AC-7, AC-13, AC-15, AC-16, C-55-1-4, C-55-1-8 et le tableau des gestes annotés ; C-55-1-10, R-14, R-15 ;
+  note de version récrite ; l'issue « export d'une autre période » retirée (AC-25). **Au-delà du plafond de huit
+  passes** : une passe ciblée hors décompte, sans remédiation, ses points au T0 (R-16 et suivants).

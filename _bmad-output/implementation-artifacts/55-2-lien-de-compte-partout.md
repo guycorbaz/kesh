@@ -31,6 +31,11 @@ le tranche avant toute ligne de code, ligne lue et décision citées au Change L
   AC-14), V6-5 (fichier d'epic : la phrase « Justificatif et non pièce » à remettre au point 3 de l'*Objectif*), V6-6
   (modules de `fiscalYearMatching` et de la fonction de libellé : `features/reports` ; taille de la story déclarée ;
   caduc pour ces deux fonctions, remplacées par `fiscal-year-menu.ts` de la 55-1a, D15).
+- **R-6 (D16 et D17, 2026-11-26, soir) — Versés au-delà du plafond** (une passe ciblée hors décompte, sans remédiation ;
+  ses points au-dessus de LOW s'ajoutent ici en R-7 et suivants) : au T0, relire l'AC-1 (classe), l'AC-11 et l'AC-12
+  (*Générer* du Grand livre) et l'AC-16 (balayage) contre la 55-1a telle que livrée (AC-20 à AC-26), et récrire dans le
+  sens de D16 les tests et l'E2E de ce bloc qui cliquent *Générer* sur un Grand livre filtré ; ligne lue citée au
+  Change Log.
 - **R-2 (P7, V7-1, MEDIUM) — Gardes Rust des textes. Tranché le 2026-11-26** par le mainteneur (resserrement de la
   dérogation Q6, fichier d'epic § *Dérogation*) dans le sens du défaut ci-dessous : § *Gates* et T5 le portent. La story, « purement écran », modifie `messages.ftl` et le manuel,
   gardés par des tests Rust (`parity_between_locales`, `textes_coherents`) qui ne tourneraient qu'en fin d'epic. Défaut :
@@ -51,7 +56,9 @@ par *Retour*.
 
 ## Modules touchés (règle de splitting préventif)
 
-Quatre : `frontend/src/lib/features/reports` (composant neuf, sept vues), `frontend/src/routes/(app)/reports` (données
+*(D17, 2026-11-26 : plus `frontend/src/lib/shared` — `navigation/link-class.ts`, neuf — et le balayage mécanique de
+l'AC-16, une classe par site dans six modules hors des Rapports, posé au mainteneur comme déploiement mécanique, revu
+fichier par fichier.)* Quatre : `frontend/src/lib/features/reports` (composant neuf, sept vues), `frontend/src/routes/(app)/reports` (données
 passées aux vues), `kesh-i18n` (quatre locales), `docs/manual/fr/user-manual.tex` ; plus `frontend/tests/e2e`. Aucun Rust.
 
 ## Ce qui se lit au code
@@ -108,7 +115,11 @@ rapports classiques (`ReportSelector`) et *Générer* reste inutilisable : compo
 
 **Le remède** (AC-11 à AC-15, numérotés à la suite des AC de la story) :
 
-11. **AC-11 — Le sélecteur de la 55-1a, valeur déduite des dates** (*récrit le 2026-11-26 par D15*). Le bandeau du Grand
+11. **AC-11 — Le sélecteur de la 55-1a, valeur déduite des dates** (*récrit le 2026-11-26 par D15* ; *amendé par D16* :
+    **filtré sur un compte**, le Grand livre se charge seul, par les déclencheurs de la 55-1a, AC-20 — exercice, sortie du
+    groupe « Période », Entrée —, et aussi au choix du compte et de « comptes sans mouvement » (choix posé au mainteneur) ;
+    **sans compte**, il garde *Générer* (`ledger-generate`), qui reste le seul bouton de ce nom, 55-1a AC-23 ; partout
+    ci-dessous, « *Générer* actif » se lit « le rapport se charge » pour un Grand livre filtré). Le bandeau du Grand
     livre devient le composant **`ReportSelector`** de la 55-1a (AC-14 à AC-17) — libellé « Exercice » par `<label for>`,
     menu natif en gras, « Du », « Au », « Exercice entier », *Générer* et exports —, lié à `ledgerFrom` et `ledgerTo`, avec
     `unSeulExercice={false}` ; le compte et « comptes sans mouvement » lui sont passés par le *snippet* des contrôles propres
@@ -121,7 +132,8 @@ rapports classiques (`ReportSelector`) et *Générer* reste inutilisable : compo
     et « Au » avec ses bornes ; le Grand livre **n'écrit jamais** `selectedFiscalYearId` (P17 ne se déclenche pas). Société
     sans exercice : le menu est vide et désactivé, les dates restent libres et *Générer* utilisable dès qu'elles sont
     remplies. **Retiré** : l'entrée « — (dates libres) » et sa clé `reports-nav-ledger-free-dates`.
-12. **AC-12 — Dates vides pré-remplies.** Quand l'onglet *Grand livre* s'affiche **avec ses deux dates vides** — clic ou
+12. **AC-12 — Dates vides pré-remplies.** *(Amendé par D16 : après le préremplissage, un Grand livre **filtré** se charge
+    — une requête ; sans compte, aucune, et *Générer* attend.)* Quand l'onglet *Grand livre* s'affiche **avec ses deux dates vides** — clic ou
     clavier sur l'onglet (`selectTab`), URL incomplète `?tab=general-ledger`, rechargement, Retour —, « Du » et « Au »
     prennent les bornes de l'exercice choisi des rapports classiques (`selectedFiscalYearId`, par défaut le premier) ;
     *Générer* est **visible et utilisable** (aucune requête n'est faite, 55-1a). Dates déjà remplies : elles restent (garde
@@ -208,13 +220,41 @@ sur un exercice entier, sur une partie (« Exercice entier »), et sur « Plusie
     venant des factures** (`:4322`), avec renvoi à l'avertissement `:4337-4346` ; la phrase `:4326` (« lue du solde du
     compte d'impôt préalable ») est corrigée dans le même sens. `.tex` seul.
 
+## Le style des liens (D17 — décision de l'utilisateur et avis UX du 2026-11-26, soir)
+
+16. **AC-16 — Un lien se voit sans la couleur, partout.**
+    - `frontend/src/lib/shared/navigation/link-class.ts` (neuf) exporte `LINK_CLASS = 'text-indigo-700 underline
+      decoration-indigo-700/40 underline-offset-2 hover:decoration-current'` (la décision, à l'octet près) et
+      `LINK_UNDERLINE_CLASS = 'underline decoration-current/40 underline-offset-2 hover:decoration-current'`, le même
+      soulignement pour un lien qui garde sa couleur. *Amende l'AC-1* : `AccountLink` emploie `LINK_CLASS` au lieu de
+      `text-indigo-700 hover:underline`. L'Epic 56 importe les deux (sa fiche 56-1 les plaçait dans `highlight.ts`).
+    - **Les Rapports** : tout lien des vues (`AccountLink`, et le lien vers les postes ouverts du Grand livre,
+      `openItemsHref`, `GeneralLedgerView.svelte:252`) porte `LINK_CLASS`.
+    - **Le reste de l'application, inventaire clos** : un `<a href>` dont la classe n'a pas `underline` au repos (ou n'a
+      que `hover:underline`), hors des liens en forme de bouton (fond plein ou bordure) et de la navigation (menu latéral,
+      logo), prend `LINK_UNDERLINE_CLASS` en gardant sa couleur. Relevé du 2026-11-26 à `fbfa64a27` (script du fichier
+      d'epic, *Fichiers communs*) : `ForgotPasswordForm.svelte:164`, `ResetPasswordForm.svelte:243`,
+      `routes/login/+page.svelte:197`, `supplier-invoices/new/+page.svelte:193,223`,
+      `supplier-invoices/[id]/edit/+page.svelte:144`, `BankProfileList.svelte:83`, `invoices/[id]/+page.svelte:979` ; et
+      la variante `link` de `components/ui/button/button.svelte:21` (`text-primary underline-offset-4 hover:underline` →
+      la couleur et `LINK_UNDERLINE_CLASS`), qui sert « Exercice entier » (55-1a) et les boutons de style lien. Au T0,
+      l'inventaire est relevé de nouveau sur la base de la branche, par la même règle ; sa sortie va au Change Log, et
+      tout site neuf y entre. Les liens déjà soulignés en plein restent tels quels (question au mainteneur).
+    - **Aucune couleur neuve**, aucun changement de texte. Le contraste du soulignement à 40 % n'est pas un critère WCAG
+      (1.4.1 demande un signe autre que la couleur, 1.4.11 ne vise pas le texte) ; `axe` reste à zéro violation.
+    - *Constat* : Vitest d'`AccountLink` (classe exacte `LINK_CLASS`) ; garde — `grep -rnE 'class="[^"]*hover:underline'
+      frontend/src --include=*.svelte` ne rend plus aucun `<a>` (les boutons de tri des en-têtes de tableau, qui ne sont
+      pas des liens, restent ; la sortie, triée à la main, va au Change Log) ; capture d'un tableau des Rapports et de la
+      page de connexion. Mutation : `LINK_CLASS` sans `underline` → test d'`AccountLink` rouge.
+
 ## Tests à écrire, et la preuve du rouge
 
 - **Vitest** `AccountLink.test.ts` (neuf) : lien et `href` exacts, titre, texte sans `accountId`.
 - **Vitest des vues** : `IncomeStatementView.test.ts`, `JournalReportView.test.ts`, `GeneralLedgerView.test.ts` (contrepartie
   résolue, non résolue, titre lié à plusieurs sections et non lié à une), `VatReportView.test.ts` (deux comptes, un seul,
   aucun, compte désigné absent de la liste des comptes, décompte vide), `BalanceSheetView.test.ts`,
-  `TrialBalanceView.test.ts` et `GroupedReportRows.test.ts` (PR 46) : **tests neufs** du lien inchangé (`href`, `title`,
+  `TrialBalanceView.test.ts` et `GroupedReportRows.test.ts` (PR 46) : *(D17 : la classe attendue est `LINK_CLASS`, non
+  plus celle d'aujourd'hui)* **tests neufs** du lien inchangé (`href`, `title`,
   classe exacts — aucun Vitest actuel ne vérifie ces liens). Chacun rougit sans le correctif (journal
   `kesh-gate-logs/s55-2/vitest-rouge-avant.log`), sauf les trois derniers, filets de non-régression déclarés tels.
 - **Vitest de la page** (fichier `reports-page-url.test.ts` de la 55-1a) : réglages de TVA lus **une fois**, au premier
@@ -243,7 +283,8 @@ section lié et non lié ; TVA avec sa ligne de comptes ; Compte de résultat à
 
 - [ ] **T0** — Base : `epic/55-navigation` avec la 55-1a et la 55-1b ; relever les lignes ; choisir les clés i18n (AC-9).
 - [ ] **T1** — Vitest rouges des vues neuves.
-- [ ] **T2** — `AccountLink.svelte` ; remplacement des sites (cinq sur la base PR 46).
+- [ ] **T2** — `AccountLink.svelte` ; remplacement des sites (cinq sur la base PR 46) ; `link-class.ts` (D17).
+- [ ] **T2bis** — Balayage des liens non soulignés au repos (AC-16), un commit à part, revu fichier par fichier.
 - [ ] **T3** — Compte de résultat, Journaux, Grand livre, TVA. Propriétés neuves : `GeneralLedgerView` reçoit
       `accountIdByNumber: ReadonlyMap<string, number>` (un `$derived` de `accounts`, comme `letterableAccountIds`
       `+page.svelte:137` : la liste arrive de façon asynchrone) ; `VatReportView` reçoit `vatAccounts: { payable:
@@ -270,7 +311,7 @@ de la navigation au dernier commit de code ; suite complète et `scripts/gate-ci
 Grand livre et, pour la TVA, les comptes de TVA due et d'impôt préalable. Le Grand livre a le même sélecteur d'exercice que les
 autres rapports ; des dates choisies à la main franchissent la borne (« Plusieurs », « Hors exercice ») ; ses dates sont
 pré-remplies, et *Générer* utilisable, en arrivant d'un autre
-onglet. (refs #À-VENIR, #À-VENIR)
+onglet. Tous les liens sont soulignés d'un trait léger, pour se voir sans la couleur. (refs #À-VENIR, #À-VENIR)
 
 ## Dev Notes
 
@@ -372,3 +413,8 @@ onglet. (refs #À-VENIR, #À-VENIR)
   R-3 (`ui/select`). Passe de validation ciblée unique (Sonnet, prompt
   `55-1a-55-2-epic-validation-prompt-2026-11-26-selecteur.md`), hors décompte ; ses MEDIUM vont au T0 (R-4 et suivants).
 - 2026-11-26 — Passe ciblée D15 (Sonnet, `kesh-gate-logs/s55-selecteur/selecteur-2026-11-26-validation.md`), hors décompte : 0/0/1/1 (SE-3, SE-9). Aucune remédiation : R-5 au **T0**.
+- 2026-11-26 (soir) — **Décisions de l'utilisateur et avis UX versées** (fichier d'epic, D16 et D17) : le Grand livre
+  filtré se charge seul, celui de tous les comptes garde *Générer* (AC-11, AC-12 amendés) ; le style des liens — couleur
+  d'aujourd'hui et soulignement léger — par `LINK_CLASS` et `LINK_UNDERLINE_CLASS` (`lib/shared/navigation/link-class.ts`),
+  `AccountLink` (AC-1 amendé) et un balayage clos des liens non soulignés au repos (AC-16, T2bis). **Au-delà du plafond** :
+  une passe ciblée hors décompte, sans remédiation, ses points au T0 (R-6, puis R-7 et suivants).

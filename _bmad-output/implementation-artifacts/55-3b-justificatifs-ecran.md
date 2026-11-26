@@ -66,6 +66,9 @@ dernière permise, est gardée en réserve. Le correctif proposé est la résolu
   les rapports, une facture non figée s'affiche en **aperçu**, qui n'est pas le PDF émis » ; la phrase de la pièce sortie
   nuancée : l'aperçu affiché dans Kesh n'est pas une pièce émise, et il est fermé aux clés d'API (55-3a) ; l'AC-9 dit
   « les phrases qui attribuent le figement au téléchargement et à l'envoi restent justes ; ces deux-là sont ajustées ».
+- **R-11 (D16, 2026-11-26, soir)** — Un rechargement garde la vue montée et grisée (55-1a, AC-24) : au T0, un Vitest
+  constate qu'un rechargement arrivé dialogue ouvert ne relit pas le document (lecture unique, AC-5), et que la ligne
+  d'écriture du dialogue reste celle du tableau affiché ; ligne lue citée au Change Log.
 - **R-3 à R-5 (Pv2p8, LOW, `kesh-gate-logs/s55-decisions/55-3b-validation-pv2p8.md`)** : R-3 (gardes Rust des
   catalogues que la story modifie : la précision de la *Dérogation* proposée au mainteneur, fichier d'epic, question
   *Gardes Rust des textes*) ; R-4 (l'AC-9 renvoie à R-2 : « aucune n'est réécrite » sauf `:1637` et `:1641`) ; R-5 (la
@@ -215,7 +218,10 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    le rapport ou la liste relue par des objets égaux ne relit pas le document. Changer d'élément dans la liste ne relit que le document
    choisi. Le cas réel du tableau remplacé : Retour ou Suivant vers le **même
    onglet**, dont le rapport est repris de la mémoire (55-1a, C-55-1-2) ou redemandé, l'écriture y étant encore ; *Générer*
-   n'est pas atteignable dialogue ouvert (modal) et démonte la vue (`{#if loading}`).
+   n'est pas atteignable dialogue ouvert (modal) et démonte la vue (`{#if loading}`). *(D16, 2026-11-26 : *Générer*
+   disparaît des rapports à période, et un **rechargement** garde la vue montée, grisée, 55-1a AC-24 ; aucun déclencheur
+   n'est atteignable dialogue ouvert, mais un rechargement en vol à l'ouverture peut remplacer le tableau : c'est le cas
+   de la « lecture unique » ci-dessus, à constater par un Vitest au T0, R-11.)*
 6. **AC-6 — Grand livre.** Une colonne `documents` (`COLUMNS`, après `description`, en-tête `reports-nav-ledger-column-documents`
    « Justificatifs », rendu étroit), **présente seulement si au moins une ligne du rapport porte `hasDocuments`** (condition
    sur le rapport, non sur la section : toutes les sections ont alors le même nombre d'en-têtes) ; les constantes qui
@@ -577,3 +583,5 @@ d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; gran
   **T0**.
 - 2026-11-26 — Passe ciblée sur les précisions d'interface (Opus, `kesh-gate-logs/s55-decisions-2/interface-2026-11-26-validation.md`), hors décompte (fiche au plafond) :
   0/0/3/5. Renvoi au **T0** (R-8 à R-10, en tête) ; LOW UI-4 à UI-8 listés en tête.
+- 2026-11-26 (soir) — **D16 versée** (le rapport se charge seul ; un rechargement garde la vue montée) : note à l'AC-5
+  et R-11 au T0 ; sans passe de remédiation (fiche au plafond).

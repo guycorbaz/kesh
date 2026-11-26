@@ -24,7 +24,9 @@ de la P2 (recyclage) ; le découpage sépare la présentation de l'Epic 46 (55-1
 est simplifié (la page n'applique jamais l'URL qu'elle écrit). Plus aucune story ne peut s'ajouter sans en sortir une. Le signal s'est **maintenu** à la P4 de la 55-1a (HIGH encore) : le
 périmètre a été réduit (rapports par compte analytique hors de l'URL), et la P5 a rendu 0 HIGH. Le 2026-11-26, le sélecteur
 d'exercice (D15) entre dans la 55-1a, portée de M à **L** (cinq modules, à la borne), faute de place pour une septième
-story ; le choix est posé au mainteneur (§ *Questions au mainteneur*).
+story ; le choix est posé au mainteneur (§ *Questions au mainteneur*). Le 2026-11-26 au soir, deux décisions de
+l'utilisateur et de l'UX entrent **sans story neuve** : le chargement sans *Générer* (D16) dans la 55-1a, le style des
+liens (D17) dans la 55-2, qui gagne un balayage mécanique des liens de l'application (§ *Questions au mainteneur*).
 
 **Issues** (ouvertes par l'agent du mainteneur ; numéros à reporter) :
 
@@ -65,8 +67,10 @@ L'utilisateur, en tenant ses livres, navigue dans les Rapports comme dans des pa
 4. Le **Grand livre a son sélecteur d'exercice** — le même que les autres rapports (D15) ; ses dates sont pré-remplies et
    *Générer* utilisable en arrivant d'un autre onglet (55-2, défaut d).
 5. **Un seul sélecteur d'exercice** sur tous les onglets à période (D15) : l'exercice seul, en gras ; « Du » et « Au »
-   toujours remplis ; « Exercice entier », « Plusieurs », « Hors exercice » ; un rapport périmé grisé ; l'en-tête qui dit
-   la période réelle (55-1a, et 55-2 pour le Grand livre).
+   toujours remplis ; « Exercice entier », « Plusieurs », « Hors exercice » ; l'en-tête qui dit la période réelle (55-1a,
+   et 55-2 pour le Grand livre).
+6. **Le rapport se charge seul**, sans bouton *Générer*, sauf le Grand livre de tous les comptes (D16, 55-1a et 55-2).
+7. **Un lien se voit sans la couleur** : couleur d'aujourd'hui et soulignement léger, partout (D17, 55-2).
 
 ## Hors périmètre
 
@@ -145,7 +149,9 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
   entrée d'historique) ; *Générer* et flèches du clavier sur les onglets : **`replaceState`** ; les contrôles de
   regroupement et les accordéons n'écrivent pas l'URL, c'est la réponse affichée qui l'écrit (55-1b) ; un champ modifié sans *Générer* n'écrit rien (l'URL décrit le dernier rapport demandé).
   ⚠️ Le clic sur un onglet en `pushState` **renverse D-7c** de la Story 21-7 (« pas d'empilement ») : c'est la demande de
-  l'utilisateur (b). (55-1a)
+  l'utilisateur (b). (55-1a) *(Amendée par D16 le 2026-11-26 : *Générer* n'existe plus que pour le Grand livre de tous
+  les comptes ; le chargement déclenché par l'exercice, la sortie des dates ou Entrée **remplace** l'URL, comme
+  *Générer* le faisait.)*
 - **D3 — Une URL venue de l'extérieur affiche son rapport ; un clic sur un onglet ne génère rien** (réponse de
   l'utilisateur du 2026-11-25 : revenir à un onglet généré montre déjà son rapport ; reste l'adresse collée, rechargée ou
   atteinte par Retour, 55-1a AC-13). Arrivée sur une
@@ -154,7 +160,9 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
   onglet, lui, montre le rapport que l'onglet a déjà, ou son invite, **comme aujourd'hui** : aucune requête, et la règle
   revue de la 46-2 (un rapport groupé redemandé à la fin d'une génération en vol) reste intacte. `/reports` sans
   paramètre reste l'écran d'aujourd'hui. *Écarté* (validation P1 de la 55-1, devenue 55-1a) : générer à chaque changement d'onglet.
-  *(Amendée le 2026-11-25.)*
+  *(Amendée le 2026-11-25.)* *(Amendée par D16 le 2026-11-26 : un clic sur un onglet **montre le rapport des champs** —
+  repris de la mémoire s'il a la même clé, chargé sinon ; l'invite « cliquez sur Générer » disparaît. « Une URL venue de
+  l'extérieur affiche son rapport » est inchangé.)*
 - **D4 — Vue de regroupement : URL d'abord, mémoire ensuite.** Les paramètres de regroupement de l'URL priment sur la
   mémoire du navigateur de l'Epic 46 ; absents, la vue des contrôles (qui porte la mémoire) s'applique. La présentation
   n'entre dans l'URL **que par la réponse affichée** (qui complète l'URL), pour qu'un lien copié porte la vue affichée.
@@ -182,7 +190,40 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
   55-2 ; `ui/select` n'est plus nécessaire. *Choix des fiches* (C-55-1-8) : sur un onglet qui ne porte que sur un exercice,
   « Plusieurs » et « Hors exercice » désactivent *Générer*, l'API exigeant un exercice qui contienne la période ; le Grand
   livre génère. Démonstration hors du dépôt : `kesh-gate-logs/s55-selecteur/selecteur-exercice-demo.html`. (55-1a AC-14 à
-  AC-19, 55-2 AC-11 à AC-15)
+  AC-19, 55-2 AC-11 à AC-15) *(Amendée par D16 le 2026-11-26 : le rapport « périmé » et son message « Paramètres
+  modifiés — cliquez sur Générer » deviennent le simple grisé du rechargement ; avec « Plusieurs » ou « Hors exercice » sur
+  un onglet à un seul exercice, rien n'est chargé et un message dit pourquoi, C-55-1-8 récrit.)*
+- **D16 — Le rapport se charge seul, sans *Générer* (décision de l'utilisateur et avis UX du 2026-11-26, soir).**
+  - **Rapports concernés** : ceux qui ont une période — Bilan, Compte de résultat, Balance, Journaux, TVA, et le Grand
+    livre **filtré sur un compte**.
+  - **Quand il se charge** : à l'ouverture de la page et à l'arrivée sur un onglet (un exercice est toujours choisi,
+    D15) ; au choix d'un exercice dans le menu ; quand le focus quitte **l'ensemble** des deux dates, regroupées dans un
+    `<fieldset>` (ou `role="group"`) nommé « Période », par `focusout` dont le `relatedTarget` est hors du groupe —
+    passer de « Du » à « Au » ne déclenche rien ; à la touche Entrée dans un champ de date.
+  - **À deux conditions** : les dates ont changé depuis la dernière requête de l'onglet, et la période est valide (début
+    au plus tard à la fin, `from ≤ to`, la règle de l'API). **La dernière demande l'emporte** : les précédentes sont
+    annulées (`AbortController`) et périmées (`invalidateInFlight`).
+  - **Des dates tapées puis quittées par un clic sur un autre onglet** passent dans l'URL de cet onglet, qui se charge
+    avec elles.
+  - **Exception** : le Grand livre **non filtré**, tous comptes, garde un bouton (*Générer*), parce qu'il est lourd.
+  - **États** : pendant le chargement, « Chargement… » en `role="status"` ; pendant un rechargement, l'ancien rapport
+    reste affiché, grisé, avec `aria-busy="true"` ; sans ligne, « Aucune écriture sur cette période. ».
+  - **Textes** : « Sélectionnez un exercice et cliquez sur Générer » disparaît ; le seul message qui reste sert au cas
+    où aucun exercice n'existe (`reports-error-no-fiscal-year-available`).
+  - **Le rapport périmé** de D15 (55-1a AC-16) devient le grisé du rechargement ; « Plusieurs » ou « Hors exercice » sur un
+    onglet limité à un exercice : rien n'est chargé, un message dit pourquoi (`reports-nav-needs-one-fy`).
+  - *Choix des fiches, posés au mainteneur* : le Grand livre filtré se charge aussi au choix du compte et de « comptes sans
+    mouvement » ; la balance âgée (sans période) se charge à l'arrivée sur l'onglet ; les deux rapports par compte
+    analytique, qui exigent un compte analytique et que la décision ne nomme pas, gardent *Générer* ; les exports suivent
+    le rapport **affiché**, non les champs. (55-1a AC-20 à AC-26, 55-2 AC-11 et AC-12 amendés)
+- **D17 — Le style des liens (décision de l'utilisateur et avis UX du 2026-11-26, soir).** Partout, tableaux compris : la
+  couleur d'aujourd'hui **et** un soulignement léger, `underline decoration-indigo-700/40 underline-offset-2
+  hover:decoration-current` (WCAG 1.4.1 : la couleur n'est pas le seul signe). Une constante partagée, `LINK_CLASS`
+  (`text-indigo-700` et ce soulignement), dans `frontend/src/lib/shared/navigation/link-class.ts` ; `AccountLink` la porte,
+  l'Epic 56 la reprend. Les liens de l'application qui ne sont **pas soulignés au repos** (inventaire clos au T0 de la
+  55-2) prennent le même soulignement léger en gardant leur couleur (`LINK_UNDERLINE_CLASS`, `decoration-current/40`) ;
+  la variante `link` de `components/ui/button` aussi. Les liens déjà soulignés en plein restent tels quels (question au
+  mainteneur). (55-2 AC-1 amendé, AC-16)
 - **D7 — TVA : les comptes désignés (Q3, acceptée par le mainteneur le 2026-11-25).** Le décompte TVA ne montre aucun compte. La 55-2 ajoute une ligne « Comptes au
   grand livre : TVA due `NNNN` · TVA récupérable `MMMM` » (réglages de facturation, lisibles par tout rôle), chaque numéro
   en lien vers son grand livre sur la période du décompte ; compte non désigné : sa mention est omise — **sans compte désigné, aucun lien**. Une ligne à part, et
@@ -225,9 +266,9 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
 | Clé | Titre | Dépend de | Taille | Fiche |
 |---|---|---|---|---|
 | 55-0 | Kickoff (ce fichier ; pas de fiche) | — | — | — |
-| 55-1a | L'état des Rapports dans l'URL : Retour, Suivant, lien partagé ; le sélecteur d'exercice (D15) | base PR 46 | **L** (M avant D15, 2026-11-26 ; cinq modules, à la borne) | `55-1a-etat-des-rapports-dans-l-url.md` |
+| 55-1a | L'état des Rapports dans l'URL : Retour, Suivant, lien partagé ; le sélecteur d'exercice (D15) ; le chargement sans *Générer* (D16) | base PR 46 | **L** (M avant D15, 2026-11-26 ; cinq modules, à la borne ; D16 n'ajoute aucun module) | `55-1a-etat-des-rapports-dans-l-url.md` |
 | 55-1b | La présentation des rapports groupés dans l'URL (Epic 46) | 55-1a | S | `55-1b-presentation-dans-l-url.md` |
-| 55-2 | Le lien de compte partout : Journaux, Grand livre, TVA, Compte de résultat à plat ; sélecteur d'exercice du Grand livre | 55-1a | M | `55-2-lien-de-compte-partout.md` |
+| 55-2 | Le lien de compte partout : Journaux, Grand livre, TVA, Compte de résultat à plat ; sélecteur d'exercice du Grand livre ; le style des liens dans toute l'application (D17) | 55-1a | M (+ balayage mécanique, D17) | `55-2-lien-de-compte-partout.md` |
 | 55-3a | Les justificatifs d'une écriture dans la réponse du journal et du grand livre (serveur) | base PR 46 ; **backend** (Q1 acceptée) | **M** (XL avant que l'aperçu marqué ne sorte de l'epic, 2026-11-26) | `55-3a-justificatifs-serveur.md` |
 | 55-3b | Ouvrir les justificatifs depuis le Journal (et le Grand livre) | 55-3a, 55-2 | M | `55-3b-justificatifs-ecran.md` |
 | 55-4 | Solde de la dette de l'epic (plafond : **2 issues**) | toutes | S | `55-4-solde-dette-epic.md` |
@@ -317,10 +358,13 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 | `crates/kesh-report/src/csv.rs`, `pdf.rs`, `benches/export.rs` (littéraux de test seulement) | 55-3a | **Epic 46** (PR 46 : `csv.rs` 1119, `pdf.rs` 1776 lignes touchées), **Epic 47** (`csv.rs`, `pdf.rs`, `presentation.rs`) | une ligne `has_documents: false,` par littéral, rien d'autre |
 | `docs/api-external.md` (grand livre `:310`, journal `:1164` à `1e23edb55`) | 55-3a | **Epic 46** (+74 lignes vers `:313`), **Epic 47** (vers `:308-311`) | phrase ajoutée en fin de paragraphe, lignes relevées sur la base |
 | `crates/kesh-api/tests/reports_e2e.rs` | 55-3a | Epics 46 et 47 (cités par le fichier de l'Epic 46) | bloc de tests propre |
-| `crates/kesh-i18n/locales/*/messages.ftl` | 55-1a (dix clés du sélecteur, D15), 55-2, 55-3b | Epic 46 (`reports-groups-*`) | bloc `reports-nav-*` propre à l'epic |
+| `crates/kesh-i18n/locales/*/messages.ftl` | 55-1a (dix clés du sélecteur, D15 ; D16 : `reports-nav-stale` et les invites retirées, `reports-loading`, `reports-error-no-entries-in-period` et `reports-ledger-instruction` récrites ; le groupe « Période » reprend `reports-filter-period`, existante), 55-2, 55-3b | Epic 46 (`reports-groups-*`) | bloc `reports-nav-*` propre à l'epic |
 | `frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal`) | 55-1a, 55-2, 55-3b | tous | recompté par la garde après chaque reprise |
 | `frontend/tests/e2e/reports.spec.ts`, `homepage-charts.spec.ts`, `open-items.spec.ts`, `dunning-roundtrip.spec.ts` | 55-1a (comportement de génération, D3) | Epic 46 (`reports-groupes*.spec.ts`) | E2E neufs : `reports-navigation.spec.ts` (55-1a, 55-1b, 55-2), `reports-entry-documents.spec.ts` (55-3b) |
 | `docs/manual/fr/user-manual.tex` § *Rapports comptables* (`:4101`-`:4476` à `1e23edb55`) | 55-1a, 55-1b, 55-2, 55-3b (et § 11.6.1 *Le PDF émis est figé*, `:1635` : une phrase, l'affichage depuis les rapports ne fige pas et une facture pas encore émise y est signalée « PDF pas encore émis », 55-3b) | Epic 46 (§ *Bilan*, *Compte de résultat*, *Balance*) | `.tex` seul, PDF à la release |
+| `frontend/src/lib/shared/navigation/link-class.ts` (neuf : `LINK_CLASS`, `LINK_UNDERLINE_CLASS`) | 55-2 (D17) | **Epic 56** (le reprend ; sa fiche 56-1 le plaçait dans `highlight.ts`) | l'Epic 56 l'importe, sans copie |
+| Liens non soulignés au repos hors des Rapports (relevé du 2026-11-26 à `fbfa64a27`, inventaire clos au T0 de la 55-2) : `lib/features/auth-recovery/ForgotPasswordForm.svelte:164`, `ResetPasswordForm.svelte:243`, `routes/login/+page.svelte:197`, `routes/(app)/supplier-invoices/new/+page.svelte:193,223`, `supplier-invoices/[id]/edit/+page.svelte:144`, `lib/features/bank-import/BankProfileList.svelte:83`, `routes/(app)/invoices/[id]/+page.svelte:979`, `lib/components/ui/button/button.svelte:21` (variante `link`) | 55-2 (D17, une classe par site) | **Epic 56** (`invoices/[id]`), **Epic 39** (`bank-import`), **Epic 53** (saisie, non ces lignes) | une classe changée par site ; le second arrivé garde la classe neuve |
+| `frontend/tests/e2e/*.spec.ts` qui cliquent *Générer* sur un rapport à période (relevé au T0 de la 55-1a : `grep -rln "reports-generate\|ledger-generate\|name: 'Générer'" frontend/tests/e2e`) | 55-1a (D16) | Epic 46 (`reports-groupes*.spec.ts`), Epic 47 | le clic disparaît ou devient la sortie des dates ; adaptation nommée au Change Log |
 | `_bmad-output/implementation-artifacts/sprint-status.yaml` | toutes | tous | bloc propre à l'Epic 55 |
 
 ## Réponses de l'utilisateur (2026-11-25)
@@ -389,7 +433,31 @@ Versées aux décisions D12 à D14, à l'en-tête (*Migration*, *Backend*), aux 
    55-4). Tranche l'ancienne question *Gardes Rust des textes*.
 5. Les questions tranchées sont retirées ; reste la numérotation.
 
+## Décisions de l'utilisateur et de l'UX (2026-11-26, soir)
+
+Prises avec l'experte UX le 2026-11-26, transmises par le coordinateur ; versées à D2, D3, D15, D16, D17, à l'*Objectif*,
+aux *Stories*, aux *Fichiers communs* et aux fiches 55-1a (AC-20 à AC-26, R-14 à R-16), 55-1b (une note), 55-2 (AC-1
+amendé, AC-11 et AC-12 amendés, AC-16), 55-3b (une note). Les fiches sont au plafond de huit passes : une passe ciblée
+les relit, hors décompte, et ses points au-dessus de LOW vont au **T0** (journal
+`kesh-gate-logs/s55-56-decisions/`).
+
+1. **Plus de bouton *Générer*** pour les rapports à période, sauf le Grand livre de tous les comptes (D16).
+2. **Style des liens** partout, tableaux compris (D17).
+
 ## Questions au mainteneur
+
+- **D16, choix des fiches à confirmer** : (a) le Grand livre filtré se charge aussi au choix du compte et de « comptes
+  sans mouvement » ; (b) la balance âgée se charge à l'arrivée sur l'onglet ; (c) les rapports par compte analytique
+  gardent *Générer* (la décision ne les nomme pas, et ils exigent un compte analytique) ; (d) « Plusieurs » ou « Hors
+  exercice » sur un onglet à un exercice : l'ancien rapport est **retiré** de l'écran, remplacé par le message (et non
+  laissé grisé, ce qui le ferait passer pour un rechargement) ; (e) les exports suivent le rapport affiché. *Défaut* : oui
+  aux cinq.
+- **D17, portée du balayage** : la 55-2 souligne les liens **non soulignés au repos** de toute l'application (neuf sites,
+  une classe chacun, hors des Rapports) ; ils touchent six modules de plus, en changements d'une classe. *Défaut* : les
+  accepter comme balayage mécanique de la 55-2 (règle de splitting : la sous-story de déploiement « strictement
+  mécanique », revue fichier par fichier). Les liens déjà soulignés en plein (`text-primary underline`, une trentaine)
+  sont conformes et restent tels quels ; les passer au soulignement léger serait une harmonisation à part. *Défaut* :
+  non, dans cet epic.
 
 - **Sélecteur d'exercice, version de l'utilisateur et de l'UX : d'accord ?** (D15 ; 55-1a AC-14 à AC-19, 55-2 AC-11 ;
   démonstration et captures : `kesh-gate-logs/s55-selecteur/selecteur-exercice-demo.html`). Avec, à confirmer en même
