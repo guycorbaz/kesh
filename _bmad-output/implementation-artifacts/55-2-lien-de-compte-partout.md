@@ -1,6 +1,6 @@
 # Story 55-2 : le lien de compte partout — Journaux, Grand livre, TVA, Compte de résultat
 
-Status: ready-for-dev
+Status: in-progress
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D6, D7 (Q3, acceptée par le mainteneur le
 2026-11-25), D8. Issues : #À-VENIR (`enhancement`,
@@ -424,3 +424,96 @@ onglet. Tous les liens sont soulignés d'un trait léger, pour se voir sans la c
   `AccountLink` (AC-1 amendé) et un balayage clos des liens non soulignés au repos (AC-16, T2bis). **Au-delà du plafond** :
   une passe ciblée hors décompte, sans remédiation, ses points au T0 (R-6, puis R-7 et suivants).
 - 2026-11-26 (soir) — Passe ciblée D16 et D17 (Opus), hors décompte : 0/0/1/3 ; aucune remédiation : R-7 au T0.
+- 2026-11-27 — **T0 du développement** (base `epic/55-navigation` `c8592421f`, 55-1a et 55-1b développées ; lignes
+  relevées sur cette base). Chaque point tranché avant le code, ligne lue citée :
+  - **Base** : `+page.svelte` 1514 lignes ; bandeau du Grand livre `:1248-1324` (`<!-- Story 24-1 — contrôles du grand
+    livre. PAS de sélecteur d'exercice`), `ledgerFrom`/`ledgerTo` `:140-141`, commentaire faux `:134-137` (« ce qu'il
+    ne prend PAS c'est un exercice »), `generateLedger` `:1212-1216`, branche du Grand livre d'`applyUrl` `:1073-1081`
+    (« Le grand livre ne se charge seul que sur une adresse complète (sa sortie de la 55-2) »), `urlForTab` `:526-527`
+    (« Le grand livre, qui ne se charge pas encore seul (55-2) »), `fetchAccounts(true)` `:160-164`,
+    `letterableAccountIds` `:168`. Liens d'aujourd'hui : `BalanceSheetView.svelte:166,215,280`,
+    `TrialBalanceView.svelte:129`, `GroupedReportRows.svelte:149` (`class="text-indigo-700 hover:underline"`) — cinq,
+    comme annoncé sur la base PR 46. Second contrôle de l'AC-1 à la base :
+    `grep -rnE "(^|[>[:space:]])\{[a-z]+\.accountNumber\}" frontend/src/lib/features/reports/*.svelte` →
+    `BalanceSheetView.svelte:170,219,284`, `GeneralLedgerView.svelte:224`, `IncomeStatementView.svelte:82,122`,
+    `JournalReportView.svelte:72`, `ProjectExpensesView.svelte:70`, `TrialBalanceView.svelte:133` (et la ligne
+    `group` de `GroupedReportRows.svelte:145`, `>{row.accountNumber}` précédé de `>` du bouton, que la regex voit
+    aussi) ; `GeneralLedgerView.svelte:293` `{l.counterpart.join(', ')}`. Manuel : § *Choisir la période* `:4173`,
+    § *Grand livre* `:4388`, item « Période libre, sans exercice » `:4402-4409`, item « Accès direct » `:4424-4426`,
+    § *Journal des écritures* `:4521-4523`, § *Décompte TVA* `:4525-4532` (« lue du solde du compte d'impôt
+    préalable » `:4531`), avertissement `keshwarning` qui suit.
+  - **R-4** — AC-11 à AC-15 relus contre la 55-1a livrée : `ReportSelector.svelte` est sans état (`menu: EtatMenu`
+    passé par la page, `etatDuMenu` de `fiscal-year-menu.ts:105-117`), `unSeulExercice = true` par défaut
+    (`needsOneFy` `:71`), snippets `controls` et `actions` (`:42-45`). Le Grand livre s'y branche avec **son propre
+    état du menu** (`ledgerMenu`, déduit de `ledgerFrom`/`ledgerTo` par le même `etatDuMenu`) et `unSeulExercice={false}`
+    : ni message `report-needs-one-fy`, ni rapport retiré (`hiddenByMenu` `:837-839` ne vise que les onglets
+    classiques). Deux ajouts au composant, nécessaires et minimes : `datesTestIdPrefix` (les `data-testid` d'aujourd'hui
+    `ledger-from`/`ledger-to` gardés, AC-11 ; défaut `report`, sortie inchangée pour les autres onglets) et, sous
+    `unSeulExercice={false}`, des dates **non désactivées** sans exercice (`disabled={noFiscalYears}` `:139,151` →
+    seulement si `unSeulExercice`) et sans le message « Créez un exercice » (AC-11 : « les dates restent libres »).
+  - **R-5 (SE-3)** — Tranché par la 55-1a (R-11) : `selectedFiscalYearId` n'est plus `$bindable` (`ReportSelector`
+    `Props` ne le porte plus ; la page le tient `:108`). Le Grand livre ne l'écrit jamais : ses gestionnaires
+    (`selectLedgerFiscalYear`, `onLedgerDatesInput`) ne touchent que `ledgerFrom`, `ledgerTo`, `ledgerMenu` ; le
+    préremplissage de l'AC-12 **lit** `selectedFiscalYearId` (toujours un exercice existant, 55-1a T0 R-8). Mutation
+    prévue : écriture de `selectedFiscalYearId` au choix d'un exercice du Grand livre → `fiscalYearChanged()` vide le
+    rapport par compte analytique en mémoire, test rouge. LOW SE-9 : *Modules touchés* — `ReportSelector` et le
+    bandeau de la page sont dans `features/reports` et `routes/(app)/reports`, déjà comptés.
+  - **R-6** — AC-1 : `AccountLink` emploie `LINK_CLASS` (AC-16). AC-11/AC-12 : `generateLedger` (`:1212`) garde
+    *Générer* **seulement sans compte** ; filtré, le Grand livre se charge par les déclencheurs de la 55-1a (choix
+    d'un exercice, sortie du groupe « Période », Entrée) et au choix du compte et de « comptes sans mouvement »
+    (défaut (a) de D16, retenu, en attente du mainteneur), à deux conditions (clé des champs changée — par
+    `loadActiveIfNeeded`, `:783-804` — et `from ≤ to`). *Générer* n'est rendu que sans compte (AC-11 : « sans compte,
+    il garde *Générer* ») ; le bouton reste désactivé tant qu'une date manque (`:1301`, inchangé). Tests qui
+    cliquaient *Générer* sur un Grand livre **filtré**, récrits : `reports.spec.ts:384-385`,
+    `reports-currency.spec.ts:132-133` (le choix du compte charge ; le clic disparaît). Le Vitest
+    `reports-page-groupes.test.ts:475-479` clique *Générer* **sans compte** : inchangé.
+  - **R-7 (DE-12)** — *Défaut retenu, en attente du mainteneur* (correctif proposé par la passe) : `LINK_CLASS` pour les
+    seuls liens de compte (`AccountLink`) et le bouton « Exercice entier » (`ReportSelector.svelte:167`, qui porte déjà
+    la même chaîne à l'octet : il l'importe, DRY) ; les liens des vues **déjà soulignés en plein** restent tels quels
+    — `GeneralLedgerView.svelte:254` (`class="ml-auto text-xs text-primary underline"`, postes ouverts),
+    `AgedReceivablesView.svelte:23,50` (`class="text-primary underline"`) —, comme les autres liens soulignés en plein
+    de l'application (« Les liens déjà soulignés en plein restent tels quels », AC-16). L'AC-16, puce *Les Rapports*,
+    se lit donc « tout lien **de compte** des vues ».
+  - **Inventaire D17 (AC-16), relevé de nouveau à `c8592421f`** par la règle de la fiche (script : toute balise `<a …
+    href …>` des `.svelte` de `frontend/src` dont la classe littérale ne contient pas le mot `underline`) — sortie
+    complète triée : liens de compte des Rapports (`BalanceSheetView:166,215,280`, `TrialBalanceView:129`,
+    `GroupedReportRows:149` → `AccountLink`) ; **à souligner** : `ForgotPasswordForm.svelte:164`,
+    `ResetPasswordForm.svelte:243`, `routes/login/+page.svelte:197`, `supplier-invoices/new/+page.svelte:193,223`,
+    `supplier-invoices/[id]/edit/+page.svelte:144`, `BankProfileList.svelte:83` (aucune classe), et la variante `link`
+    de `button.svelte:21` ; **exclus** : navigation (`(app)/+layout.svelte:316,420,433,447`, logo
+    `onboarding/+layout.svelte:11`), liens en forme de bouton (`bank-import/profiles/+page.svelte:11`,
+    `supplier-invoices/+page.svelte:234`, `supplier-invoices/[id]/+page.svelte:922`, `supplier-invoices/import/+page.svelte:582`,
+    `payment-batches/[id]/+page.svelte:117`), le `<a>` de `button.svelte:65` (classe calculée par la variante, traitée
+    ci-dessus), le lien icône `journal-entries/+page.svelte:663` (chevron sans texte : un soulignement n'y a rien à
+    souligner, DE-13, exclu). `invoices/[id]/+page.svelte:979` **retiré** de l'inventaire (DE-13 : un commentaire
+    au-dessus d'un `<a download>` créé en JavaScript, invisible). Total : **neuf sites hors des Rapports** (huit
+    `<a>` et la variante `link`). DE-14 : `git grep -nE "variant=\{?['\"]link"` ne rend aucun emploi — la variante
+    est changée pour les emplois futurs ; « Exercice entier » est un `<button>` propre, non cette variante.
+  - **R-2** — § *Gates* relu contre le fichier d'epic § *Dérogation* (« resserrement du 2026-11-26 … `cargo nextest run
+    -p kesh-i18n` et `cargo nextest run -p kesh-api -E 'binary(textes_coherents)'` ») : joués à la clôture.
+  - **V6-2** — préremplissage **à l'entrée** sur l'onglet (clic, URL incomplète, rechargement, Retour), deux dates
+    vides seulement, jamais à la saisie ; test « deux dates vidées à la main restent vides ». **V6-3** —
+    commentaires faux corrigés : `+page.svelte:134-137`, `:1249-1251` (« PAS de sélecteur d'exercice »),
+    `reports.spec.ts:379-380` (« AUCUN exercice à choisir »). **V6-4** — l'E2E « Plusieurs » du Grand livre se joue
+    sur deux exercices créés par `deuxExercices` (même montage que le test D15 de la 55-1a, en fin de fichier) ;
+    mutation « écriture de `selectedFiscalYearId` » avec un exercice différent et un rapport par compte analytique en
+    mémoire. **V6-5** — sans objet ici (fichier d'epic, hors de la story). **V6-6** — caduc (D15).
+  - **V4-1** — déclencheur de la lecture des réglages de TVA : un `$effect` sur « onglet TVA actif, décompte en
+    mémoire, non retiré par le menu » — donc premier affichage par une génération, une URL, Retour, ou un clic sur
+    l'onglet qui montre un décompte en mémoire ; **une** lecture par vie de la page ; en échec, pas de retentative
+    (une retentative à chaque affichage reboucle sur l'effet) : la ligne est omise jusqu'au prochain chargement de la
+    page. **V4-2** — le cas « aucune lecture tant qu'aucun décompte n'est affiché » est une garde, rouge sous la
+    mutation « lecture au montage ». **V4-3** — sans objet (55-1b livrée). **V4-4** — specs : celles du § *Gates*.
+  - **V7-4** — specs de la *Dérogation* nommées au Dev Agent Record. **V7-5** — compte de décompte
+    (`defaultVatDecompteAccountId`) non lu, sans lien ; chemin des réglages : *Administration* → *Facturation* (le
+    manuel l'écrit ainsi, `user-manual.tex:242`).
+  - **P8-1, P8-2** — rédaction de R-2 : sans effet sur le code.
+  - **R-21 de la 55-1a (DE-6)** — *défaut retenu, en attente du mainteneur* : le Grand livre garde ses dates propres ;
+    des dates tapées sur un onglet classique ne lui passent pas, ni l'inverse ; il ne lit que l'exercice
+    (`selectedFiscalYearId`) quand ses deux dates sont vides (AC-12).
+  - **Textes** : `reports-ledger-instruction` (« … puis cliquez sur Générer. Le compte est facultatif. »), dont la
+    55-1a renvoyait la réécriture ici, devient vraie pour les deux cas (tous les comptes : *Générer* ; un compte : il
+    se charge seul), quatre locales et repli. Clé neuve `reports-nav-vat-accounts` (AC-9).
+  - **Vitest de la page** : les cas de la 55-2 vont dans un fichier propre, `reports-page-55-2.test.ts`, sur le même
+    assistant (`page-url.test-helper.svelte.ts`) : ils demandent des simulations que `reports-page-url.test.ts` n'a
+    pas (liste des comptes, réglages de facturation, journal, TVA) — écart de forme à la fiche, aucun cas dupliqué.
