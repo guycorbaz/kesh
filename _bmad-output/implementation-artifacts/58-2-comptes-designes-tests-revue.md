@@ -1,6 +1,6 @@
 # Story 58-2 : Comptes désignés et tests Rust de revue — neuf trous de couverture (#592, #732, #736, #1060, #1062, #1063, #1064, #1066, #1433)
 
-Status: ready-for-dev (validation P1 remédiée : 0/0/6/7 ; P2 remédiée : 0/0/1/3 ; P3 ciblée : 0/0/1/2, remédiée par la sortie de #1127 ; sous réserve de la passe P4 ciblée)
+Status: ready-for-dev (validation P1 remédiée : 0/0/6/7 ; P2 remédiée : 0/0/1/3 ; P3 ciblée : 0/0/1/2, remédiée par la sortie de #1127 ; P4 ciblée (Sonnet) : 0/0/0/5, remédiée)
 
 *Fiche rédigée le 2026-11-27 (Sonnet 5.5, en autonomie), workflow `bmad-create-story`. Worktree `/home/gcorbaz/devel/kesh-58-2`, branche
 `story/58-2-comptes-designes-tests-revue` partie de `epic/58-nettoyage` à `90192c7b3` (qui contient la v0.20.0, la 58-1 et la 58-3). Fichier d'epic :
@@ -39,7 +39,7 @@ Aucune des neuf ne révèle une migration, un changement d'API ou un défaut de 
 
 **Décision du Project Lead, 2026-11-27** (signal de recyclage déclaré à la P3 ciblée, règle de splitting préventif) : **#1127** (campagne de mutations M3/M7 sur les sites de la 35-5a qui lisent la date du jour) **sort de la 58-2**.
 Raison : l'inventaire de ses sites débordait à chaque passe — la P1 (V1-5) y trouvait 25 lignes de routes et 0 de `kesh-db`, la P2 (V2-1) la couche `services/`, la P3 (F3-1) un décompte faux et 19 sites non classés. L'issue reste **ouverte**, hors de cette story ;
-elle ne passe ni en « gardée » ni en « écartée » ici, et aucun commit de la 58-2 ne la cite. L'AC12 est **vacante** : les numéros d'AC ne sont pas renumérotés, pour que les renvois des passes P1 à P3 (Change Log) restent lisibles.
+elle ne passe ni en « gardée » ni en « écartée » ici, et aucun commit de la 58-2 ne la porte en `refs`. L'AC12 est **vacante** : les numéros d'AC ne sont pas renumérotés, pour que les renvois des passes P1 à P3 (Change Log) restent lisibles.
 
 Point de départ de sa future story, relevé au commit `c2dd70f5d` (code identique à `90192c7b3`) :
 - `grep -rn 'aujourd_hui()' crates/kesh-api/src` rend **54** lignes ; `grep -rn 'horloge.aujourd_hui()' crates/kesh-api/src/routes` en rend **41**, dans **16** fichiers.
@@ -198,7 +198,7 @@ retrouve **par la chaîne**.
 - **AC14 (transverse)** — (a) `git diff --name-only 90192c7b3 HEAD` ne nomme que : `crates/kesh-api/tests/{textes_coherents,i18n_e2e,designated_account_type_e2e,accounts_e2e}.rs`,
   `crates/kesh-db/tests/company_invoice_settings_repository.rs`, `crates/kesh-db/tests/supplier_invoices_repository.rs`, `frontend/src/lib/features/journal-entries/{blocker-messages-keys.test.ts,JournalEntryForm.edit.test.ts}`,
   `frontend/src/routes/(app)/settings/fiscal-years/fiscal-years-page.test.ts`, `_bmad-output/implementation-artifacts/58-2-*`, `sprint-status.yaml`, ce fichier (+ prompts). **Aucun** fichier de `crates/*/src/*`, aucun catalogue, aucun manuel.
-  (b) `git diff --name-only 90192c7b3 HEAD | grep -vE '^(crates/kesh-(api|db)/tests/|frontend/src/.*\.test\.ts$|_bmad-output/implementation-artifacts/)'` **vide**, et `git status --porcelain` vide
+  (b) `git diff --name-only 90192c7b3 HEAD | grep -vE '^(crates/kesh-(api|db)/tests/|frontend/src/.*\.test\.ts$|_bmad-output/implementation-artifacts/)'` **vide**, et `git status --porcelain` vide (garde de D4)
   (la pathspec `crates/*/src/*` seule ne voyait ni le frontend ni `crates/kesh-core/assets/` : V1-2 ; sonde positive : la même commande sur `90192c7b3 origin/story/53-6-annulation-rapprochement-exercice` rend des lignes). (c) `sitesTotal` de `i18n-keys.test.ts` **inchangé**
   (le nouveau test ne contient pas d'appel `i18nMsg` de production ; il mocke `i18nMsg` : à vérifier au moissonneur, `npm run test:unit -- i18n-keys`).
 
@@ -256,15 +256,14 @@ Toutes tranchées le 2026-11-27 (Q1 à Q3 par l'orchestrateur, choix techniques 
 ## Dev Notes
 
 ### Modules touchés (règle de splitting)
-Code de production : **aucun**. Fichiers de test : quatre ensembles (D2), borne de cinq respectée. Pas de dérogation à la règle de splitting. Signal de recyclage : **déclaré** à la P3 ciblée (MEDIUM de même origine aux trois passes), remédié par la sortie de #1127 (§ *Sortie de #1127*).
+Code de production : **aucun**. Fichiers de test : quatre ensembles (D2), borne de cinq respectée. Pas de dérogation à la règle de splitting. Signal de recyclage : **déclaré** à la P3 ciblée (MEDIUM de même origine aux trois passes), remédié par la sortie de l'issue de campagne de mutations (§ *Sortie de #1127*).
 
 ### Fichiers communs
 Relevé à la validation P1 par `git diff --name-only 90192c7b3...origin/<branche>` sur les branches `epic/53*`, `story/53-*`, `epic/58*`, `story/58-*` ouvertes (V1-6), **rejoué et complété à la P2** ; l'Epic 53 n'est pas dans `90192c7b3`.
 - **Ordre d'entrée (décision de l'orchestrateur, 2026-11-27)** : la 58-2 (v0.20.1) entre dans `main` **la première** ; l'Epic 53 (v0.21.0, 2026-12-04) la reprend. La fiche n'attend donc pas l'Epic 53. **Ce qui se rejoue si l'ordre changeait** (l'Epic 53 d'abord) : la 58-2 reprend `main`, recompte
   `sitesTotal`, les numéros de ligne de `accounts.rs` (AC13 ; l'Epic 53 renomme `find_types_by_ids_in_tx` en `lock_types_by_ids_in_tx`, +19 lignes dès la l. 461) et de `kesh-db/src/errors.rs` (AC8 ; trois hunks, +24 lignes, dès la l. 573,
   le premier (+13) avant `WrongTypeDesignatedAccounts::new`) bougent, les mutations se retrouvent par la chaîne ; **aucun** des deux fichiers n'y change de comportement aux sites mutés (`accounts::update`, `new`).
-- `crates/kesh-api/tests/*` : seule la 58-2 de l'Epic 58. **Epic 53** : `designated_account_type_e2e.rs` n'est touché par **aucune** de ses branches ; en revanche `story/53-6-annulation-rapprochement-exercice` réécrit
-  **`jour_suisse_nuit_e2e.rs`** (que la 58-2 ne touche plus) et touche **`crates/kesh-db/tests/supplier_invoices_repository.rs`** (AC11). Conséquence : dans l'ordre décidé (58-2 d'abord), c'est la 53-6 qui reprend la 58-2 (second arrivé
+- `crates/kesh-api/tests/*` : seule la 58-2 de l'Epic 58. **Epic 53** : `designated_account_type_e2e.rs` n'est touché par **aucune** de ses branches ; en revanche `story/53-6-annulation-rapprochement-exercice` touche **`crates/kesh-db/tests/supplier_invoices_repository.rs`** (AC11). Conséquence : dans l'ordre décidé (58-2 d'abord), c'est la 53-6 qui reprend la 58-2 (second arrivé
   résout, deux côtés gardés : `supplier_invoices_repository.rs`, `JournalEntryForm.edit.test.ts`, `i18n-keys.test.ts` ; à signaler au Project Lead au compte rendu de la PR).
 - `frontend/src/lib/features/journal-entries/*` : 58-4 (textes d'interface) et 58-5 dans l'Epic 58 ; **Epic 53** (`story/53-1-ecriture-unique`, `53-1b`, `53-6`) modifie `JournalEntryForm.svelte` (le site de la l. 687 peut bouger : le
   retrouver par la chaîne) et `JournalEntryForm.edit.test.ts`, ainsi que `i18n-keys.test.ts`. **Le nouveau fichier de test** ne recoupe aucun fichier existant ; reprendre `epic/58-nettoyage` avant le dernier commit.
@@ -280,7 +279,7 @@ relevé en jouant une mutation. Les survivantes **attendues** d'AC3 (champs perm
 la seconde a déjà son issue.
 
 ### Charge estimée
-Moins d'une journée : neuf tests courts (S), un M (#592 : 14 mutations), le gros du temps en compilations de mutations. Écart à la borne de l'epic : aucun.
+Moins d'une journée : neuf issues, dont huit courtes (S) et un M (#592 : 14 mutations), le gros du temps en compilations de mutations. Écart à la borne de l'epic : aucun.
 
 ### Références
 `CLAUDE.md` (*Qualité du code*, *Review Iteration Rule*, *Priorités des défauts*) ; revues `kesh-gate-logs/321a-review-p1-{B,E}.md` ; mémoires *Tests qui prouvent moins*, *Mutation restaurée, binaire périmé*, *Pathspec git muet*.
@@ -316,8 +315,8 @@ Moins d'une journée : neuf tests courts (S), un M (#592 : 14 mutations), le gro
   pas de recyclage (le MEDIUM est d'origine neuve : un site non résolu de l'ensemble clos d'AC12, que la P1 avait fermé par un `grep` limité aux routes). MEDIUM : V2-1 (AC12 : la couche `services/` lit la date par `lecture.aujourd_hui()`, `services/factures.rs:582`,
   jambe `GET /settlements` d'`ac3_sans_exercice_…` : contrôle de complétude élargi à `crates/kesh-api/src`). LOW : V2-2 (release visée v0.20.1 et ordre d'entrée avant l'Epic 53, ce qui se rejoue si l'ordre change ; l'Epic 53 touche aussi `kesh-db/src/{repositories/accounts,errors}.rs` : lignes qui bougent, comportement
   inchangé aux sites mutés) ; V2-3 (`accounts.rs:4062` → `4065`) ; V2-4 (AC13(a) : forme compilable de la mutation). Tendance : 0/0/6/7 → 0/0/1/3. Passe P3 (ciblée, Haiku, sur le seul commit de remédiation de la P2, fiche seule) : `58-2-comptes-designes-tests-revue-validation-prompt-p3.md`.
-- 2026-11-27 — **Sortie de #1127** (décision du Project Lead, signal de recyclage déclaré à la P3 ciblée ; rapport `$GATE_LOGS/e58/58-2-validation-p3-ciblee.md`, Haiku, 0 CRITICAL / 0 HIGH / 1 MEDIUM / 2 LOW). Tendance : P1 0/0/6/7 → P2 0/0/1/3 → P3 ciblée 0/0/1/2 ; le MEDIUM
+- 2026-11-27 — **Sortie de #1127** (décision du Project Lead, signal de recyclage déclaré à la P3 ciblée ; rapport `$GATE_LOGS/e58/58-2-validation-p3-ciblee.md`, Haiku, 0 CRITICAL / 0 HIGH / 1 MEDIUM / 2 LOW). Tendance : P1 0/0/6/7 → P2 0/0/1/3 → P3 ciblée 0/0/1/2 → P4 ciblée 0/0/0/5 (Sonnet) ; le MEDIUM
   des trois passes porte sur le même ensemble clos d'AC12, dont l'inventaire déborde à chaque passe : **recyclage déclaré**. #1127 sort de la story (§ *Sortie de #1127*) : l'AC12, ses tâches, ses mutations (M3/M7), D4 dans sa part #1127, ses Dev Notes et son tableau de sites sont retirés ;
   la story garde **neuf** issues (#592, #732, #736, #1060, #1062, #1063, #1064, #1066, #1433) et ne touche toujours que des tests (`jour_suisse_nuit_e2e.rs` sort du périmètre). F3-1 (décompte 25/41/54, 19 sites non classés) : repris au point de départ de la future story ;
-  F3-2 (Epic 53 : trois hunks, +24 lignes, dans `errors.rs` ; `accounts.rs` dès la l. 461) et F3-3 (`sprint-status.yaml`) : corrigés. Les entrées ci-dessus gardent la numérotation d'AC d'alors (AC12 vacante). Passe P4 (ciblée, Haiku, sur le seul commit de cette remédiation) :
+  F3-2 (Epic 53 : trois hunks, +24 lignes, dans `errors.rs` ; `accounts.rs` dès la l. 461) et F3-3 (`sprint-status.yaml`) : corrigés. Les entrées ci-dessus gardent la numérotation d'AC d'alors (AC12 vacante). Passe P4 (ciblée, Sonnet ; une première P4 Haiku, non conforme à la règle d'alternance, est écartée, `$GATE_LOGS/e58/58-2-validation-p4-ciblee.md`) :
   `58-2-comptes-designes-tests-revue-validation-prompt-p4.md`.
