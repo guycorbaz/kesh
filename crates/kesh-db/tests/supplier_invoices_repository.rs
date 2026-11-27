@@ -2699,6 +2699,10 @@ mod garde_usage_comptes_reglage {
             Some(AccountRole::Payable),
         )
         .await;
+        // #1066 : le rôle est vu POSÉ (et le compte au passif) avant le retypage.
+        let before = accounts::find_by_id(&pool, payable).await.unwrap().unwrap();
+        assert_eq!(before.role, Some(AccountRole::Payable), "rôle posé");
+        assert_eq!(before.account_type, AccountType::Liability);
         update_account(
             &pool,
             &ctx,

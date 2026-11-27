@@ -1257,6 +1257,74 @@ async fn put_range_un_compte_mouvemente_sous_un_groupe(pool: MySqlPool) {
     assert_eq!(body["parentId"], Value::Null);
 }
 
+/// #1433 (a) — le conflit de version précède la garde de parent : une version
+/// périmée ET un parent que la garde refuserait (un compte qui porte des écritures)
+/// rendent `OPTIMISTIC_LOCK_CONFLICT`, non `ACCOUNT_PARENT_HAS_ENTRIES` (deux 409 :
+/// le code est asserté), et le parent reste inchangé. Un parent VALIDE ne prouverait
+/// pas l'ordre : l'`UPDATE … AND version = ?` rend 409 de toute façon.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_version_perimee_precede_la_garde_du_parent(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (company_id, admin_id, token) = setup(&pool).await;
+    let jour = common::jour::aujourd_hui_test();
+    let fy = mk_fiscal_year(&pool, company_id, admin_id, jour).await;
+    let banque = mk_account(&pool, company_id, admin_id, "1020", None).await;
+    let caisse = mk_account(&pool, company_id, admin_id, "1000", None).await;
+    mk_entry(&pool, company_id, fy, admin_id, banque, caisse, jour).await;
+
+    // Un premier `PUT` fait passer la version de 1 à 2 : la version 1 est périmée.
+    let (status, body) = put_parent(&app, &token, &pool, banque, json!({ "name": "Banque" })).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["version"], 2, "{body}");
+
+    let (status, body) = put_parent(
+        &app,
+        &token,
+        &pool,
+        banque,
+        json!({ "version": 1, "parentId": caisse }),
+    )
+    .await;
+    assert_eq!(status, 409, "{body}");
+    assert_eq!(body["error"]["code"], "OPTIMISTIC_LOCK_CONFLICT", "{body}");
+    let apres = accounts::find_by_id(&pool, banque).await.unwrap().unwrap();
+    assert_eq!(apres.parent_id, None, "le parent est relu inchangé");
+    assert_eq!(apres.version, 2, "la version est inchangée");
+}
+
+/// #1433 (b) — `parentId` absent du corps mais un AUTRE champ modifié (le nom) : le
+/// `PUT` n'est pas un no-op, l'`UPDATE` s'exécute, et le parent en place est
+/// conservé (le cas « absent » de `put_range_…` est un no-op : il ne joint pas
+/// l'`UPDATE`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_sans_parent_mais_avec_un_autre_champ_conserve_le_parent(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (company_id, admin_id, token) = setup(&pool).await;
+    let banque = mk_account(&pool, company_id, admin_id, "1020", None).await;
+    let groupe = mk_account(&pool, company_id, admin_id, "10", None).await;
+
+    let (status, body) =
+        put_parent(&app, &token, &pool, banque, json!({ "parentId": groupe })).await;
+    assert_eq!(status, 200, "{body}");
+    let version = body["version"].as_i64().unwrap();
+
+    let (status, body) = put_parent(
+        &app,
+        &token,
+        &pool,
+        banque,
+        json!({ "name": "Banque renommée" }),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["name"], "Banque renommée");
+    assert_eq!(body["parentId"], groupe, "le parent est conservé : {body}");
+    assert_eq!(body["version"].as_i64().unwrap(), version + 1);
+    let apres = accounts::find_by_id(&pool, banque).await.unwrap().unwrap();
+    assert_eq!(apres.parent_id, Some(groupe));
+    assert_eq!(apres.name, "Banque renommée");
+}
+
 /// Les contrôles de la création, rendus par le `PUT` avec les mêmes codes, et
 /// le cycle : le compte lui-même, puis l'un de ses sous-comptes.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

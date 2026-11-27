@@ -125,6 +125,7 @@ async fn login(app: &TestApp, username: &str, password: &str) -> String {
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn i18n_messages_endpoint_returns_locale_and_messages(pool: MySqlPool) {
+    let _guard = get_i18n_lock().await;
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
@@ -150,6 +151,7 @@ async fn i18n_messages_endpoint_returns_locale_and_messages(pool: MySqlPool) {
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn i18n_messages_requires_auth(pool: MySqlPool) {
+    let _guard = get_i18n_lock().await;
     let app = spawn_app(pool).await;
 
     let resp = app
