@@ -1258,6 +1258,16 @@ const ATTENDU = {
 	// côtés gardés ; 3746 (pr/40, base 3677) + 25 (main, 3677 → 3702) = **3771**, confirmé par la garde (`kesh-gate-logs/s40-m2d/compteurs-3.log`).
 	// Epic 46 reposé sur main à a914c4823 (branche pr/46-rapports-groupes-v2, 2026-11-25) : les deux côtés
 	// gardés ; 3771 (main) + 18 (Epic 46 : 3508 → 3526) = **3789**, confirmé par la garde (`kesh-gate-logs/s46-pr/front-vitest-a.log`).
+	// Story 55-1a (Epic 55, base epic/55-navigation) : sites ajoutés (sélecteur, en-tête, période invalide) et
+	// retirés (invites « cliquez sur Générer », bouton de la balance âgée, en-tête « Période : » des six vues)
+	// = **3788**, recompté par la garde (`kesh-gate-logs/s55-dev/55-1a/front-1/front-test-unit.log`).
+	// Story 55-2 : le titre `reports-ledger-open-from-balance` des cinq liens de compte passe dans le seul
+	// `AccountLink` (−4) ; `reports-nav-vat-accounts` et les deux étiquettes de la ligne des comptes de TVA
+	// ajoutés, le Grand livre sur `ReportSelector` (ses libellés « Du », « Au » repris du composant) = **3785**,
+	// relevé par la garde (« expected 3785 to be 3788 », `kesh-gate-logs/s55-dev/55-2/front-1/front-test-unit.log`).
+	// Story 55-3b : les onze sites des justificatifs (titre, trois genres, document vide, liste, « PDF pas encore
+	// émis », chargement, liste vide, « Fermer », colonne du grand livre) = **3796**, relevé par la garde
+	// (« expected 3796 to be 3785 »).
 	// Story 46-5b (2026-11-22) : **3517 → 3599**, relevé par la garde (« expected 3599 to be 3517 »,
 	// `kesh-gate-logs/s46-5b/front-test-unit.log` au gate) — l'écran « Créer des groupes »
 	// (`accounts/groups/+page.svelte`, ses messages `accounts/groups/messages.ts`, bloc
@@ -1277,7 +1287,13 @@ const ATTENDU = {
 	// `kesh-gate-logs/s46-pr2/compteurs-1.log`) ; il égale 3856 (pr/39) + 18 (Epic 46) + 82 (46-5).
 	// Garde de la 46-5 (compte désigné par un compte bancaire, 2026-11-26) : **3958** (« expected 3958 to be 3956 »,
 	// `kesh-gate-logs/s46-pr2/garde-vitest-1.log`) — `numberBankLinked` et `parentBankLinked` (`accounts/groups/messages.ts`).
-	sitesTotal: 3958,
+	// Story 49-2 (#1756, réordonner les lignes d'une facture) : **3963** (« expected 3963 to be 3958 »,
+	// `$GATE_LOGS/e492/rouge-T7.log`) — `invoice-line-move-up` et `invoice-line-move-down` (chacune lue deux fois, `aria-label`
+	// et `title`, dans le snippet `actionsDeLigne`) et `invoice-lines-moved-status` : 3958 + 5.
+	// Fusion de origin/main (Epic 55, 3958 + 7 = 3965) dans la branche de la 49-2 (2026-11-27) : les deux côtés gardés, soit 3958 + 5 + 7 = 3970 (garde : `$GATE_LOGS/e492/remediation/garde-sites-1.log`).
+	// Remédiation de la revue P1 de la 49-2 : **3971** (« expected 3971 to be 3970 ») — `invoice-line-remove`, lue une fois
+	// (`aria-label` de la poubelle du snippet `actionsDeLigne`) : 3970 + 1.
+	sitesTotal: 3971,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

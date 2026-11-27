@@ -2228,7 +2228,7 @@ reports-filter-fiscal-year = Fiscal Year
 reports-filter-journal = Journal
 reports-button-generate = Generate
 
-reports-error-no-entries-in-period = No entries in the selected period. Change the dates or pick a different fiscal year.
+reports-error-no-entries-in-period = No entries in this period.
 reports-error-period-out-of-fiscal-year = The selected period exceeds the fiscal year bounds. Pick a period between { $fyStart } and { $fyEnd }.
 reports-error-no-fiscal-year-available = No fiscal year available. Create a fiscal year before generating reports.
 
@@ -2245,8 +2245,7 @@ reports-archived-label = archived
 
 # Reports page — chrome (3 — code review Pass 1 i18n leaks)
 reports-page-title = Accounting Reports
-reports-instruction-select-and-generate = Select a fiscal year and click Generate.
-reports-loading = Generating report…
+reports-loading = Loading…
 
 # Story 9-2a — Export PDF & CSV (10 keys)
 reports-export-pdf-button = Export PDF
@@ -2277,7 +2276,6 @@ reports-project-return-total = Total
 reports-project-selector-label = Analytical account
 reports-project-selector-placeholder = — Choose an analytical account
 reports-aged-instruction = Aged balance as of today.
-reports-aged-instruction-generate = Click Generate to display the aged balance as of today.
 reports-aged-as-of = As of { $date }
 reports-aged-empty = No open customer receivables.
 reports-aged-col-contact = Customer
@@ -3625,7 +3623,7 @@ reports-fx-line = { $amount } × { $rate }
 reports-fx-totals = debit { $debit } · credit { $credit }
 reports-fx-trial-balance = opening { $opening } · debit { $debit } · credit { $credit } · closing { $closing }
 reports-ledger-include-zero = Include accounts with no movement
-reports-ledger-instruction = Pick a period, then click Generate. The account is optional.
+reports-ledger-instruction = Pick a period. For all accounts, click Generate; a chosen account is shown on its own.
 
 # --- Journal d'audit — route, vocabulaire et export (Story 25-1c-a) ---
 # ----------------------------------------------------------------------
@@ -4521,6 +4519,32 @@ stripe-gap-payout-entry = Payout entry
 stripe-gap-receipt-link = Link the receipt in the reconciliation
 stripe-gap-receipt-import = Import the statement of the destination account (Wise).
 
+## Story 55-1a (Epic 55, D15, D16) — the reports' fiscal year selector, the period heading
+reports-nav-fy-multiple = Multiple
+reports-nav-fy-outside = Outside fiscal years
+reports-nav-fy-whole = Whole fiscal year
+reports-nav-needs-one-fy = This report covers a single fiscal year: choose two dates in the same fiscal year.
+reports-nav-period-invalid = The start date must be on or before the end date.
+reports-nav-heading-fy = Fiscal year { $years } — from { $from } to { $to }
+reports-nav-heading-named = { $name } — from { $from } to { $to }
+reports-nav-heading-part = From { $from } to { $to } (part of fiscal year { $fiscalYear })
+reports-nav-heading-several = From { $from } to { $to } (fiscal years { $fiscalYears })
+reports-nav-heading-outside = From { $from } to { $to } (outside fiscal years)
+# Story 55-2 (AC-6) — la ligne des comptes de TVA au grand livre, après le décompte.
+reports-nav-vat-accounts = Ledger accounts:
+# Story 55-3b (Epic 55, D9 à D12) — the supporting documents of an entry, from the Journal and the General ledger.
+reports-nav-documents-title = Supporting documents of entry no. { $number }
+reports-nav-documents-kind-invoice = Invoice
+reports-nav-documents-kind-credit-note = Credit note
+reports-nav-documents-kind-supplier-document = Supplier document
+reports-nav-documents-list = Supporting documents of the entry
+reports-nav-documents-loading = Loading supporting documents…
+reports-nav-documents-none = This entry no longer has a supporting document.
+reports-nav-documents-close = Close
+reports-nav-documents-empty = The document received is empty.
+reports-nav-documents-not-issued = PDF not yet issued: this invoice has no frozen PDF yet; its next download, or its next sending by e-mail, will freeze it.
+reports-nav-ledger-column-documents = Documents
+
 # Story 39-11d — écrans Wise : réglages du compte, page Wise (import des relevés et du zip), libellés
 wise-csv-line-field-count = number of cells differs from the header
 wise-csv-line-date = unreadable or malformed date (DD-MM-YYYY or YYYY-MM-DD expected)
@@ -4606,3 +4630,9 @@ bank-accounts-help-wise-account = The same label for the accounts of each curren
 bank-accounts-help-wise-ledger = Required: the chart account of the Wise balance, in its currency (a foreign-currency account requires multi-currency).
 nav-wise = Wise
 fiscal-years-checks-k2-link-wise = Open the Wise page
+
+# Epic 52 — Story 49-2 : réordonner les lignes d'une facture (↑ / ↓)
+invoice-line-move-up = Move line { $n } up
+invoice-line-move-down = Move line { $n } down
+invoice-lines-moved-status = Line moved to position { $position } of { $total }
+invoice-line-remove = Delete line { $n }

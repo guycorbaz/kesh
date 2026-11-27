@@ -75,6 +75,30 @@ export function ligneDepuisReponse(l: InvoiceLineResponse, uiKey: string): Ligne
 }
 
 /**
+ * Échange la ligne `index` avec sa voisine (Story 49-2, D4) : `sens = -1` la
+ * monte, `1` la descend. Rend un **nouveau** tableau des **mêmes objets**
+ * (chaque ligne garde son `_uiKey`, donc son élément du DOM) ; celui reçu n'est
+ * pas modifié. Un `index` hors bornes ou un déplacement au-delà d'une extrémité
+ * rend une copie inchangée : jamais d'exception, jamais de ligne perdue ni
+ * dupliquée.
+ */
+export function deplacerLigne<T>(lignes: readonly T[], index: number, sens: -1 | 1): T[] {
+	const copie = [...lignes];
+	const cible = index + sens;
+	if (
+		!Number.isInteger(index) ||
+		index < 0 ||
+		index >= copie.length ||
+		cible < 0 ||
+		cible >= copie.length
+	) {
+		return copie;
+	}
+	[copie[index], copie[cible]] = [copie[cible], copie[index]];
+	return copie;
+}
+
+/**
  * La charge d'une ligne du formulaire (D3, D5). Une ligne chiffrée : ses champs
  * d'avant la 0.20.0 plus `lineType: 'priced'` ; le prix est celui que
  * l'appelant a lu et normalisé. Une ligne de texte : **`{ lineType,

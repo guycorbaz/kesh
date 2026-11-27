@@ -71,10 +71,13 @@ export function isDetailLevel(v: unknown): v is DetailLevel {
 	);
 }
 
-/** Une liste d'identifiants valide : des entiers positifs, au plus 500, sans doublon. */
+/**
+ * Une liste d'identifiants valide : des entiers positifs **sûrs** (`Number.isSafeInteger`, Story 55-1b :
+ * `99999999999999999999` d'une adresse ou de la mémoire est refusé), au plus 500, sans doublon.
+ */
 function readIdList(v: unknown): number[] | null {
 	if (!Array.isArray(v) || v.length > MAX_MANUAL_GROUPS) return null;
-	if (!v.every((e) => typeof e === 'number' && Number.isInteger(e) && e > 0)) return null;
+	if (!v.every((e) => typeof e === 'number' && Number.isSafeInteger(e) && e > 0)) return null;
 	return [...new Set(v as number[])];
 }
 
@@ -103,6 +106,59 @@ export function sanitizeGroupingView(raw: unknown): GroupingView {
 		view.closed = closed;
 	}
 	return view;
+}
+
+/** Un entier écrit `^[1-9][0-9]*$` dans une adresse (`03`, `3.0`, `+3` refusés). */
+const ENTIER_ECRIT = /^[1-9][0-9]*$/;
+
+/** Ce qu'une adresse dit de la présentation, et si elle en dit quelque chose de valide. */
+export interface GroupingFromParams {
+	/** La vue de l'adresse : chaque champ invalide ou absent prend sa valeur par défaut. */
+	view: GroupingView;
+	/**
+	 * Au moins un champ est **effectivement retenu** par {@link sanitizeGroupingView} : faux pour une
+	 * adresse sans présentation, pour des valeurs toutes invalides, et pour `open=5&closed=5` seul (deux
+	 * listes qui partagent un identifiant sont ignorées toutes deux).
+	 */
+	anyValid: boolean;
+}
+
+/** Une liste `1,2,3` d'une adresse : absente si vide, refusée (`null`) dès qu'un élément n'est pas un entier écrit. */
+function idListParam(raw: string | null): number[] | null | undefined {
+	if (raw === null || raw === '') return undefined;
+	const parts = raw.split(',');
+	return parts.every((x) => ENTIER_ECRIT.test(x)) ? parts.map(Number) : null;
+}
+
+/**
+ * Story 55-1b (D4) — la présentation lue dans les paramètres d'une adresse des Rapports (`view`, `level`,
+ * `subtotals`, `open`, `closed`), chaque paramètre jugé seul par les règles de ce module
+ * ({@link isDetailLevel}, `readIdList`, la règle conjointe des deux listes de {@link sanitizeGroupingView}) :
+ * aucune copie de ces règles ailleurs. `view=flat` donne `shown: false` ; c'est à l'appelant de garder
+ * alors les autres choix des contrôles (C-55-1b-1).
+ *
+ * @param params — de quoi lire une chaîne par nom (`URLSearchParams` convient).
+ */
+export function groupingFromParams(params: { get(name: string): string | null }): GroupingFromParams {
+	const raw: Record<string, unknown> = {};
+	const view = params.get('view');
+	if (view === 'grouped') raw.shown = true;
+	else if (view === 'flat') raw.shown = false;
+	const level = params.get('level');
+	if (level === 'all') raw.detailLevel = 'all';
+	else if (level !== null && ENTIER_ECRIT.test(level)) raw.detailLevel = Number(level);
+	raw.subtotalPosition = params.get('subtotals');
+	raw.open = idListParam(params.get('open'));
+	raw.closed = idListParam(params.get('closed'));
+	const v = sanitizeGroupingView(raw);
+	const anyValid =
+		typeof raw.shown === 'boolean' ||
+		isDetailLevel(raw.detailLevel) ||
+		raw.subtotalPosition === 'header' ||
+		raw.subtotalPosition === 'footer' ||
+		v.open.length > 0 ||
+		v.closed.length > 0;
+	return { view: v, anyValid };
 }
 
 /**

@@ -2,6 +2,7 @@
 	import { cn, type WithElementRef } from "$lib/utils.js";
 	import type { HTMLAnchorAttributes, HTMLButtonAttributes } from "svelte/elements";
 	import { type VariantProps, tv } from "tailwind-variants";
+	import { LINK_UNDERLINE_CLASS } from "$lib/shared/navigation/link-class";
 
 	export const buttonVariants = tv({
 		base: "focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:aria-invalid:border-destructive/50 rounded-lg border border-transparent bg-clip-padding text-sm font-medium focus-visible:ring-3 active:not-aria-[haspopup]:translate-y-px aria-invalid:ring-3 [&_svg:not([class*='size-'])]:size-4 group/button inline-flex shrink-0 items-center justify-center whitespace-nowrap transition-all outline-none select-none disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
@@ -18,7 +19,8 @@
 				// Pas de `dark:` : voir C-28-1-7 (Kesh n'a pas de thème sombre ; le variant `dark` de
 				// Tailwind v4 suit prefers-color-scheme et rendrait le bouton pâle).
 				destructive: "bg-destructive text-destructive-foreground hover:bg-destructive-hover focus-visible:border-destructive focus-visible:ring-destructive/40",
-				link: "text-primary underline-offset-4 hover:underline",
+				// Story 55-2 (D17, AC-16) — un lien se voit sans la couleur : soulignement léger au repos.
+				link: `text-primary ${LINK_UNDERLINE_CLASS}`,
 			},
 			size: {
 				default: "h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",

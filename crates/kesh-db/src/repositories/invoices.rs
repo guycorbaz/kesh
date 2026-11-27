@@ -6007,7 +6007,7 @@ mod tests {
 
         let reordered: Vec<NewInvoiceLine> = vec![line_to_new(&lines[1]), line_to_new(&lines[0])];
 
-        let (result_inv, _) = update(
+        let (result_inv, result_lines) = update(
             &pool,
             company_id,
             inv.id,
@@ -6025,6 +6025,21 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(result_inv.version, version_initial + 1);
+
+        // Story 49-2 (T3, AC3) : l'ordre reçu est l'ordre enregistré — la réponse de
+        // `update` comme la relecture rendent [B, A] aux positions [0, 1].
+        let ordre = |ls: &[InvoiceLine]| -> Vec<(String, i32)> {
+            ls.iter()
+                .map(|l| (l.description.clone(), l.position))
+                .collect()
+        };
+        let attendu = vec![("Ligne B".to_string(), 0), ("Ligne A".to_string(), 1)];
+        assert_eq!(ordre(&result_lines), attendu);
+        let (_, relues) = find_by_id_with_lines(&pool, company_id, inv.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(ordre(&relues), attendu);
 
         cleanup_invoices(&pool, &[inv.id]).await;
         cleanup_contacts(&pool, &[contact_id]).await;

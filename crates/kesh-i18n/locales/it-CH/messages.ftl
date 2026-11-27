@@ -2228,7 +2228,7 @@ reports-filter-fiscal-year = Esercizio
 reports-filter-journal = Giornale
 reports-button-generate = Genera
 
-reports-error-no-entries-in-period = Nessuna registrazione nel periodo selezionato. Modifica le date o scegli un altro esercizio.
+reports-error-no-entries-in-period = Nessuna registrazione in questo periodo.
 reports-error-period-out-of-fiscal-year = Il periodo selezionato supera i limiti dell'esercizio. Scegli un periodo tra { $fyStart } e { $fyEnd }.
 reports-error-no-fiscal-year-available = Nessun esercizio contabile disponibile. Crea un esercizio prima di generare i rapporti.
 
@@ -2245,8 +2245,7 @@ reports-archived-label = archiviato
 
 # Pagina rapporti — chrome (3 — code review Pass 1 i18n leaks)
 reports-page-title = Rapporti contabili
-reports-instruction-select-and-generate = Seleziona un esercizio contabile e clicca su Genera.
-reports-loading = Generazione del rapporto in corso…
+reports-loading = Caricamento…
 
 # Story 9-2a — Export PDF & CSV (10 chiavi)
 reports-export-pdf-button = Esporta PDF
@@ -2277,7 +2276,6 @@ reports-project-return-total = Totale
 reports-project-selector-label = Conto analitico
 reports-project-selector-placeholder = — Scegli un conto analitico
 reports-aged-instruction = Scadenziario per età alla data odierna.
-reports-aged-instruction-generate = Clicca su Genera per visualizzare lo scadenziario per età alla data odierna.
 reports-aged-as-of = Al { $date }
 reports-aged-empty = Nessun credito cliente aperto.
 reports-aged-col-contact = Cliente
@@ -3620,7 +3618,7 @@ reports-fx-line = { $amount } × { $rate }
 reports-fx-totals = dare { $debit } · avere { $credit }
 reports-fx-trial-balance = apertura { $opening } · dare { $debit } · avere { $credit } · chiusura { $closing }
 reports-ledger-include-zero = Includere i conti senza movimenti
-reports-ledger-instruction = Scegliete un periodo, poi cliccate su Genera. Il conto è facoltativo.
+reports-ledger-instruction = Scegliete un periodo. Per tutti i conti, cliccate su Genera; un conto scelto si visualizza da solo.
 
 # --- Journal d'audit — route, vocabulaire et export (Story 25-1c-a) ---
 # ----------------------------------------------------------------------
@@ -4516,6 +4514,32 @@ stripe-gap-payout-entry = Registrazione del versamento
 stripe-gap-receipt-link = Collegare la ricezione nella riconciliazione
 stripe-gap-receipt-import = Importate l’estratto del conto di destinazione (Wise).
 
+## Story 55-1a (Epic 55, D15, D16) — selettore dell'esercizio dei rapporti, intestazione del periodo
+reports-nav-fy-multiple = Diversi
+reports-nav-fy-outside = Fuori esercizio
+reports-nav-fy-whole = Esercizio intero
+reports-nav-needs-one-fy = Questo rapporto riguarda un solo esercizio: scegliete due date dello stesso esercizio.
+reports-nav-period-invalid = La data d’inizio deve precedere la data di fine, o esserle uguale.
+reports-nav-heading-fy = Esercizio { $years } — dal { $from } al { $to }
+reports-nav-heading-named = { $name } — dal { $from } al { $to }
+reports-nav-heading-part = Dal { $from } al { $to } (parte dell’esercizio { $fiscalYear })
+reports-nav-heading-several = Dal { $from } al { $to } (esercizi { $fiscalYears })
+reports-nav-heading-outside = Dal { $from } al { $to } (fuori esercizio)
+# Story 55-2 (AC-6) — la ligne des comptes de TVA au grand livre, après le décompte.
+reports-nav-vat-accounts = Conti nel libro mastro:
+# Story 55-3b (Epic 55, D9 à D12) — i giustificativi di una registrazione, dal giornale e dal libro mastro.
+reports-nav-documents-title = Giustificativi della registrazione n. { $number }
+reports-nav-documents-kind-invoice = Fattura
+reports-nav-documents-kind-credit-note = Nota di credito
+reports-nav-documents-kind-supplier-document = Documento del fornitore
+reports-nav-documents-list = Giustificativi della registrazione
+reports-nav-documents-loading = Caricamento dei giustificativi…
+reports-nav-documents-none = Questa registrazione non ha più giustificativi.
+reports-nav-documents-close = Chiudi
+reports-nav-documents-empty = Il documento ricevuto è vuoto.
+reports-nav-documents-not-issued = PDF non ancora emesso: questa fattura non ha ancora un PDF fissato; il prossimo download, o il prossimo invio per e-mail, lo fisserà.
+reports-nav-ledger-column-documents = Giustificativi
+
 # Story 39-11d — écrans Wise : réglages du compte, page Wise (import des relevés et du zip), libellés
 wise-csv-line-field-count = numero di celle diverso dall’intestazione
 wise-csv-line-date = data illeggibile o fuori formato (atteso GG-MM-AAAA o AAAA-MM-GG)
@@ -4601,3 +4625,9 @@ bank-accounts-help-wise-account = La stessa denominazione per i conti di ogni va
 bank-accounts-help-wise-ledger = Obbligatorio: il conto del piano del saldo Wise, nella sua valuta (un conto in valuta richiede la multivaluta).
 nav-wise = Wise
 fiscal-years-checks-k2-link-wise = Apri la pagina Wise
+
+# Epic 52 — Story 49-2 : réordonner les lignes d'une facture (↑ / ↓)
+invoice-line-move-up = Sposta in alto la riga { $n }
+invoice-line-move-down = Sposta in basso la riga { $n }
+invoice-lines-moved-status = Riga spostata alla posizione { $position } di { $total }
+invoice-line-remove = Elimina la riga { $n }

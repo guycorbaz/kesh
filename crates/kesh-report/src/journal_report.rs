@@ -44,6 +44,11 @@ pub struct JournalEntryRow {
     pub entry_date: NaiveDate,
     pub description: String,
     pub lines: Vec<JournalEntryLineRow>,
+    /// L'écriture a au moins un justificatif (Story 55-3a, [`crate::documents`])
+    /// — omis quand il est faux (JSON identique à celui d'avant pour ces
+    /// écritures). Écran seulement : PDF et CSV inchangés.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub has_documents: bool,
 }
 
 /// Une ligne d'écriture affichée dans le rapport journaux.
@@ -187,6 +192,16 @@ pub async fn generate(
         .await
         .map_err(kesh_db::errors::map_db_error)?;
 
+    // Story 55-3a — les écritures à justificatif de la période : UNE requête,
+    // hors de toute boucle (AC-5).
+    let avec_justificatifs = crate::documents::entries_with_documents(
+        pool,
+        company_id,
+        period.start_date,
+        period.end_date,
+    )
+    .await?;
+
     // Initialiser les sections fixes
     let mut sections: HashMap<Journal, Vec<JournalEntryRow>> = HashMap::new();
     if let Some(j) = &journal_filter {
@@ -235,6 +250,7 @@ pub async fn generate(
                         entry_date: row.entry_date,
                         description: row.description,
                         lines: vec![line],
+                        has_documents: avec_justificatifs.contains(&row.entry_id),
                     },
                 ));
             }
