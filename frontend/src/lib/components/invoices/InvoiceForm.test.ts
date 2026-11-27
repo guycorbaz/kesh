@@ -1814,3 +1814,218 @@ describe('InvoiceForm — ligne de commentaire (Story 49-1c)', () => {
 		);
 	});
 });
+
+// Story 49-2 (#1756, #1242, T2) — réordonner les lignes d'un brouillon : boutons ↑ / ↓,
+// focus, annonce, états désactivés, ordre envoyé et ordre rechargé.
+describe('InvoiceForm — réordonner les lignes (Story 49-2)', () => {
+	/** Brouillon `[A chiffrée (compte 3200), C commentaire, B chiffrée (sans compte)]`. */
+	function brouillonABC(texteCommentaire = 'Merci de votre confiance'): InvoiceResponse {
+		return {
+			...invoiceWith([SERVICES.id]),
+			lines: [
+				{ ...line(1, SERVICES.id), lineType: 'priced', description: 'Prestation A' },
+				{
+					id: 102,
+					invoiceId: 7,
+					position: 2,
+					lineType: 'comment',
+					description: texteCommentaire,
+					quantity: '0.0000',
+					unitPrice: '0.0000',
+					vatRate: '0.00',
+					lineTotal: '0.0000',
+					revenueAccountId: null,
+					createdAt: '',
+				},
+				{ ...line(3, null), lineType: 'priced', description: 'Article B', unitPrice: '50.00' },
+			],
+		} as unknown as InvoiceResponse;
+	}
+
+	const monter = (c: HTMLElement, n: number) =>
+		c.querySelector(`button[aria-label="Monter la ligne ${n}"]`) as HTMLButtonElement;
+	const descendre = (c: HTMLElement, n: number) =>
+		c.querySelector(`button[aria-label="Descendre la ligne ${n}"]`) as HTMLButtonElement;
+	const actif = () => (document.activeElement as HTMLElement | null)?.getAttribute('aria-label');
+
+	/** Les descriptions des lignes, de haut en bas (commentaire : son texte). */
+	function ordre(c: HTMLElement): string[] {
+		const rows = Array.from(c.querySelectorAll('tbody > tr'));
+		const out: string[] = [];
+		for (const r of rows) {
+			const t = r.querySelector('textarea');
+			const i = r.querySelector('input[type="text"]') as HTMLInputElement | null;
+			if (t) out.push((t as HTMLTextAreaElement).value);
+			else if (i) out.push(i.value);
+		}
+		return out;
+	}
+
+	async function cliquer(el: HTMLElement) {
+		await fireEvent.click(el);
+		await settle();
+	}
+
+	const corps = () =>
+		(updateInvoiceMock.mock.calls[0][1] as { lines: Record<string, unknown>[] }).lines;
+
+	it('AC1 — ↑ désactivé sur la première ligne, ↓ sur la dernière, chaque ligne en porte deux', async () => {
+		const { container } = render(InvoiceForm, { invoice: brouillonABC() });
+		await settle();
+		expect(isDisabled(monter(container, 1))).toBe(true);
+		expect(isDisabled(descendre(container, 1))).toBe(false);
+		expect(isDisabled(monter(container, 2))).toBe(false);
+		expect(isDisabled(descendre(container, 2))).toBe(false);
+		expect(isDisabled(monter(container, 3))).toBe(false);
+		expect(isDisabled(descendre(container, 3))).toBe(true);
+		expect(monter(container, 2).getAttribute('title')).toBe('Monter la ligne 2');
+	});
+
+	it("AC1 — une facture d'une seule ligne : les deux boutons désactivés", async () => {
+		const { container } = render(InvoiceForm, { invoice: invoiceWith([null]) });
+		await settle();
+		expect(isDisabled(monter(container, 1))).toBe(true);
+		expect(isDisabled(descendre(container, 1))).toBe(true);
+	});
+
+	it('AC2, AC3 — ↓ deux fois sur A : corps envoyé [C, B, A], chacune avec son type, son compte, son total', async () => {
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		const { container, getByTestId } = render(InvoiceForm, { invoice: brouillonABC() });
+		await settle();
+		const total = () => container.querySelector('tfoot')?.textContent ?? '';
+		const avant = total();
+		expect(avant).toContain('150.00');
+
+		await cliquer(descendre(container, 1));
+		expect(ordre(container)).toEqual(['Merci de votre confiance', 'Prestation A', 'Article B']);
+		await cliquer(descendre(container, 2));
+		expect(ordre(container)).toEqual(['Merci de votre confiance', 'Article B', 'Prestation A']);
+		expect(total()).toBe(avant);
+		// L'`AccountAutocomplete` de A, déplacée, montre toujours SON compte.
+		expect(accountInputs(container).map((b) => b.value)).toEqual(['', '3200 — Honoraires']);
+
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(corps()).toEqual([
+			{ lineType: 'comment', description: 'Merci de votre confiance' },
+			{
+				lineType: 'priced',
+				description: 'Article B',
+				quantity: '1',
+				unitPrice: '50.00',
+				vatRate: '8.10',
+				revenueAccountId: null,
+			},
+			{
+				lineType: 'priced',
+				description: 'Prestation A',
+				quantity: '1',
+				unitPrice: '100.00',
+				vatRate: '8.10',
+				revenueAccountId: SERVICES.id,
+			},
+		]);
+	});
+
+	it('AC2 — ↑ du commentaire : il passe en tête, le prix illisible de la ligne suivante la suit', async () => {
+		const b = brouillonABC();
+		(b.lines[0] as { unitPrice: string }).unitPrice = '1,5,5';
+		const { container, queryAllByTestId } = render(InvoiceForm, { invoice: b });
+		await settle();
+		expect(queryAllByTestId('invoice-line-unit-price-unreadable')).toHaveLength(1);
+		await cliquer(monter(container, 2));
+		expect(ordre(container)).toEqual(['Merci de votre confiance', 'Prestation A', 'Article B']);
+		// Le message est dans le même bloc que sa ligne : il la suit, sans être perdu.
+		const rows = Array.from(container.querySelectorAll('tbody > tr'));
+		const iMsg = rows.findIndex((r) => r.querySelector('[data-testid="invoice-line-unit-price-unreadable"]'));
+		const iA = rows.findIndex((r) => (r.querySelector('input[type="text"]') as HTMLInputElement | null)?.value === 'Prestation A');
+		expect(iMsg).toBe(iA + 1);
+	});
+
+	it('AC4 — le nom accessible suit le rang ; focus sur le même bouton, ou sur l’autre à la borne', async () => {
+		const { container } = render(InvoiceForm, { invoice: brouillonABC() });
+		await settle();
+		// A (1re) descend : elle devient la 2e, son bouton ↓ garde le focus.
+		await cliquer(descendre(container, 1));
+		expect(actif()).toBe('Descendre la ligne 2');
+		// A descend encore : 3e et dernière, ↓ désactivé, le focus passe à ↑ de la même ligne.
+		await cliquer(descendre(container, 2));
+		expect(isDisabled(descendre(container, 3))).toBe(true);
+		expect(actif()).toBe('Monter la ligne 3');
+		// A remonte : 2e, ↑ garde le focus.
+		await cliquer(monter(container, 3));
+		expect(actif()).toBe('Monter la ligne 2');
+	});
+
+	it('AC4 — à la borne haute, le focus passe à ↓ de la même ligne (le rappel du focus est nécessaire)', async () => {
+		const { container } = render(InvoiceForm, { invoice: brouillonABC() });
+		await settle();
+		// Le commentaire (2e) monte en tête : ↑ devient désactivé.
+		await cliquer(monter(container, 2));
+		expect(isDisabled(monter(container, 1))).toBe(true);
+		expect(actif()).toBe('Descendre la ligne 1');
+	});
+
+	it('AC4 — la zone aria-live existe avant tout déplacement, annonce la position, et ré-annonce', async () => {
+		const { container, getByTestId } = render(InvoiceForm, { invoice: brouillonABC() });
+		await settle();
+		const zone = getByTestId('invoice-lines-move-status');
+		expect(zone.getAttribute('aria-live')).toBe('polite');
+		expect(zone.closest('table')).toBeNull();
+		expect(zone.textContent?.trim()).toBe('');
+		await cliquer(descendre(container, 1));
+		expect(zone.textContent?.trim()).toBe('Ligne déplacée en position 2 sur 3');
+		await cliquer(monter(container, 2));
+		expect(zone.textContent?.trim()).toBe('Ligne déplacée en position 1 sur 3');
+	});
+
+	it('AC5 — un déplacement efface le bandeau d’erreur', async () => {
+		const { container, getByTestId, queryByTestId } = render(InvoiceForm, {
+			invoice: brouillonABC(''),
+		});
+		await settle();
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(getByTestId('invoice-form-error').textContent).toContain('Ligne 2 :');
+		await cliquer(descendre(container, 1));
+		expect(queryByTestId('invoice-form-error')).toBeNull();
+	});
+
+	it('AC5 — pendant un envoi, les boutons de déplacement sont désactivés', async () => {
+		updateInvoiceMock.mockReturnValue(new Promise(() => {}));
+		const { container, getByTestId } = render(InvoiceForm, { invoice: brouillonABC() });
+		await settle();
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		for (let n = 1; n <= 3; n++) {
+			expect(isDisabled(monter(container, n))).toBe(true);
+			expect(isDisabled(descendre(container, n))).toBe(true);
+		}
+	});
+
+	it('AC5, AC6 — modale de conflit : boutons désactivés ; « Recharger » rend l’ordre du serveur', async () => {
+		updateInvoiceMock.mockRejectedValue({
+			code: 'OPTIMISTIC_LOCK_CONFLICT',
+			status: 409,
+			message: 'conflit',
+		});
+		getInvoiceMock.mockResolvedValue({ ...brouillonABC(), version: 2 });
+		const { container, getByTestId, getByText } = render(InvoiceForm, {
+			invoice: brouillonABC(),
+		});
+		await settle();
+		await cliquer(descendre(container, 1));
+		expect(ordre(container)).toEqual(['Merci de votre confiance', 'Prestation A', 'Article B']);
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(updateInvoiceMock).toHaveBeenCalled();
+		for (let n = 1; n <= 3; n++) {
+			expect(isDisabled(monter(container, n))).toBe(true);
+			expect(isDisabled(descendre(container, n))).toBe(true);
+		}
+		await fireEvent.click(getByText('Recharger'));
+		await settle();
+		expect(ordre(container)).toEqual(['Prestation A', 'Merci de votre confiance', 'Article B']);
+		expect(isDisabled(descendre(container, 1))).toBe(false);
+	});
+});
