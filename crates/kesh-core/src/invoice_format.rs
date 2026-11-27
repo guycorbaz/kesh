@@ -17,12 +17,13 @@
 //! - Longueur du template ≤ 64 octets.
 //! - Au moins 1 placeholder reconnu présent.
 //! - Pour chaque `{SEQ:NN}` : 1 ≤ NN ≤ 10.
-//! - Longueur du rendu maximal ≤ 64 (cas worst-case `seq = 10^NN - 1`).
+//! - Longueur du rendu maximal ≤ 64 octets (pire cas : `max(NN, 19)` chiffres par compteur,
+//!   les 19 chiffres d'un `i64`).
 //! - Un compteur, `{SEQ}` ou `{SEQ:NN}` (Story 35-1, #932) — testé en dernier.
 
 use std::fmt;
 
-/// Longueur max du template et du rendu final.
+/// Longueur max du template, en **octets** (`template.len()`).
 pub const MAX_TEMPLATE_LEN: usize = 64;
 /// Longueur max du rendu final, en **octets** (`String::len`). La colonne `VARCHAR(64)`
 /// compte des caractères : la borne est plus stricte, jamais plus lâche — un choix de

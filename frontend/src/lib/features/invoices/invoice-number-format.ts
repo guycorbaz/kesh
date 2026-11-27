@@ -17,9 +17,10 @@ export const MAX_SEQ_PADDING = 10;
  *
  * Écarts connus avec le serveur, tous au même refus (« caractères non autorisés ») sauf mention :
  * - le miroir applique ce filtre à **tout** le gabarit, accolades comprises, que `parse` (Rust) saute
- *   (il ne juge que les caractères hors accolades) ; seul effet connu : `{SEQ:+4}`, admis par le
- *   serveur (`u32::from_str` accepte un `+`), est refusé ici (#1119) ; un caractère dans une
- *   accolade (`{ÉTÉ}`) est `UnknownPlaceholder` au serveur, « caractères non autorisés » ici ;
+ *   (il ne juge que les caractères hors accolades) ; seul cas **accepté** du serveur et refusé ici :
+ *   `{SEQ:+4}` (`u32::from_str` accepte un `+`, #1119) ; un caractère dans une accolade (`{ÉTÉ}`),
+ *   refusé des deux côtés mais pour un autre motif : `UnknownPlaceholder` au serveur, « caractères
+ *   non autorisés » ici ;
  * - U+FEFF seul : « vide » ici (`trim` de JavaScript), `IllegalCharacter` au serveur ;
  * - l'ordre : le serveur juge caractères et accolades de gauche à droite (`}é` → `UnmatchedBrace`),
  *   le miroir tous les caractères d'abord.

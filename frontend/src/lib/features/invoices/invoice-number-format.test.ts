@@ -173,8 +173,8 @@ describe('validateFormatTemplate, écart connu : {SEQ:+4} (#1119)', () => {
 // `is_allowed_char` (Rust) ; la longueur se compte en octets UTF-8, comme `template.len()`.
 describe('validateFormatTemplate, blancs et longueur (#1120)', () => {
 	for (const [nom, blanc] of [
-		['U+00A0', ' '],
-		['U+2003', ' '],
+		['U+00A0', '\u00A0'],
+		['U+2003', '\u2003'],
 		['saut de ligne', '\n'],
 	] as const) {
 		it(`refuse ${nom} : caractères non autorisés`, () => {
@@ -184,7 +184,7 @@ describe('validateFormatTemplate, blancs et longueur (#1120)', () => {
 		});
 	}
 	it('refuse U+00A0 aussi au numéro interne', () => {
-		const r = validateFormatTemplate('FF-{YEAR} -{SEQ:03}', { numbering: true });
+		const r = validateFormatTemplate('FF-{YEAR}\u00A0-{SEQ:03}', { numbering: true });
 		expect(r.ok).toBe(false);
 		expect(r.error).toContain('caractères non autorisés');
 	});
