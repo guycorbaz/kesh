@@ -8,7 +8,7 @@
  *      écritures → empty-state message attendu, mais le flow Generate→Response
  *      est vérifié end-to-end avec MariaDB up + audit best-effort)
  *   3. AC #34 : axe a11y scan zero violations (état empty + état populé)
- *   4. AC #34 (T12.4) : company sans fiscal_year → bouton Générer disabled
+ *   4. AC #34 (T12.4) : company sans fiscal_year → sélecteur d'exercice désactivé (55-1a : plus de Générer)
  *      + message i18n `reports-error-no-fiscal-year-available` visible
  *      (preset `with-company-no-fy` — Issue #90). **Exécuté en dernier** car
  *      reseed la DB en état no-fy, incompatible avec les tests précédents.
@@ -136,15 +136,13 @@ test('reports page generates balance sheet end-to-end (AC #28, T12.1)', async ({
 	await page.waitForLoadState('networkidle');
 
 	// L'onglet Bilan est actif par défaut. Le sélecteur d'exercice est populé
-	// par +page.ts (preset `with-company` a 1 fiscal_year).
-	const generateButton = page.getByRole('button', { name: /générer/i });
-	await expect(generateButton).toBeEnabled();
+	// par +page.ts (preset `with-company` a 1 fiscal_year). Story 55-1a (D16) : plus
+	// de *Générer* — le bilan se charge seul à l'ouverture de la page.
+	await expect(page.locator('[data-testid="ledger-generate"], [data-testid="project-report-generate"]')).toHaveCount(0);
 
 	// Vérifier que l'onglet Bilan est bien aria-selected (P6 ARIA patches).
 	const bilanTab = page.getByRole('tab').first();
 	await expect(bilanTab).toHaveAttribute('aria-selected', 'true');
-
-	await generateButton.click();
 
 	// Le preset `with-company` ne seed PAS d'écritures comptables → la génération
 	// retourne un BalanceSheetDto avec assets:[] liabilities:[] → empty-state
@@ -180,9 +178,8 @@ test('reports page has zero axe a11y violations (populated state)', async ({ pag
 
 	// P24 — scanner aussi l'état rendu (empty-state ou bilan), pas seulement
 	// le shell vide. Avec `with-company` (sans écritures), on déclenche
-	// l'empty-state via `isReportEmpty` après Generate.
-	await page.getByRole('button', { name: /générer/i }).click();
-	await page.waitForLoadState('networkidle');
+	// l'empty-state via `isReportEmpty` — chargé seul à l'ouverture (Story 55-1a, D16).
+	await expect(page.getByText(/aucune écriture|total actifs/i).first()).toBeVisible({ timeout: 5000 });
 
 	const results = await new AxeBuilder({ page })
 		.withTags(['wcag2a', 'wcag2aa'])
@@ -231,11 +228,8 @@ test('reports page generates VAT décompte with TVA due end-to-end (Story 18-1f 
 	await page.goto('/reports');
 	await page.waitForLoadState('networkidle');
 
-	// Sélectionner l'onglet TVA AVANT de générer (generate() dépend de l'onglet actif).
+	// Story 55-1a (D16) — le clic sur l'onglet TVA charge le décompte (plus de *Générer*).
 	await page.getByRole('tab', { name: /^TVA$/ }).click();
-	const generateButton = page.getByRole('button', { name: /générer/i });
-	await expect(generateButton).toBeEnabled();
-	await generateButton.click();
 	await page.waitForLoadState('networkidle');
 
 	// Le décompte affiche TVA due (81.00), TVA récupérable et solde.
@@ -246,7 +240,9 @@ test('reports page generates VAT décompte with TVA due end-to-end (Story 18-1f 
 	// dès qu'un solde existe en base (l'E2E du solde en crée un).
 	await expect(tabpanel.getByRole('columnheader', { name: 'TVA due', exact: true })).toBeVisible();
 	await expect(tabpanel.getByText('81.00').first()).toBeVisible({ timeout: 5000 });
-	await expect(tabpanel.getByText(/TVA récupérable/i)).toBeVisible();
+	// Story 55-2 (AC-6) — la ligne « Comptes au grand livre » répète l'étiquette : la ligne du décompte se vise
+	// par sa cellule.
+	await expect(tabpanel.getByRole('cell', { name: /TVA récupérable/i })).toBeVisible();
 	await expect(tabpanel.getByTestId('vat-balance')).toBeVisible();
 	// Pas d'erreur backend rendue.
 	await expect(page.getByRole('alert')).toHaveCount(0);
@@ -299,7 +295,7 @@ test('reports aged-receivables : génération + drill-down + export CSV (Admin)'
 	// L'URL est adressable (?tab=), synchro D-7c.
 	await expect(page).toHaveURL(/\?tab=aged-receivables/);
 
-	await page.getByTestId('aged-report-generate').click();
+	// Story 55-1a (D16) — chargée à l'arrivée sur l'onglet, sans *Générer*.
 
 	// Le tableau affiche au moins la ligne du débiteur créé + le total général.
 	const table = page.getByTestId('aged-receivables-table');
@@ -382,13 +378,13 @@ test('grand livre : une écriture postée réapparaît dans l’extrait de son c
 		await page.locator('#reports-tab-general-ledger').click();
 		await expect(page.getByTestId('ledger-controls')).toBeVisible();
 
-		// Période libre — et surtout : AUCUN exercice à choisir. C'est le seul
-		// rapport dans ce cas, et c'est ce qui le rend concordant avec le bilan.
+		// Story 55-2 (AC-11) — l'exercice n'est qu'un raccourci : des dates choisies à la main franchissent la
+		// borne, et le rapport reste concordant avec le bilan. Filtré sur un compte, il se charge au choix du
+		// compte (D16), sans Générer.
 		const year = today.slice(0, 4);
 		await page.getByTestId('ledger-from').fill(`${year}-01-01`);
 		await page.getByTestId('ledger-to').fill(`${year}-12-31`);
 		await page.getByTestId('ledger-account').selectOption(String(debit.id));
-		await page.getByTestId('ledger-generate').click();
 
 		const section = page.getByTestId(`ledger-section-${debit.number}`);
 		await expect(section).toBeVisible({ timeout: 5000 });
@@ -406,8 +402,8 @@ test('grand livre : une écriture postée réapparaît dans l’extrait de son c
 	// le rapport existe et personne ne le trouve.
 	await page.goto('/reports');
 	await page.waitForLoadState('networkidle');
+	// Story 55-1a (D16) — le clic sur l'onglet charge la balance.
 	await page.locator('#reports-tab-trial-balance').click();
-	await page.getByRole('button', { name: /générer/i }).click();
 	const lien = page.getByRole('link', { name: debitNumber }).first();
 	await expect(lien).toBeVisible({ timeout: 5000 });
 	// Story 25-5-b (#385) — la balance porte l'ouverture et la clôture, et la
@@ -469,7 +465,7 @@ test('reports aged-receivables : export CSV absent pour un rôle Consultation', 
 // et doit donc être exécuté EN DERNIER dans ce fichier. Sinon, les tests
 // suivants qui s'attendent à un `with-company` (avec fiscal_year) seedé par
 // `beforeAll` verraient un état dérivé (no-fy) et échoueraient en cascade.
-test('reports page disables Générer when company has no fiscal year (AC #34, T12.4)', async ({
+test('reports page : sans exercice, sélecteur désactivé et message (AC #34, T12.4 ; 55-1a D16)', async ({
 	page,
 }) => {
 	await seedTestState('with-company-no-fy');
@@ -477,6 +473,7 @@ test('reports page disables Générer when company has no fiscal year (AC #34, T
 	await page.goto('/reports');
 	await page.waitForLoadState('networkidle');
 
-	await expect(page.getByRole('button', { name: /générer/i })).toBeDisabled();
+	// Story 55-1a (D16) — plus de *Générer* : le menu d'exercice est désactivé, rien n'est chargé.
+	await expect(page.getByTestId('report-fiscal-year')).toBeDisabled();
 	await expect(page.getByText(/aucun exercice comptable disponible/i)).toBeVisible();
 });

@@ -1,21 +1,27 @@
 <script lang="ts">
 	// Story 9-1 — Vue Compte de résultat.
+	// Story 55-2 (AC-2) — à plat aussi, le numéro de chaque compte ouvre son grand livre (`AccountLink`).
 	// Story 46-2 — avec `groupedRows`, Produits et Charges rendent leurs lignes
 	// groupées (lien vers le grand livre sur les comptes, AC-4) ; sans, la vue à
 	// plat d'avant, inchangée.
 	import Big from 'big.js';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import AccountCurrencyBalance from './AccountCurrencyBalance.svelte';
+	import AccountLink from './AccountLink.svelte';
 	import GroupedReportRows, { BALANCE_COLUMNS } from './GroupedReportRows.svelte';
-	import { formatReportAmount, formatSwissDate, isReportEmpty } from './reports.api';
+	import { formatReportAmount, isReportEmpty } from './reports.api';
+	import ReportPeriodHeading from './ReportPeriodHeading.svelte';
+	import type { ExerciceBornes } from './reports-url';
 	import type { GroupedRow, IncomeStatementDto } from './reports.types';
 
 	interface Props {
 		dto: IncomeStatementDto;
 		/** Story 46-2 — clic sur l'accordéon d'un groupe (vue groupée seulement). */
 		onToggleGroup?: (row: GroupedRow) => void;
+		/** Story 55-1a (AC-17) — les exercices de la société, pour l'en-tête de la période. */
+		fiscalYears?: readonly ExerciceBornes[];
 	}
-	let { dto, onToggleGroup = () => {} }: Props = $props();
+	let { dto, onToggleGroup = () => {}, fiscalYears = [] }: Props = $props();
 
 	let grouped = $derived(dto.groupedRows && dto.grouping ? dto.groupedRows : null);
 	let subtotalPosition = $derived(dto.grouping?.subtotalPosition ?? 'header');
@@ -42,14 +48,14 @@
 </script>
 
 <section class="space-y-4">
-	<header class="text-sm text-gray-600">
-		<strong>{i18nMsg('reports-filter-period', 'Période')}:</strong>
-		{formatSwissDate(dto.period.startDate)} — {formatSwissDate(dto.period.endDate)}
+	<!-- Story 55-1a (AC-17) — la période réelle de la réponse, et l'exercice dont elle est l'entier ou une partie. -->
+	<header>
+		<ReportPeriodHeading from={dto.period.startDate} to={dto.period.endDate} {fiscalYears} />
 	</header>
 
 	{#if empty}
 		<p class="rounded bg-blue-50 p-4 text-blue-900" role="status">
-			{i18nMsg('reports-error-no-entries-in-period', 'Aucune écriture dans la période sélectionnée.')}
+			{i18nMsg('reports-error-no-entries-in-period', 'Aucune écriture sur cette période.')}
 		</p>
 	{:else}
 		<div class="grid gap-6 lg:grid-cols-2">
@@ -75,7 +81,9 @@
 						{:else}
 						{#each dto.revenues as r (r.accountId)}
 							<tr>
-								<td class="px-2 py-1 font-mono">{r.accountNumber}</td>
+								<td class="px-2 py-1 font-mono"
+									><AccountLink accountId={r.accountId} number={r.accountNumber} from={dto.period.startDate} to={dto.period.endDate} /></td
+								>
 								<td class="px-2 py-1">{r.accountName}<AccountCurrencyBalance account={r} /></td>
 								<td class="px-2 py-1 text-right font-mono">{fmt(r.balance)}</td>
 							</tr>
@@ -115,7 +123,9 @@
 						{:else}
 						{#each dto.expenses as e (e.accountId)}
 							<tr>
-								<td class="px-2 py-1 font-mono">{e.accountNumber}</td>
+								<td class="px-2 py-1 font-mono"
+									><AccountLink accountId={e.accountId} number={e.accountNumber} from={dto.period.startDate} to={dto.period.endDate} /></td
+								>
 								<td class="px-2 py-1">{e.accountName}<AccountCurrencyBalance account={e} /></td>
 								<td class="px-2 py-1 text-right font-mono">{fmt(e.balance)}</td>
 							</tr>

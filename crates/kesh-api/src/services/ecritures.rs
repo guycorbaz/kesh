@@ -1,8 +1,10 @@
 //! Le service des écritures comptables — la liste paginée et le détail
 //! (Story 32-4a), lus par `GET /api/v1/journal-entries` et
-//! `GET /api/v1/journal-entries/{id}`, puis par l'outil MCP de la 32-9a.
+//! `GET /api/v1/journal-entries/{id}`, puis par l'outil MCP de la 32-9a ; et
+//! les justificatifs d'une écriture (Story 55-3a),
+//! `GET /api/v1/journal-entries/{id}/documents`, qu'aucun outil ne sert.
 //!
-//! Deux lectures **sans trace** (aucune n'écrit au journal d'audit) : elles
+//! Trois lectures **sans trace** (aucune n'écrit au journal d'audit) : elles
 //! rendent directement (règle R5). La validation de la liste — analyse des
 //! dates et des montants, contrôles croisés, `accountId` — et ses bornes de
 //! pagination vivent ici, dans l'ordre et avec les messages d'avant la 32-4a
@@ -46,6 +48,15 @@ pub const EXIGENCE_LISTER: Exigence = Exigence {
 pub const EXIGENCE_DETAIL: Exigence = Exigence {
     role_api: Role::Consultation,
     portee_mcp: Some(Portee::BooksRead),
+};
+
+/// Exigence de [`justificatifs`] : tous rôles
+/// (`GET /api/v1/journal-entries/{id}/documents`, `authenticated_routes`,
+/// comme le détail) ; **aucun outil MCP** ne la sert (portée `None`, Story
+/// 55-3a : la liste n'est lue que par l'écran du Journal).
+pub const EXIGENCE_JUSTIFICATIFS: Exigence = Exigence {
+    role_api: Role::Consultation,
+    portee_mcp: None,
 };
 
 /// La demande de [`lister`] : les paramètres de `GET /api/v1/journal-entries`,
@@ -263,6 +274,31 @@ pub async fn detail(
         blocage_modification,
         piece_source,
     })
+}
+
+/// Les justificatifs de l'écriture `id` de la société du contexte (Story
+/// 55-3a, #1607) : PDF de facture (avec l'état de son PDF), d'avoir, document
+/// de facture fournisseur — la définition commune de
+/// [`kesh_report::documents`], celle du booléen `hasDocuments` du journal et
+/// du grand livre.
+///
+/// Société lue d'abord, puis l'écriture (`AppError::Database(DbError::NotFound)`
+/// si elle est absente ou d'une autre société, comme [`detail`] — KF-002),
+/// puis la liste, vide si l'écriture n'a aucun justificatif. Lecture seule :
+/// aucun PDF n'est lu ni figé (D12).
+pub async fn justificatifs(
+    acces: &ContexteAcces,
+    lecture: &Lecture,
+    id: i64,
+) -> Result<Vec<kesh_report::EntryDocument>, AppError> {
+    acces.exiger(EXIGENCE_JUSTIFICATIFS)?;
+    let company =
+        crate::helpers::company_for_ids(lecture.pool(), acces.company_id(), acces.user_id())
+            .await?;
+    journal_entries::find_by_id(lecture.pool(), company.id, id)
+        .await?
+        .ok_or(AppError::Database(DbError::NotFound))?;
+    Ok(kesh_report::documents::documents_of_entry(lecture.pool(), company.id, id).await?)
 }
 
 #[cfg(test)]

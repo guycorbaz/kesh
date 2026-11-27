@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import { LINK_UNDERLINE_CLASS } from '$lib/shared/navigation/link-class';
 	import { requestPasswordReset } from './auth-recovery.api';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
@@ -161,7 +162,7 @@
 	{/if}
 
 	<p class="mt-6 text-center text-sm">
-		<a href="/login" class="text-primary hover:underline" data-testid="forgot-back-to-login">
+		<a href="/login" class="text-primary {LINK_UNDERLINE_CLASS}" data-testid="forgot-back-to-login">
 			{i18nMsg('auth-recovery-back-to-login', 'Retour à la connexion')}
 		</a>
 	</p>

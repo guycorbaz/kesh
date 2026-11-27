@@ -77,7 +77,8 @@
 	import type { Snippet } from 'svelte';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import AccountCurrencyBalance from './AccountCurrencyBalance.svelte';
-	import { formatCurrencyFigure, ledgerHref } from './reports.api';
+	import AccountLink from './AccountLink.svelte';
+	import { formatCurrencyFigure } from './reports.api';
 	import type { SubtotalPosition } from './reports.types';
 
 	interface Props {
@@ -146,12 +147,7 @@
 			{:else if row.kind === 'subtotal'}
 				<span class="inline-block w-6" aria-hidden="true"></span>
 			{:else}
-				<span class="mr-1 inline-block w-5" aria-hidden="true"></span><a
-					class="text-indigo-700 hover:underline"
-					href={ledgerHref(row.accountId, period.startDate, period.endDate)}
-					title={i18nMsg('reports-ledger-open-from-balance', 'Voir le détail dans le grand livre')}
-					>{row.accountNumber}</a
-				>
+				<span class="mr-1 inline-block w-5" aria-hidden="true"></span><AccountLink accountId={row.accountId} number={row.accountNumber} from={period.startDate} to={period.endDate} />
 			{/if}
 		</td>
 		<!-- Le libellé suit le même retrait que le numéro : un pied de groupe se lit au rang de son groupe. -->

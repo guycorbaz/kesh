@@ -3,6 +3,7 @@
 -->
 <script lang="ts">
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import { LINK_UNDERLINE_CLASS } from '$lib/shared/navigation/link-class';
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { notifyError } from '$lib/shared/utils/notify';
 	import { listBankProfiles, deleteBankProfile } from './bank-profile.api';
@@ -80,7 +81,11 @@
 						<td><code>{profile.filenamePattern ?? '—'}</code></td>
 						<td>{profile.encoding ?? 'auto'}</td>
 						<td>
-							<a href="/bank-import/profiles/{profile.id}" data-testid="bank-import-profile-edit-link">
+							<a
+								href="/bank-import/profiles/{profile.id}"
+								class={LINK_UNDERLINE_CLASS}
+								data-testid="bank-import-profile-edit-link"
+							>
 								{i18nMsg('bank-import-profile-labels-edit', 'Éditer')}
 							</a>
 							<button

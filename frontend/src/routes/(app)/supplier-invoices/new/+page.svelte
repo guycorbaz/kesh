@@ -21,6 +21,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { LINK_UNDERLINE_CLASS } from '$lib/shared/navigation/link-class';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { notifySuccess } from '$lib/shared/utils/notify';
@@ -191,7 +192,7 @@
 		{i18nMsg('supplier-invoices-new-title', 'Nouvelle facture fournisseur')}
 	</h1>
 	<a
-		class="text-sm text-primary"
+		class="text-sm text-primary {LINK_UNDERLINE_CLASS}"
 		href={documentId === null ? '/supplier-invoices' : '/supplier-invoices/import'}
 	>
 		{documentId === null
@@ -220,7 +221,7 @@
 		<p class="text-sm">
 			{i18nMsg('supplier-invoices-doc-not-pending', 'Ce document n’est plus à traiter.')}
 		</p>
-		<a class="text-sm text-primary" href="/supplier-invoices/import">
+		<a class="text-sm text-primary {LINK_UNDERLINE_CLASS}" href="/supplier-invoices/import">
 			{i18nMsg('supplier-invoices-back-to-documents', 'Revenir aux documents à traiter')}
 		</a>
 	</div>

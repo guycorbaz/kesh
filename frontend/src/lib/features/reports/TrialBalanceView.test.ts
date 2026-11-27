@@ -305,3 +305,17 @@ describe("TrialBalanceView — Story 46-6b, vue groupée", () => {
     expect(onToggleGroup).toHaveBeenCalledWith(expect.objectContaining({ accountId: 90 }));
   });
 });
+
+// Story 55-2 (AC-1, AC-16) — filet de non-régression du lien inchangé (passé par `AccountLink`).
+describe("TrialBalanceView — Story 55-2, lien de compte", () => {
+  it("lien exact, titre, classe LINK_CLASS", async () => {
+    const { LINK_CLASS } = await import("$lib/shared/navigation/link-class");
+    render(TrialBalanceView, { dto: makeDto() });
+    const a = screen.getByRole("link", { name: "1100" });
+    expect(a.getAttribute("href")).toBe(
+      "/reports?tab=general-ledger&accountId=1&from=2026-01-01&to=2026-12-31",
+    );
+    expect(a.getAttribute("title")).toBe("Voir le détail dans le grand livre");
+    expect(a.getAttribute("class")).toBe(LINK_CLASS);
+  });
+});

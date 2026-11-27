@@ -104,8 +104,13 @@ function bilan(params: GroupingParams | undefined, open = true, echo?: Partial<G
 	};
 }
 
-async function generer(r: { getByRole: (role: 'button', opts: { name: string }) => HTMLElement }) {
-	await fireEvent.click(r.getByRole('button', { name: 'Générer' }));
+/**
+ * Story 55-1a (D16) — il n'y a plus de bouton *Générer* sur les onglets à période : le rapport se charge
+ * seul à l'ouverture de la page et à l'arrivée sur un onglet. Ce qui « générait » devient l'attente de
+ * ce chargement (une micro-tâche : la requête part pendant le rendu).
+ */
+async function generer(_r?: unknown) {
+	await Promise.resolve();
 }
 
 describe('page des rapports — vue groupée du bilan (Story 46-2)', () => {
@@ -181,7 +186,7 @@ describe('page des rapports — vue groupée du bilan (Story 46-2)', () => {
 		expect(JSON.parse(localStorage.getItem(KEY)!).closed).toEqual([90]);
 		// pendant la redemande : l'affichage précédent reste, marqué occupé
 		expect(r.queryByTestId('grouped-account-1000')).not.toBeNull();
-		expect(r.queryByText('Génération du rapport en cours…')).toBeNull();
+		expect(r.queryByText('Chargement…')).toBeNull();
 		expect(r.getByRole('tabpanel').getAttribute('aria-busy')).toBe('true');
 		resoudre(bilan(getBalanceSheetMock.mock.calls[1][1], false, { closed: [90] }));
 		await waitFor(() => expect(r.queryByTestId('grouped-account-1000')).toBeNull());
@@ -392,8 +397,8 @@ describe('page des rapports — demandes périmées et vue affichée (Story 46-2
 		await r.findByTestId('grouped-group-10');
 		const jetee = bilanSuspendu();
 		await fireEvent.change(r.getByTestId('grouping-level'), { target: { value: '1' } });
+		// Story 55-1a (D16) — la balance âgée se charge à l'arrivée sur l'onglet (plus de *Générer*).
 		await fireEvent.click(r.getByRole('tab', { name: 'Balance âgée' }));
-		await fireEvent.click(r.getByTestId('aged-report-generate'));
 		await waitFor(() => expect(getAgedReceivablesMock).toHaveBeenCalled());
 		jetee.resoudre(false);
 		await pause();
@@ -423,7 +428,8 @@ describe('page des rapports — demandes périmées et vue affichée (Story 46-2
 		expect(r.getByRole('tabpanel').getAttribute('aria-busy')).toBe('true');
 		await fireEvent.change(r.getByRole('combobox', { name: 'Exercice' }), { target: { value: '2' } });
 		await waitFor(() => expect(r.getByRole('tabpanel').getAttribute('aria-busy')).toBe('false'));
-		expect((r.getByRole('button', { name: 'Générer' }) as HTMLButtonElement).disabled).toBe(false);
+		// Story 55-1a (D16) — plus de *Générer* : le choix de l'exercice charge le bilan de 2027.
+		expect(getBalanceSheetMock.mock.calls.at(-1)?.[0]).toMatchObject({ fiscalYearId: 2 });
 	});
 
 	it('X1 — retour sur le bilan désaccordé PENDANT le chargement d’un autre onglet : redemandé à sa fin (revue P2 M1)', async () => {
@@ -433,12 +439,13 @@ describe('page des rapports — demandes périmées et vue affichée (Story 46-2
 		await r.findByTestId('grouped-group-10');
 		const jetee = bilanSuspendu();
 		await fireEvent.change(r.getByTestId('grouping-level'), { target: { value: '1' } });
-		await fireEvent.click(r.getByRole('tab', { name: 'Compte de résultat' }));
 		let resoudreResultat!: () => void;
 		getIncomeStatementMock.mockImplementationOnce(
 			() => new Promise((res) => (resoudreResultat = () => res(resultatVide()))),
 		);
-		await generer(r);
+		// Story 55-1a (D16) — le clic sur l'onglet charge le compte de résultat (la réponse suspendue
+		// est donc posée avant le clic).
+		await fireEvent.click(r.getByRole('tab', { name: 'Compte de résultat' }));
 		await waitFor(() => expect(getIncomeStatementMock).toHaveBeenCalledTimes(1));
 		jetee.resoudre(false); // périmée par « Générer » sur le compte de résultat
 		await fireEvent.click(r.getByRole('tab', { name: 'Bilan' }));
@@ -459,10 +466,8 @@ describe('page des rapports — demandes périmées et vue affichée (Story 46-2
 	describe.each([
 		{
 			nom: 'la balance âgée',
-			ouvrir: async (r: Ecran) => {
-				await fireEvent.click(r.getByRole('tab', { name: 'Balance âgée' }));
-				return () => r.getByTestId('aged-report-generate');
-			},
+			// Story 55-1a (D16) — la balance âgée se charge au clic sur son onglet.
+			ouvrir: async (r: Ecran) => () => r.getByRole('tab', { name: 'Balance âgée' }),
 			mock: getAgedReceivablesMock,
 		},
 		{
@@ -530,14 +535,20 @@ describe('page des rapports — demandes périmées et vue affichée (Story 46-2
 		bilanSuspendu(); // premier chargement du bilan, jamais affiché
 		const r = render(Page, { data });
 		await generer(r);
-		await fireEvent.click(r.getByRole('tab', { name: 'Balance âgée' }));
+		// Story 55-1a (D16) — la balance âgée se charge au clic sur son onglet.
 		getAgedReceivablesMock.mockImplementationOnce(() => new Promise(() => {}));
-		await fireEvent.click(r.getByTestId('aged-report-generate'));
+		await fireEvent.click(r.getByRole('tab', { name: 'Balance âgée' }));
 		await waitFor(() => expect(getAgedReceivablesMock).toHaveBeenCalledTimes(1));
+		// Story 55-1a (D16, AC-22) — le retour sur le Bilan, jamais affiché, le charge (2e appel) ; ce
+		// chargement échoue : rien d'affiché, rien en vol — un changement de vue ne demande alors rien.
+		getBalanceSheetMock.mockImplementationOnce(async () => {
+			throw new Error('réseau');
+		});
 		await fireEvent.click(r.getByRole('tab', { name: 'Bilan' }));
+		await r.findByRole('alert');
 		await fireEvent.click(r.getByTestId('grouping-shown'));
 		await pause();
-		expect(getBalanceSheetMock).toHaveBeenCalledTimes(1);
+		expect(getBalanceSheetMock).toHaveBeenCalledTimes(2);
 	});
 
 	it('export après un écho qui retire un groupe disparu : les listes de l’écho (revue P2 L1)', async () => {
@@ -560,11 +571,11 @@ describe('page des rapports — demandes périmées et vue affichée (Story 46-2
 		bilanSuspendu();
 		const r = render(Page, { data });
 		await generer(r);
-		expect(r.queryByText('Génération du rapport en cours…')).not.toBeNull();
+		expect(r.queryByText('Chargement…')).not.toBeNull();
 		bilanSuspendu();
 		await fireEvent.click(r.getByTestId('grouping-shown'));
 		await waitFor(() => expect(getBalanceSheetMock).toHaveBeenCalledTimes(2));
-		expect(r.queryByText('Génération du rapport en cours…')).not.toBeNull();
+		expect(r.queryByText('Chargement…')).not.toBeNull();
 		expect(r.getByRole('tabpanel').getAttribute('aria-busy')).toBe('true');
 	});
 });
