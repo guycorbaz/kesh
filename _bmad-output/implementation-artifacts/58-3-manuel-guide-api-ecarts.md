@@ -1,6 +1,6 @@
 # Story 58-3 : Manuel et guide de l'API — écarts avec le code (#730, #748, #767, #814, #1061, #1067, #1074, #1076, #1087, #1405)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-26 (Sonnet 5.5), worktree `kesh-58-3`, branche `story/58-3-manuel-guide-api-ecarts` partie de
 `epic/58-nettoyage` à `ee684a69f`, par le workflow `bmad-create-story`, en autonomie. Premier epic de nettoyage (décision de Guy du
@@ -410,3 +410,7 @@ Corrections de validation recontrôlées : `textes.rs:198-210` (accusé « Envoi
   - **L1** : `tail -F`. **L2** : rotation quotidienne dite, horaire et `never` indiquées. **L3** : date entre préfixe et suffixe, `never`, chemin sans suffixe (manuel, `.env.example`, `config.rs`).
   - **L4** : condition du compte de produit par défaut complétée (choix explicite, réglage obligatoire). **L5** : préfixe `Hors fenêtre` non posé, choix de la fiche (D2), I1 maintenue. **L6** : ordre des réglages dit. **L7** : doc-comment de `audit_route_registry.rs` rendu vrai.
   - **L8** : conflit de reprise résolu, deux intentions gardées. **L9** : « affichage » au lieu de « consultation ». **L10** : AC12 (a) nomme sa base ; phrase au Dev Agent Record. **L11** : ligne `20260917000001` de l'audit éclaircie.
+
+## Clôture (2026-11-27)
+
+Boucle de revue close : P1 Opus 0/0/3/11 (remédiée, reprise de `main` v0.20.0 `f7a13ba7e`, remédiation `e4e4d7278`) → P2 Sonnet 0/0/0/5. Gates de clôture sur idefix au dernier commit de code (`e4e4d7278`) : test-fast 6977/6977 (`kesh-gate-logs/idefix/20261127-065455-…-test-fast`), gate-ci vert (`…/20261127-081411-…-gate-ci`), E2E 537 passés et les seuls sept échecs de la KF-029 (`…/20261127-101449-…-e2e`). Issues à ouvrir : I1 à I3, et P2-L1 (`PUT /api/v1/profile/mode` sans garde de rôle : un rôle Consultation change le mode de l'installation).
