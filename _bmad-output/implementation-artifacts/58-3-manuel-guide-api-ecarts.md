@@ -1,6 +1,6 @@
 # Story 58-3 : Manuel et guide de l'API — écarts avec le code (#730, #748, #767, #814, #1061, #1067, #1074, #1076, #1087, #1405)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-26 (Sonnet 5.5), worktree `kesh-58-3`, branche `story/58-3-manuel-guide-api-ecarts` partie de
 `epic/58-nettoyage` à `ee684a69f`, par le workflow `bmad-create-story`, en autonomie. Premier epic de nettoyage (décision de Guy du
@@ -357,11 +357,27 @@ Une demi-journée de développement (dix remplacements de phrases, un aplati, un
 
 ### Agent Model Used
 
+Opus 5.5 (`bmad-dev-story`, autonomie), 2026-11-27.
+
 ### Debug Log References
+
+- `kesh-gate-logs/e58/e583/tex-avant-apres.txt` (comptes `grep -cF` au texte, avant et après) ; `kesh-gate-logs/e58/e583/pdf-avant-apres.txt` (comptes au PDF aplati, ’ normalisé, avant = PDF construit de `HEAD`, après = PDF construit de l'arbre, dans des copies de `docs/manual` sous le scratchpad).
+- Construction des deux manuels (copie) : `make admin user` sans erreur ; Overfull de `admin-manual.log` 191 → 189, dont celui de `L'écran.` du § `sec:mcp-envois` (49,7 pt, `lines 3813--3815`) → **0** (voir Completion Notes).
 
 ### Completion Notes List
 
+**Étape 0.** `git merge origin/main` (`56d47b2cc`) : fusion sans conflit (`2c8ba7363`) ; aucune migration au merge, compteurs inchangés (`ls crates/kesh-db/migrations/*.sql | wc -l` = 98 = `grep -c '^| \`20' docs/migrations-idempotence-audit.md`). Les dix issues sont ouvertes (`gh issue view N --json state` : OPEN ×10). Les chaînes « avant » des onze AC sont toutes présentes après la reprise : **aucun AC « déjà couvert »**. Lignes décalées par la release et l'Epic 53/46/39 (retrouvées par la chaîne) : `admin-manual.tex` 3509→3517, 3791→3799, 3803→3811, 3913→3921, 3918→3926, 3922→3930, § envois 3805→3813 ; `user-manual.tex` 537→619, 1385→1467, 2969→3051, 3744→3909 ; `api-external.md` 1415-1416→**1587-1588** (le guide a été réécrit par la release) ; `.env.example`, compose, audit, `post_restore.rs` (461, 484), `config.rs` (1346) : inchangés. Prémisses : (1) vue ci-dessus ; (2) export global dans `authenticated_routes`, « Tous rôles authentifiés » (`routes/exports.rs:34-36`) ; (3) `20260917000001` crée `journal_entry_number_sequences`, postérieure à `20260909000001` et `20260915000001` (fiche, `backup.rs:82`) : non rejoué, repris de la fiche ; (4) les deux manuels se construisent.
+Corrections de validation recontrôlées : `textes.rs:198-210` (accusé « Envoi n° {n} en attente de validation », relecture « L'envoi n° {n} attend encore … Rien n'est parti. »), `api_key.rs:215` (`touch_last_used`), `invoices.rs:2378-2383` (`if lines_before.iter().any(priced_line_without_account) { … sites.push((None, revenue_account_id)); }` : le compte par défaut n'est contrôlé que si une ligne chiffrée n'a pas de compte propre), `post_restore.rs:1103` et `:1194` (`starts_with("Hors fenêtre")`, préfixe seul jugé).
+
+**AC1 (#730)** : tableau des rôles et point « Portée » du manuel d'administration disent « aucune modification des livres » et nomment les écritures : `report.generated`/`report.exported`, `exports.global`, premier téléchargement du PDF (rôle) ; pour les clés `read`, en plus la mise à jour de `last_used_at` (requête refusée comprise). `:3621` (MCP) intact. **AC2 (#748, audit)** : lignes 85 et 89 « inscrite à sa création … retirée ensuite (`RETIRED_BACKFILLS`, Story 25-2-c) et exemptée « Hors fenêtre depuis 20260917000001 » » ; 88, 90, 91 au passé ou à l'état d'aujourd'hui ; 98 lignes avant et après. **AC3** : les deux justifications de `post_restore.rs` ouvrent par « Fondement déclaré : le PARC vide, non la fenêtre » et disent « hors fenêtre d'importabilité depuis 20260917000001 » ; fondement `PerishableSince(20260827000001)`, `CE FONDEMENT SE PÉRIME` et bornes inchangés. **AC4 (#767)** : manuel (`kesh.AAAA-MM-JJ.log`, UTC, rotation horaire, création paresseuse ; commande `sudo tail -f ./log/kesh.$(date -u +%F).log` échappée `\$` et `\%`), `.env.example` (330 et 350), compose (commentaire), `config.rs` (doc-comment) ; valeurs de `KESH_LOG_FILE_PATH` inchangées (hunks de `.env.example` : 330 et 350 seulement). **AC5a-c (#814)** : relecture en attente citée au texte réel (`:3811`, `:3930`), « a été éprouvé à la 0.16.0 » (`:3921`, `:3926`), « réponse réussie d'un outil de lecture » avec les textes propres de `kesh_lire_envoi`, `proposer_prompt` et des erreurs (`:3799`). **AC5d** : `\allowbreak` dans `/admin/\allowbreak mcp/\allowbreak sends` **et** phrase réordonnée (le chemin passe en fin de phrase) : un `\allowbreak` seul ne suffisait pas (49,7 pt → 16,4 pt, puis 0 avec le chemin coupé après `/admin/`), ni `\sloppy`. **AC6** : `triés par numéro` remplacé par « classés selon l'ordre de chaîne de leur numéro (`"10000"` avant `"2000"`), puis par identifiant (et par réglage) » aux deux lignes. **AC7** : « ne sont contrôlés à la validation que si une ligne chiffrée sans compte propre l'utilise » (D5). **AC8-9** : règle d'ambiguïté du solde d'ouverture, `1'234,567` (quatre chiffres avant la virgule, comme `1000.000`), refus « entre le séparateur décimal et le dernier chiffre » (`1.5'0`), `1.5'` ignoré. **AC10, AC11** : « La transaction reste dans » ; ligne « Compte comptable par défaut » retirée (`1100 (Débiteurs)` : un reste, l'exemple d'écriture).
+
+**Écarts, dits honnêtement.** (a) Le texte de #730 est ajouté à la ligne ; l'AC1 n'exigeait pas de citer `last_used_at` au tableau des rôles (rôle, non clé) : non cité là. (b) AC6 : la fiche demandait « par numéro, en ordre de chaîne » mais `grep -cF 'triés par numéro'` : 2 → 0 exige de ne pas garder les mots : reformulé. (c) Le journal d'Overfull : un Overfull neuf, de ma propre réécriture (`kesh.AAAA-MM-JJ.log` insécable, 10,4 pt), corrigé par `\allowbreak` ; le point « Portée » (`lines 3517--3518`, 20,3 pt) reste Overfull comme avant (ligne longue sans coupure naturelle, hors périmètre, I3). (d) Les comptes « avant » de l'aplati du PDF viennent d'un PDF construit de `HEAD`, non du PDF commité. (e) Les éditions ont été faites par l'outil Edit, sauf une première passe de neuf remplacements sur `admin-manual.tex` et un `sed` sur `api-external.md` (équivalents ; consigne de l'orchestrateur : Edit seulement). (f) Une tentative de `nextest` sur la station (binaire `configuration_transmise`) a été interrompue par moi : tout gate passe par idefix.
+
+**Notes pour l'orchestrateur** : les errata du CHANGELOG (section 0.17.7) restent à votre charge (D3, Q2 : erratum dans les notes de version de la release qui porte la 58-3, entrée publiée intacte) ; I1, I2, I3 à ouvrir ; fichier d'epic : `config.rs`, `docker-compose.yml`, littéraux de `post_restore.rs` à consigner (V2-2).
+
 ### File List
+
+`.env.example`, `docker-compose.yml`, `crates/kesh-api/src/config.rs`, `crates/kesh-db/src/post_restore.rs`, `docs/api-external.md`, `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/user-manual.tex`, `docs/migrations-idempotence-audit.md`, ce fichier, `_bmad-output/implementation-artifacts/sprint-status.yaml`.
 
 ## Change Log
 
