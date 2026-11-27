@@ -288,6 +288,121 @@ async fn reconciliation_cancel_letters_the_reversal_pair(pool: MySqlPool) {
 }
 
 // ===========================================================================
+// Story 53-6a (#1674) — la contre-passation datée de l'écriture d'origine
+// ===========================================================================
+
+/// Ce que la contre-passation de `entry` a écrit : `(id, date, exercice,
+/// libellé)`, et le détail de sa trace `journal_entry.reversed`.
+async fn inverse_de(
+    pool: &MySqlPool,
+    entry: i64,
+) -> ((i64, NaiveDate, i64, String), serde_json::Value) {
+    let inverse: (i64, NaiveDate, i64, String) = sqlx::query_as(
+        "SELECT id, entry_date, fiscal_year_id, description FROM journal_entries \
+         WHERE reverses_entry_id = ?",
+    )
+    .bind(entry)
+    .fetch_one(pool)
+    .await
+    .expect("une contre-passation");
+    let details: serde_json::Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'journal_entry.reversed' \
+         AND entity_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(entry)
+    .fetch_one(pool)
+    .await
+    .expect("trace journal_entry.reversed");
+    (inverse, details)
+}
+
+/// Le nombre d'écritures de l'exercice `fiscal_year_id`.
+async fn ecritures_de(pool: &MySqlPool, fiscal_year_id: i64) -> i64 {
+    compter(
+        pool,
+        "SELECT COUNT(*) FROM journal_entries WHERE fiscal_year_id = ?",
+        fiscal_year_id,
+    )
+    .await
+}
+
+/// AC-2 (D1) — **écriture seule, origine dans un exercice antérieur encore
+/// ouvert, jamais clôturé ; le jour dans l'exercice suivant** : l'inverse est
+/// datée de l'origine (3 juin 2019), dans 2019, sans suffixe d'exercice ; rien
+/// n'est écrit dans l'exercice du jour ; la trace porte `"dating":
+/// "originDate"`. Tue M1 (bras `Entry` passé au jour).
+#[sqlx::test(migrations = "./test-schema")]
+async fn s536a_ac2_l_inverse_d_une_ecriture_seule_est_datee_de_l_origine(pool: MySqlPool) {
+    let (seeded, fy_2019, entry, tx_id) = monter(&pool).await;
+    let du_jour = seeded.fiscal_year_id;
+    assert_ne!(crate::jour::aujourd_hui_test(), jour(2019, 6, 3));
+    let avant = ecritures_de(&pool, du_jour).await;
+    let numero: i64 = compter(
+        &pool,
+        "SELECT entry_number FROM journal_entries WHERE id = ?",
+        entry,
+    )
+    .await;
+
+    let done = reconciliation_cancel::cancel(
+        &pool,
+        seeded.company_id,
+        tx_id,
+        Acteur::utilisateur(seeded.admin_user_id),
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("dé-rapprochement");
+
+    let ((id, date, fy, libelle), details) = inverse_de(&pool, entry).await;
+    assert_eq!(done.reversal_journal_entry_id, Some(id));
+    assert_eq!((date, fy), (jour(2019, 6, 3), fy_2019));
+    assert_eq!(libelle, format!("Contre-passation écriture n° {numero}"));
+    assert_eq!(
+        ecritures_de(&pool, du_jour).await,
+        avant,
+        "aucune écriture dans l'exercice du jour"
+    );
+    assert_eq!(
+        details,
+        serde_json::json!({ "reversalJournalEntryId": id, "dating": "originDate" })
+    );
+}
+
+/// AC-3 — **exercice de l'origine clôturé puis rouvert**, le jour dans
+/// l'exercice suivant : comme AC-2 ; puis 2019 se clôture de nouveau, sans
+/// obstacle nouveau (l'écriture et son inverse s'annulent dans le même exercice).
+#[sqlx::test(migrations = "./test-schema")]
+async fn s536a_ac3_un_exercice_rouvert_recoit_l_inverse_et_se_recloture(pool: MySqlPool) {
+    let (seeded, fy_2019, entry, tx_id) = monter(&pool).await;
+    let (c, u) = (seeded.company_id, seeded.admin_user_id);
+    kesh_db::repositories::fiscal_years::close(&pool, u, c, fy_2019)
+        .await
+        .expect("clôture de 2019");
+    kesh_db::repositories::fiscal_years::reopen(&pool, u, c, fy_2019, "correction".into())
+        .await
+        .expect("réouverture de 2019");
+    let avant = ecritures_de(&pool, seeded.fiscal_year_id).await;
+
+    reconciliation_cancel::cancel(
+        &pool,
+        c,
+        tx_id,
+        Acteur::utilisateur(u),
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("dé-rapprochement dans l'exercice rouvert");
+
+    let ((_, date, fy, _), _) = inverse_de(&pool, entry).await;
+    assert_eq!((date, fy), (jour(2019, 6, 3), fy_2019));
+    assert_eq!(ecritures_de(&pool, seeded.fiscal_year_id).await, avant);
+    kesh_db::repositories::fiscal_years::close(&pool, u, c, fy_2019)
+        .await
+        .expect("2019 se clôture de nouveau");
+}
+
+// ===========================================================================
 // Story 30-1a (#686) — dé-rapprocher un règlement fournisseur
 // ===========================================================================
 
@@ -461,7 +576,7 @@ async fn unreconciling_a_supplier_settlement_undoes_it(pool: MySqlPool) {
     .unwrap();
     assert_eq!(facture, ("open".to_string(), None, None, None, None, None));
 
-    // La contre-passation, datée du jour et liée.
+    // La contre-passation, datée de l'écriture de règlement et liée.
     let (reverses, date): (Option<i64>, NaiveDate) =
         sqlx::query_as("SELECT reverses_entry_id, entry_date FROM journal_entries WHERE id = ?")
             .bind(done.reversal_journal_entry_id)
@@ -469,8 +584,15 @@ async fn unreconciling_a_supplier_settlement_undoes_it(pool: MySqlPool) {
             .await
             .unwrap();
     assert_eq!(reverses, Some(r.settlement_entry_id));
-    // Story 35-5a0 (D4, revue P2) : le jour que l'annulation a reçu.
-    assert_eq!(date, crate::jour::aujourd_hui_test());
+    // Story 53-6a (#1674, AC-6, D1) : la date de l'écriture du règlement (15 juin
+    // 2026), non le jour de l'annulation — sauf le jour où l'horloge de test
+    // serait arrêtée au 15 juin 2026, où le test passerait à vide.
+    assert_ne!(
+        crate::jour::aujourd_hui_test(),
+        jour(2026, 6, 15),
+        "le jour doit différer de l'origine"
+    );
+    assert_eq!(date, jour(2026, 6, 15));
 
     // Le lettrage : la pièce dissoute, le paiement lettré avec son miroir.
     let ligne = |entry: i64| {
