@@ -14,7 +14,7 @@
  * Pré-requis : MariaDB up + KESH_TEST_MODE=true (cf. docs/testing.md).
  */
 
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -159,6 +159,92 @@ test('rapprocher puis annuler le rapprochement depuis le détail de l’import',
 		expect(tx.status).toBe('pending');
 		expect(tx.matchedEntryId).toBeNull();
 	} finally {
+		await disposeContextSafe(ctx);
+	}
+});
+
+// ---------------------------------------------------------------------------
+// Story 53-6a (#1674, AC-15) — l'annulation se date de l'écriture du rapprochement
+// ---------------------------------------------------------------------------
+
+/** La date de l'écriture du rapprochement manuel : celle de la transaction de la fixture. */
+const ENTRY_DATE = '2026-05-15';
+
+function capturePath(testInfo: TestInfo, name: string): string {
+	const dossier = process.env.KESH_E2E_CAPTURES_DIR;
+	return dossier ? path.join(dossier, `${name}.png`) : testInfo.outputPath(`${name}.png`);
+}
+
+async function capture(page: Page, testInfo: TestInfo, name: string): Promise<void> {
+	await page.screenshot({ path: capturePath(testInfo, `53-6a-${name}`), fullPage: true });
+}
+
+test('53-6a — le dialogue dit la date de l’écriture et son exercice ; l’inverse en est datée', async ({
+	page,
+}, testInfo) => {
+	await login(page);
+	const { importId, txId } = await reconciledTransaction(page);
+	await page.goto(`/bank-import/${importId}`);
+	const row = page.locator(`[data-testid="detail-tx-row"][data-tx-id="${txId}"]`);
+	await row.getByTestId('detail-tx-cancel-reconciliation').click();
+	const dialog = page.getByTestId('reconciliation-cancel-dialog');
+	const texte = dialog.getByTestId('reconciliation-cancel-confirm-text');
+	await expect(texte).toContainText('datée du 15.05.2026');
+	await expect(texte).toContainText("dans l'exercice");
+	await expect(texte).not.toContainText("aujourd'hui");
+	await expect(dialog.getByTestId('reconciliation-cancel-vat')).toContainText('TVA comprise');
+	await capture(page, testInfo, 'confirmation-datee');
+
+	const reponse = page.waitForResponse(
+		(r) => r.url().endsWith(`/reconciliation/transactions/${txId}/cancel`) && r.ok(),
+	);
+	await dialog.getByTestId('reconciliation-cancel-submit').click();
+	const { reversalJournalEntryId } = (await (await reponse).json()) as {
+		reversalJournalEntryId: number;
+	};
+	await expect(dialog).toBeHidden();
+
+	// *Voir l'écriture* de l'inverse : datée du 15 mai, non du jour.
+	await page.goto(`/journal-entries/${reversalJournalEntryId}`);
+	await expect(page.locator('body')).toContainText('15.05.2026');
+	await capture(page, testInfo, 'inverse-datee');
+	const ctx = await authedApiContext(page);
+	try {
+		const inverse = (await (
+			await ctx.get(`/api/v1/journal-entries/${reversalJournalEntryId}`)
+		).json()) as { entryDate: string };
+		expect(inverse.entryDate).toBe(ENTRY_DATE);
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+});
+
+test('53-6a — une écriture sous le verrou de période : le motif, sans bouton de confirmation', async ({
+	page,
+}, testInfo) => {
+	await login(page);
+	const { importId, txId } = await reconciledTransaction(page);
+	const ctx = await authedApiContext(page);
+	try {
+		const lock = await ctx.post('/api/v1/companies/current/books-lock', {
+			data: { through: ENTRY_DATE },
+		});
+		expect(lock.ok(), `verrou : ${lock.status()} ${await lock.text()}`).toBeTruthy();
+
+		await page.goto(`/bank-import/${importId}`);
+		const row = page.locator(`[data-testid="detail-tx-row"][data-tx-id="${txId}"]`);
+		await row.getByTestId('detail-tx-cancel-reconciliation').click();
+		const dialog = page.getByTestId('reconciliation-cancel-dialog');
+		const motif = dialog.getByTestId('reconciliation-cancel-motif');
+		await expect(motif).toContainText('période verrouillée');
+		await expect(motif).toContainText('(15.05.2026)');
+		await expect(dialog.getByTestId('reconciliation-cancel-submit')).toHaveCount(0);
+		await capture(page, testInfo, 'motif-periode-verrouillee');
+	} finally {
+		// Un verrou laissé en place verrouillerait les specs suivantes.
+		await ctx.post('/api/v1/companies/current/books-lock/release', {
+			data: { through: null, motif: 'Fin du test E2E 53-6a' },
+		});
 		await disposeContextSafe(ctx);
 	}
 });
