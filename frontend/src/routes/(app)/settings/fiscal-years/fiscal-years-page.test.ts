@@ -169,6 +169,37 @@ describe('garde LIFO client', () => {
 		expect(btn2026.parentElement?.getAttribute('title')).toBeNull();
 	});
 
+	// #732 (point 4) — clos, OUVERT, clos : A est suivi d'un ouvert puis d'un clos ; la
+	// garde regarde le plus récent clos (C), pas l'exercice immédiatement suivant (B,
+	// ouvert, qui ne bloquerait rien). La mutation « ne regarder que le suivant » est déjà
+	// tuée par « trois clos » ; ce cas la tue aussi, sans prétendre à un trou neuf.
+	it('clos, ouvert, clos : l’infobulle de A nomme C ; B n’a pas de bouton ; C est rouvrable', async () => {
+		authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([
+			fy({ id: 1, name: 'Exercice 2024', startDate: '2024-01-01', endDate: '2024-12-31', status: 'Closed' }),
+			fy({ id: 2, name: 'Exercice 2025', startDate: '2025-01-01', endDate: '2025-12-31', status: 'Open' }),
+			fy({ id: 3, name: 'Exercice 2026', startDate: '2026-01-01', endDate: '2026-12-31', status: 'Closed' }),
+		]);
+
+		render(Page);
+
+		const btnA = (await screen.findByTestId('fiscal-year-reopen-1')) as HTMLButtonElement;
+		expect(btnA.disabled).toBe(true);
+		const titleA = btnA.getAttribute('title') ?? '';
+		const wrapA = btnA.parentElement?.getAttribute('title') ?? '';
+		expect(titleA).toContain('Exercice 2026');
+		expect(titleA).not.toContain('Exercice 2025');
+		expect(wrapA).toContain('Exercice 2026');
+		expect(wrapA).not.toContain('Exercice 2025');
+
+		expect(screen.queryByTestId('fiscal-year-reopen-2')).toBeNull();
+
+		const btnC = screen.getByTestId('fiscal-year-reopen-3') as HTMLButtonElement;
+		expect(btnC.disabled).toBe(false);
+		expect(btnC.getAttribute('title')).toBeNull();
+		expect(btnC.parentElement?.getAttribute('title')).toBeNull();
+	});
+
 	// Story 32-1a (#716, E2) — seul un postérieur CLOS bloque la réouverture : un
 	// postérieur ouvert n'est pas une garde. Sans ce cas, retirer le filtre sur le
 	// statut de `latestLaterClosed` ne rougissait aucun test (tous n'avaient que des clos).
