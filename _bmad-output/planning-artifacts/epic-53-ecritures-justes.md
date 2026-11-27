@@ -8,7 +8,8 @@ la release suivante).* Branche `epic/53-ecritures-justes`, partie de `main` au l
 
 Six défauts P1 qui faussent les livres : une écriture passée deux fois après une réponse perdue, une TVA contre-passée sur
 un autre compte que celui de la vente, une ouverture passée sur un compte de résultat, et un compte bancaire dont le lien
-au grand livre change sans qu'on le dise.
+au grand livre change sans qu'on le dise ; et, depuis le 2026-11-27, une annulation de rapprochement dont la contre-passation
+tombe dans un autre exercice que son écriture (#1674).
 
 ## Stories
 
@@ -16,12 +17,13 @@ au grand livre change sans qu'on le dise.
 |---|---|---|
 | 53-1a — La saisie ne passe pas deux fois | #1355 | **née du découpage de la 53-1 le 2026-11-25** (décision du Project Lead, signal de recyclage en validation P2) : après une réponse perdue, un second envoi d'une saisie manuelle identique est refusé (409 levable par confirmation, auditée) ; l'écran fige l'issue inconnue et fait vérifier avant de reprendre ; pose le motif commun (politique de doublon, erreur, module d'états). Aucun verrou neuf sur `journal_entries` : l'instantané naît après le verrou de l'exercice. |
 | 53-1b — La conversion ne passe pas deux fois | #1365 | **née du même découpage** : reprend le motif de la 53-1a pour la conversion de devises ; pré-verrou des exercices juste après la société. Dépend de la 53-1a (fusionnée d'abord). |
-| 53-2 — La TVA revient sur le compte de la vente | #525, #1198 | l'avoir (#525) et la correction de TVA d'un escompte ou d'une perte (#1198) contre-passent la TVA sur le compte de TVA due **de la vente**, non sur celui des réglages du moment. Probablement une migration (mémoriser le compte sur la facture, ou le relire de l'écriture de vente) : la fiche le dit ; une migration fait monter `b` et sort de préférence un vendredi. |
+| 53-2 — La TVA revient sur le compte de la vente | #525, #1198 (reclassées P2 le 2026-11-21, décision du Project Lead : conformité légale) | l'avoir (#525) et la correction de TVA d'un escompte ou d'une perte (#1198) contre-passent la TVA sur le compte de TVA due **de la vente**, non sur celui des réglages du moment. Probablement une migration (mémoriser le compte sur la facture, ou le relire de l'écriture de vente) : la fiche le dit ; une migration fait monter `b` et sort de préférence un vendredi. |
 | 53-3 — L'ouverture ne se passe pas sur un compte de résultat | #513 | le contrôle des types de comptes du bilan d'ouverture se fait dans la transaction qui écrit, sous verrou. |
 | ~~53-4 — L'assistant ne réécrit pas le compte bancaire~~ | #1004 | **sortie de l'Epic 53 le 2026-11-25** (décision du Project Lead) : la validation P2 de la fiche a établi au code qu'aucun compte principal ne peut exister avant l'étape 6 (`assert_onboarding_complete`, `bank_accounts.rs:358`) ; le défaut ne touche que la saisie de l'assistant, avant toute écriture comptable : #1004 reclassée P3. Fiche et validations conservées sur `story/53-4-assistant-compte-bancaire`, pour la liste d'attente. |
+| 53-6 — Annuler un rapprochement contre-passe dans l'exercice de l'écriture | #1674 | **ajoutée le 2026-11-27** (P1, CLO-2, correctif décidé par le Project Lead le 2026-11-26) : la contre-passation d'une annulation de rapprochement est datée de la date de l'écriture, dans son exercice ouvert (rouvert compris) ; exercice clos : refus ; période verrouillée : refus annoncé (proposé, Q2) ; cinq bras (écriture seule, règlement client, règlement fournisseur, groupes client et fournisseur, Wise groupé) ; détection en lecture des contre-passations déjà tombées dans un autre exercice, correction par l'utilisateur (manuel). Aucune migration. Fiche `53-6-annulation-rapprochement-exercice.md`, écrite contre `main` (v0.20.0) : la branche reprend `main` avant le développement. Questions Q1 à Q6 pour Guy. |
 | 53-solde — Story de solde | plafond fixé au lancement | dette des revues de l'epic seulement. |
 
-Cinq stories, story de solde comprise (53-1a, 53-1b, 53-2, 53-3, solde), depuis la sortie de la 53-4 et le découpage de la 53-1 (2026-11-25) : la borne de six tient.
+Six stories, story de solde comprise (53-1a, 53-1b, 53-2, 53-3, 53-6, solde 53-5), depuis la sortie de la 53-4, le découpage de la 53-1 (2026-11-25) et l'ajout de la 53-6 (2026-11-27) : la borne de six est atteinte, aucune story ne s'ajoute plus à l'epic.
 
 ## Fichiers et modules (probables, confirmés par les fiches)
 
@@ -31,8 +33,9 @@ Cinq stories, story de solde comprise (53-1a, 53-1b, 53-2, 53-3, solde), depuis 
 - 53-2 : `kesh-db/src/repositories/credit_notes.rs`, `invoice_settlements_write.rs` ; migration éventuelle.
 - 53-3 : `kesh-api/src/routes/opening_balances.rs` ; `kesh-db/src/repositories/journal_entries.rs` (`create_opening_entry`), `accounts.rs` (lecture des types), `fiscal_years.rs` (clé d'erreur) ; tests `kesh-db` et `kesh-api` (fiche 53-3, validation P1, V1-10).
 - ~~53-4~~ : sortie de l'epic (2026-11-25).
+- 53-6 : `kesh-db/src/repositories/journal_entries.rs` (`ReversalDating`, `reverse_in_tx_inner`), `reconciliation_cancel.rs`, `settlement_cancellation.rs`, `invoice_settlements_write.rs`, `supplier_invoices.rs`, `grouped_settlements.rs`, `errors.rs` ; `kesh-api/src/routes/reconciliation.rs`, `lib.rs`, `errors.rs` ; `kesh-i18n` (quatre locales) ; `frontend/src/lib/features/reconciliation/` (et le montage d'un panneau sur la page des imports) ; quatre modules, pas de découpage (fiche, § *Règle de splitting préventif*).
 
-Recoupements : `journal_entries.rs` entre la 53-1a/53-1b et la 53-3 (fonctions distinctes ; la seconde fusionnée reprend la première), avec l'Epic 51 (48-2) et l'Epic 47 d'un contributeur ; `onboarding.rs` avec l'Epic 50
+Recoupements : `journal_entries.rs` entre la 53-1a/53-1b, la 53-3 et la 53-6 (fonctions distinctes ; la seconde fusionnée reprend la première) ; `invoice_settlements_write.rs` entre la 53-2 et la 53-6 (fonctions distinctes) ; `reconciliation_cancel.rs` entre la 53-6 et l'Epic 39 (Wise, déjà dans `main`), avec l'Epic 51 (48-2) et l'Epic 47 d'un contributeur ; `onboarding.rs` avec l'Epic 50
 (aucun site commun connu).
 
 ## Dépendances
