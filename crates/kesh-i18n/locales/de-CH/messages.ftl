@@ -2228,7 +2228,7 @@ reports-filter-fiscal-year = Geschäftsjahr
 reports-filter-journal = Journal
 reports-button-generate = Erstellen
 
-reports-error-no-entries-in-period = Keine Buchungen in der gewählten Periode. Ändern Sie die Daten oder wählen Sie ein anderes Geschäftsjahr.
+reports-error-no-entries-in-period = Keine Buchungen in diesem Zeitraum.
 reports-error-period-out-of-fiscal-year = Die gewählte Periode überschreitet die Grenzen des Geschäftsjahres. Wählen Sie eine Periode zwischen { $fyStart } und { $fyEnd }.
 reports-error-no-fiscal-year-available = Kein Geschäftsjahr verfügbar. Erstellen Sie zuerst ein Geschäftsjahr.
 
@@ -2245,8 +2245,7 @@ reports-archived-label = archiviert
 
 # Berichte-Seite — chrome (3 — code review Pass 1 i18n leaks)
 reports-page-title = Buchhaltungsberichte
-reports-instruction-select-and-generate = Wählen Sie ein Geschäftsjahr aus und klicken Sie auf Generieren.
-reports-loading = Bericht wird generiert…
+reports-loading = Wird geladen…
 
 # Story 9-2a — Export PDF & CSV (10 Schlüssel)
 reports-export-pdf-button = PDF-Export
@@ -2277,7 +2276,6 @@ reports-project-return-total = Total
 reports-project-selector-label = Analytisches Konto
 reports-project-selector-placeholder = — Analytisches Konto wählen
 reports-aged-instruction = Altersstruktur per heute.
-reports-aged-instruction-generate = Klicken Sie auf Erstellen, um die Altersstruktur per heute anzuzeigen.
 reports-aged-as-of = Stand { $date }
 reports-aged-empty = Keine offenen Kundenforderungen.
 reports-aged-col-contact = Kunde
@@ -3619,7 +3617,7 @@ reports-fx-line = { $amount } × { $rate }
 reports-fx-totals = Soll { $debit } · Haben { $credit }
 reports-fx-trial-balance = Eröffnung { $opening } · Soll { $debit } · Haben { $credit } · Abschluss { $closing }
 reports-ledger-include-zero = Konten ohne Bewegung einschliessen
-reports-ledger-instruction = Wählen Sie einen Zeitraum und klicken Sie auf Erstellen. Das Konto ist optional.
+reports-ledger-instruction = Wählen Sie einen Zeitraum. Für alle Konten klicken Sie auf Erstellen; ein gewähltes Konto wird von selbst angezeigt.
 
 # --- Journal d'audit — route, vocabulaire et export (Story 25-1c-a) ---
 # ----------------------------------------------------------------------
@@ -4514,6 +4512,32 @@ stripe-gap-already-linked = Verkauf bereits einer anderen Belastung zugeordnet
 stripe-gap-payout-entry = Buchung der Auszahlung
 stripe-gap-receipt-link = Den Eingang im Abgleich zuordnen
 stripe-gap-receipt-import = Importieren Sie den Kontoauszug des Zielkontos (Wise).
+
+## Story 55-1a (Epic 55, D15, D16) — Geschäftsjahresauswahl der Berichte, Kopfzeile des Zeitraums
+reports-nav-fy-multiple = Mehrere
+reports-nav-fy-outside = Ausserhalb
+reports-nav-fy-whole = Ganzes Geschäftsjahr
+reports-nav-needs-one-fy = Dieser Bericht umfasst nur ein Geschäftsjahr: Wählen Sie zwei Daten desselben Geschäftsjahres.
+reports-nav-period-invalid = Das Anfangsdatum muss vor dem Enddatum liegen oder ihm entsprechen.
+reports-nav-heading-fy = Geschäftsjahr { $years } — vom { $from } bis { $to }
+reports-nav-heading-named = { $name } — vom { $from } bis { $to }
+reports-nav-heading-part = Vom { $from } bis { $to } (Teil des Geschäftsjahres { $fiscalYear })
+reports-nav-heading-several = Vom { $from } bis { $to } (Geschäftsjahre { $fiscalYears })
+reports-nav-heading-outside = Vom { $from } bis { $to } (ausserhalb der Geschäftsjahre)
+# Story 55-2 (AC-6) — la ligne des comptes de TVA au grand livre, après le décompte.
+reports-nav-vat-accounts = Konten im Hauptbuch:
+# Story 55-3b (Epic 55, D9 à D12) — die Belege einer Buchung, aus dem Journal und dem Hauptbuch.
+reports-nav-documents-title = Belege der Buchung Nr. { $number }
+reports-nav-documents-kind-invoice = Rechnung
+reports-nav-documents-kind-credit-note = Gutschrift
+reports-nav-documents-kind-supplier-document = Lieferantendokument
+reports-nav-documents-list = Belege der Buchung
+reports-nav-documents-loading = Belege werden geladen…
+reports-nav-documents-none = Diese Buchung hat keinen Beleg mehr.
+reports-nav-documents-close = Schliessen
+reports-nav-documents-empty = Das erhaltene Dokument ist leer.
+reports-nav-documents-not-issued = PDF noch nicht ausgestellt: Diese Rechnung hat noch kein festgeschriebenes PDF; der nächste Download oder der nächste Versand per E-Mail schreibt es fest.
+reports-nav-ledger-column-documents = Belege
 
 # Story 39-11d — écrans Wise : réglages du compte, page Wise (import des relevés et du zip), libellés
 wise-csv-line-field-count = Zellenzahl weicht von der Kopfzeile ab

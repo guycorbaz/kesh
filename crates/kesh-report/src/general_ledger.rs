@@ -270,6 +270,12 @@ pub struct LedgerLine {
     /// Solde progressif en devise, mêmes remises à zéro que le CHF.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub running_balance_currency: Option<Decimal>,
+    /// L'écriture a au moins un justificatif (Story 55-3a, [`crate::documents`])
+    /// — omis quand il est faux (JSON identique à celui d'avant pour ces
+    /// lignes). Écran seulement : PDF et CSV inchangés ; l'outil MCP ne le
+    /// recopie pas.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub has_documents: bool,
 }
 
 impl LedgerLine {
@@ -820,6 +826,12 @@ pub async fn generate(
     let exercice_initial = fiscal_year_containing(pool, company_id, period.from).await?;
     let exercice_final = fiscal_year_current_at(pool, company_id, period.to).await?;
 
+    // Story 55-3a — les écritures à justificatif de la PÉRIODE (C-55-3a-4 :
+    // quelle que soit la page), lues UNE fois, avant la boucle des comptes
+    // (AC-5).
+    let avec_justificatifs =
+        crate::documents::entries_with_documents(pool, company_id, period.from, period.to).await?;
+
     let mut sections = Vec::new();
 
     for acc in accounts {
@@ -919,6 +931,7 @@ pub async fn generate(
                 lettering_code: r
                     .lettering_key
                     .map(kesh_db::repositories::letterings::code_of),
+                has_documents: avec_justificatifs.contains(&r.entry_id),
             });
         }
 
@@ -1038,6 +1051,7 @@ mod tests {
             exchange_rate: None,
             rate_source: None,
             running_balance_currency: None,
+            has_documents: false,
         }
     }
 

@@ -513,6 +513,27 @@ pub async fn get_journal_entry(
     }))
 }
 
+/// GET /api/v1/journal-entries/{id}/documents — les justificatifs d'une
+/// écriture (Story 55-3a, #1607) : PDF de facture, d'avoir, document de
+/// facture fournisseur, avec l'état du PDF d'une facture (`pdfStatus`).
+///
+/// Tout rôle authentifié, clés d'API en lecture comprises, comme le détail ;
+/// `404` pour une écriture inconnue ou d'une autre société. Lecture seule : rien
+/// n'est figé (D12). Service : `services::ecritures::justificatifs`.
+pub async fn get_journal_entry_documents(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+) -> Result<Json<Vec<kesh_report::EntryDocument>>, AppError> {
+    let documents = ecritures::justificatifs(
+        &ContexteAcces::depuis_api(&current_user),
+        &state.lecture(),
+        id,
+    )
+    .await?;
+    Ok(Json(documents))
+}
+
 /// POST /api/v1/journal-entries/{id}/reverse — contre-passe une écriture.
 ///
 /// ⛔ **Crée une écriture ; de l'origine, ne touche qu'à la marque de lettrage.**

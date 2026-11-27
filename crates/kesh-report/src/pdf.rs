@@ -2854,6 +2854,7 @@ mod tests {
             } else {
                 vec![JournalEntryRow {
                     entry_id: 1,
+                    has_documents: false,
                     entry_number: 1,
                     entry_date: NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
                     description: "Test".into(),
@@ -3496,6 +3497,7 @@ mod tests {
             let entries: Vec<JournalEntryRow> = (0..per_section)
                 .map(|i| JournalEntryRow {
                     entry_id: (idx * per_section + i) as i64,
+                    has_documents: false,
                     entry_number: i as i64,
                     entry_date: NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
                     description: format!("Écriture #{i}"),
@@ -3574,6 +3576,7 @@ mod tests {
             exchange_rate: None,
             rate_source: None,
             running_balance_currency: None,
+            has_documents: false,
         }
     }
 
