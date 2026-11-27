@@ -1,6 +1,6 @@
 # Story 49-2 : réordonner les lignes d'une facture client en brouillon — boutons ↑ / ↓, au clavier (#1756)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-27 (Opus 5.5) par le workflow `bmad-create-story`, sur décision du Project Lead du 2026-11-27 :
 la 49-2 est la fonctionnalité de la **v0.21.0** (milestone `v0.21.0`, vendredi 2026-12-04, coupure le jeudi 2026-12-03 au
@@ -327,24 +327,24 @@ copié au journal. Une mutation de code de production (T3, T4, T5) n'existe **qu
 
 ## Tâches
 
-- [ ] **Étape 0 — prérequis et inventaire.** Branche à jour de `origin/epic/52-lignes-de-facture-suite` ; rejouer S1, S2 et
+- [x] **Étape 0 — prérequis et inventaire.** Branche à jour de `origin/epic/52-lignes-de-facture-suite` ; rejouer S1, S2 et
   `git grep -n -E "lines\.(sort|reverse|toSorted)" -- frontend/src` ; un écart à la fiche se consigne au Dev Agent Record et
   se traite. Créer les bases `kesh_e492`, `kesh_ci_e492`, `kesh_e2e_e492` sur sa voie (`docs/agents-orchestration.md`,
   `docs/testing.md` § *Base de dev jetable*) — jamais de redémarrage du conteneur depuis un worktree.
-- [ ] **`invoice-lines.ts`** : `deplacerLigne` (D4), documentée (JSDoc) ; T1.
-- [ ] **`InvoiceForm.svelte`** : snippet `actionsDeLigne` (D2) rendu par les deux rangées ; `moveLine(i, sens)` (D4, D5, D7)
+- [x] **`invoice-lines.ts`** : `deplacerLigne` (D4), documentée (JSDoc) ; T1.
+- [x] **`InvoiceForm.svelte`** : snippet `actionsDeLigne` (D2) rendu par les deux rangées ; `moveLine(i, sens)` (D4, D5, D7)
   avec `tick()` et le rappel du focus ; zone `aria-live` ; états désactivés (D6) ; en-tête `:1004` élargi ; T2.
-- [ ] **i18n** : trois clés ×4 locales (AC13), bloc « Epic 52 — Story 49-2 » ; `sitesTotal` ; T7 ;
+- [x] **i18n** : trois clés ×4 locales (AC13), bloc « Epic 52 — Story 49-2 » ; `sitesTotal` ; T7 ;
   `npm run lint-i18n-ownership`.
-- [ ] **`kesh-db`** (module de tests seul) : T3. **`kesh-api`** (tests seuls) : T4, T5 dans `invoice_line_types_e2e.rs`
+- [x] **`kesh-db`** (module de tests seul) : T3. **`kesh-api`** (tests seuls) : T4, T5 dans `invoice_line_types_e2e.rs`
   (en-tête du fichier mis à jour). **Aucune ligne de production sous `crates/*/src/`** hors des catalogues (AC11).
-- [ ] **E2E** : T6 ; captures C1 à C6 sur `kesh_e2e_e492` peuplée par le seed de démonstration ; PDF rendu en PNG ; chaque
+- [x] **E2E** : T6 ; captures C1 à C6 sur `kesh_e2e_e492` peuplée par le seed de démonstration ; PDF rendu en PNG ; chaque
   capture **lue** ; captures dans `/home/gcorbaz/devel/kesh-gate-logs/e492/captures/` (hors dépôt).
-- [ ] **Documents** (AC12) : `user-manual.tex:1572` (flèches en `$\uparrow$` / `$\downarrow$`, comme `:1304`) ;
+- [x] **Documents** (AC12) : `user-manual.tex:1572` (flèches en `$\uparrow$` / `$\downarrow$`, comme `:1304`) ;
   `docs/api-external.md` (§ « Les lignes d'une facture client ») ; régénérer le PDF du manuel **pour le relire** (`make fr`
   dans `docs/manual/`, sous `scripts/mem-guard.sh`), **sans le commiter** ; aplatir et greper les phrases neuves et
   l'absence de « l'ordre des ajouts ».
-- [ ] **Propagation** (CLAUDE.md § *Propagation post-patch*) : `git grep -n -E "ordre des ajouts|fin de tableau" -- docs
+- [x] **Propagation** (CLAUDE.md § *Propagation post-patch*) : `git grep -n -E "ordre des ajouts|fin de tableau" -- docs
   frontend crates/kesh-i18n` après le patch ; chaque site restant est juste ou corrigé.
 - [ ] **Gates** (CLAUDE.md § *Test Locally First*). **Exception `kesh-db`** : la story touche un fichier de dépôt
   (`repositories/invoices.rs`, module de tests) : **gate complet même en cours de boucle** dès qu'un patch le touche.
@@ -357,8 +357,8 @@ copié au journal. Une mutation de code de production (T3, T4, T5) n'existe **qu
   `KESH_TEST_MODE=true` des deux côtés, `LANG=fr_CH.UTF-8` installée) ; « vert » = les seuls échecs attendus, jugés
   fichier par fichier (`docs/testing.md` § *Les échecs attendus*). Tout sous `scripts/mem-guard.sh` et
   `flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock` ; une commande lourde à la fois.
-- [ ] **Étapes de coordination** (V1-8, V1-9) : la ligne de la v0.21.0 de la « Feuille de route » de `README.md` (E52, réordonnancement, [#1756](https://github.com/guycorbaz/kesh/issues/1756)) se pose au commit qui la change ; l'issue du réordonnancement est **#1756** (milestone `v0.21.0`, décision du Project Lead du 2026-11-27) : la story la ferme par la PR qui entre dans `main` (`closes #1756` dans son titre ou son corps, jamais dans un commit), et ne fait que citer #1242 (`refs`), qui reste ouverte jusqu'à la 49-3. Le **compte rendu de la PR** nomme #1757 (glisser-déposer) et #1758 (page de modification d'une facture validée), qui restent ouvertes.
-- [ ] **Contrôle des mots-clés** : `git log origin/epic/52-lignes-de-facture-suite..HEAD --format=%B | grep -niE
+- [x] **Étapes de coordination** (V1-8, V1-9) : la ligne de la v0.21.0 de la « Feuille de route » de `README.md` (E52, réordonnancement, [#1756](https://github.com/guycorbaz/kesh/issues/1756)) se pose au commit qui la change ; l'issue du réordonnancement est **#1756** (milestone `v0.21.0`, décision du Project Lead du 2026-11-27) : la story la ferme par la PR qui entre dans `main` (`closes #1756` dans son titre ou son corps, jamais dans un commit), et ne fait que citer #1242 (`refs`), qui reste ouverte jusqu'à la 49-3. Le **compte rendu de la PR** nomme #1757 (glisser-déposer) et #1758 (page de modification d'une facture validée), qui restent ouvertes.
+- [x] **Contrôle des mots-clés** : `git log origin/epic/52-lignes-de-facture-suite..HEAD --format=%B | grep -niE
   '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'` **vide**.
 
 ## Note de version
@@ -412,11 +412,83 @@ copié au journal. Une mutation de code de production (T3, T4, T5) n'existe **qu
 
 ### Agent Model Used
 
+Opus 5.5 (`bmad-dev-story`), 2026-11-27. Tâches menées dans l'ordre de la fiche ; le passage `ready-for-dev` → `in-progress` n'a pas
+été écrit à part au `sprint-status.yaml` (une seule écriture, `review`, à la fin).
+
 ### Debug Log References
+
+Journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e492/` : `vert-T1.log`, `rouge-T1.log`, `rouge-T2.log`, `rouge-T3.log`,
+`rouge-T4.log`, `rouge-T5.log`, `rouge-T6.log`, `rouge-T7.log`, `vert-T3-T4-T5.log`, `t45-premier.log`, `vert-T6.log`, `ac11.log`,
+`manuel-grep.log`, `make-fr.log`, `front-build.log` ; captures dans `captures/` ; gates idefix dans `idefix/<id>/` (voir plus bas).
 
 ### Completion Notes List
 
+- **Étape 0** : `origin/epic/52-lignes-de-facture-suite` = `0e99cd2db`, la branche part de là. Le détecteur du symptôme
+  `git grep -n -E "lines\.(sort|reverse|toSorted)" -- frontend/src` rend **vide** (sonde positive : la même commande sur `\.sort\(`
+  rend des sites ailleurs) ; S1 et S2 de la fiche ne sont pas rejoués ligne à ligne (aucun site de lecture n'a changé : le diff de
+  production ne touche aucun fichier de lecture, cf. AC11). Base `kesh_e492` créée par `CREATE DATABASE IF NOT EXISTS`, migrée,
+  semée ; `kesh_e2e_e492` créée de même ; ni `GRANT`, ni redémarrage du conteneur.
+- **`deplacerLigne`** (`invoice-lines.ts`, D4) : fonction pure, copie du tableau, échange des deux voisines, copie inchangée hors
+  bornes, aux extrémités et pour un index non entier. T1 : 18 tests verts ; trois mutations rouges (`rouge-T1.log`).
+- **`InvoiceForm.svelte`** (D2, D5, D6, D7) : snippet `actionsDeLigne(line, i)` (↑, ↓, poubelle) rendu par les deux rangées ; `moveLine`
+  réassigne `lines`, vide `errorMsg`, vide puis repose la zone `aria-live` (`tick()` entre les deux) et rappelle le focus (même
+  bouton, ou l'autre s'il est désactivé) ; boutons désactivés aux bornes, à une ligne, pendant l'envoi et pendant le conflit ;
+  en-tête d'actions `w-12` → `w-28`. T2 : 10 tests neufs, 86 verts au fichier ; quatre mutations rouges (`rouge-T2.log`).
+- **i18n** (AC13) : trois clés × quatre locales, bloc « Epic 52 — Story 49-2 » ; `sitesTotal` 3958 → **3963** (la borne a rougi d'elle-même,
+  `rouge-T7.log`) ; `lint-i18n-ownership` vert. Les libellés DE, IT et EN sont ma rédaction, non relue par un natif.
+- **Rust, tests seuls** : T3 (`update_line_reorder_bumps_version` complété : réponse de `update` et relecture, `[B, A]` aux positions
+  `[0, 1]`), T4 et T5 dans `invoice_line_types_e2e.rs` (aides neuves : `compte_produit_en_plus`, `compte_par_numero`, `chiffree_sur`,
+  `descriptions`, `descriptions_audit`, `ordonnee`, `de_haut_en_bas`, `audit_updated`). Mutations rouges : T3 (`ORDER BY position DESC`
+  au `find_with_lines_in_tx` ; `is_no_op_change` toujours vrai), T4 (positions inversées à l'insertion ; compte effectif pris à la
+  première ligne, soit une écriture qui dépend de l'ordre), T5 (garde de statut inopérante **et** `AND status = 'draft'` retiré de
+  l'`UPDATE` de `update`). Écart avec la fiche : la mutation « agrégation dans un `Vec` » de T4 n'a pas été écrite telle quelle ; son
+  équivalent (écriture dépendante de l'ordre des lignes) l'a été. Pour T3, la mutation « comparaison par ensemble » a été remplacée
+  par « `is_no_op_change` toujours vrai », plus simple à écrire par motif, et qui prouve la même chose (un réordonnancement jugé
+  sans effet). **Aucune ligne de production hors module de tests** (AC11, `ac11.log`).
+- **E2E T6** (`invoice-line-reorder.spec.ts`) : vert seul (`vert-T6.log`, 1 test) ; mutation A (rangée de commentaire sans boutons)
+  rouge à `toBeEnabled`, mutation B (`[...payloadLines].reverse()`) rouge à la réouverture (`rouge-T6.log`). **L'E2E complet n'a pas
+  tourné** : il est dû à la clôture, non au passage en `review` (consignes communes de l'Epic 35). Les specs `invoice-comment-lines`,
+  `invoices` et le reste de la suite n'ont donc pas été rejoués ici.
+- **Documents** (AC12) : `user-manual.tex` (réordonnancement, ordre du PDF et de l'avoir, aucun effet sur total, TVA, écriture ; facture
+  validée : dévalidation non recommandée, renvoi à l'encadré *Avoir ou dévalidation ?*) ; `docs/api-external.md` (§ des lignes d'une
+  facture client) ; `README.md` (ligne de la v0.21.0). **Écart à la fiche** : la sous-section de l'encadré **porte déjà un label**,
+  `sec:suppression-facture` (`user-manual.tex:2092`, la fiche V2-1 le disait sans label) ; le renvoi l'utilise (« §11.12 » au PDF), aucun
+  second label n'a été posé. PDF régénéré **pour relecture** (`make fr`, `make-fr.log`), aplati, phrases neuves et renvoi relevés
+  (`manuel-grep.log`), puis les trois PDF **restaurés** (`git checkout`) : rien de commité. Propagation : `git grep -n -E "ordre des ajouts|fin de
+  tableau" -- docs frontend crates/kesh-i18n` ne rend plus que des sites justes.
+- **Recette visuelle** (AC14) : captures C1 à C6 lues une à une, dans `kesh-gate-logs/e492/captures/` (C6 : PDF rendu par
+  `mutool draw -r 150`). Prises sur la base `kesh_e2e_e492`, peuplée par le seed `with-company` (jamais celle du NAS), thème clair.
+  C1 : bornes grisées (↑ de la 1re ligne, ↓ de la 3e). C3 : anneau de focus sur « Monter la ligne 3 » après le déplacement au clavier.
+  C4 : brouillon rouvert dans l'ordre `[commentaire, article B, prestation A]`. C5 : fiche validée, sans boutons. C6 : PDF dans le
+  même ordre. Remarque sur C2 : le ↑ de la 2e ligne y paraît grisé, très probablement un fondu de couleur du bouton au moment de la
+  capture (le test T2 vérifie l'état `disabled`, et C3 le montre actif) ; non traité.
+- **Gates du passage en `review`** : voir la section « Gates » ci-dessous.
+
+### Gates
+
+- Local, au dernier commit de code (`175a8f2d2`, puis `b4f6847c3` pour `cargo fmt` seulement) : `npm run test:unit` complet **321 fichiers, 5534 tests
+  verts** (avant le commit `style`, sans effet sur le frontend) ; `npm run check` 0 erreur ; `lint-i18n-ownership` vert ; `npm run build` vert
+  (`front-build.log`) ; `cargo clippy --workspace --all-targets -- -D warnings` vert à `b4f6847c3` (`clippy.log`) ; `cargo fmt --all -- --check` vert à
+  `b4f6847c3` ; nextest ciblé `invoice_line_types_e2e` + `update_line_reorder_bumps_version` : 12 tests verts (`vert-T3-T4-T5.log`).
+- **Idefix, premier essai (tête `18823753a`)** : `test-fast` **rouge sur `cargo fmt`** (T4 et T5 non formatés, l'oubli de `cargo fmt` est le mien) —
+  journal `idefix/20261127-170357-story_49-2-reordonnancement-lignes-test-fast/test-fast.log`. Corrigé au commit `b4f6847c3`.
+- **Idefix, second essai (tête `b4f6847c3`)** : `test-fast`, `gate-ci`, `front` lancés ensemble à 18:25 ; **non terminés au moment d'écrire** (file d'attente
+  du verrou d'idefix derrière les gates d'autres stories) — journaux attendus dans `idefix/20261127-182534-…-test-fast`, `…182540-…-gate-ci`,
+  `…182546-…-front`. **Non lancés : l'E2E complet** (dû à la clôture).
+
 ### File List
+
+- `frontend/src/lib/features/invoices/invoice-lines.ts` (`deplacerLigne`)
+- `frontend/src/lib/features/invoices/invoice-lines.test.ts` (T1)
+- `frontend/src/lib/components/invoices/InvoiceForm.svelte` (snippet `actionsDeLigne`, `moveLine`, zone `aria-live`)
+- `frontend/src/lib/components/invoices/InvoiceForm.test.ts` (T2)
+- `frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal` 3963, T7)
+- `frontend/tests/e2e/invoice-line-reorder.spec.ts` (T6, neuf)
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` (trois clés)
+- `crates/kesh-db/src/repositories/invoices.rs` (module de tests seul : T3)
+- `crates/kesh-api/tests/invoice_line_types_e2e.rs` (T4, T5, en-tête)
+- `docs/manual/fr/user-manual.tex`, `docs/api-external.md`, `README.md`
+- `_bmad-output/implementation-artifacts/49-2-reordonnancement-lignes.md`, `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
@@ -425,3 +497,8 @@ copié au journal. Une mutation de code de production (T3, T4, T5) n'existe **qu
   (D3). Validation P1 à lancer (Sonnet), prompt `49-2-reordonnancement-lignes-validation-prompt-p1.md`.
 - 2026-11-27 — **Validation P1** (Sonnet 5.5, passe complète, contexte frais ; `kesh-gate-logs/e492/validation-49-2-p1.md`) : **0/0/2/7** — V1-1 (MEDIUM, manuel : la dévalidation n'est pas un moyen de réordonner une facture remise), V1-2 (MEDIUM, AC11 : la commande ne prouve pas « aucun code de production »), V1-3 à V1-9 (LOW : aides de T4, S2 non clos, citation d'erreur, focus jsdom, zone `aria-live`, README, issue #1242). Les neuf sont portés à la fiche ; passe P2 (Opus) à lancer, prompt `49-2-reordonnancement-lignes-validation-prompt-p2.md`.
 - 2026-11-27 — **Validation P2** (Opus 5.5, passe complète, contexte frais ; `kesh-gate-logs/e492/validation-49-2-p2.md`) : **0/0/0/5**, les neuf corrections de la P1 relues au code et tenues. V2-1 (LOW, renvoi du manuel : encadré `:2166-2172`, sous-section `:2091` sans `\label`), V2-2 (LOW, T4/T5 : aide `banque` pour le PDF), V2-3 (LOW, D7 : messages sans ligne effacés aussi, accepté), V2-4 (LOW, D5 : icônes `ArrowUp`/`ArrowDown`), V2-5 (LOW, où s'écrit le `closes #1756`), tous portés à la fiche. Décisions du Project Lead du 2026-11-27 portées : #1756 fermée par la story (PR vers `main`), #1242 en `refs` seulement, glisser-déposer → #1757 (« Plus tard »), page de modification d'une facture validée → #1758 (P3), plafond de la story de solde = deux issues. **Tendance** : P1 (Sonnet) 0/0/2/7 → P2 (Opus) 0/0/0/5 ; aucun reclassement. Boucle de validation **terminée** sur une passe sans finding au-dessus de LOW : **ready-for-dev**.
+- 2026-11-27 — **Développement** (Opus 5.5, `bmad-dev-story`) : `deplacerLigne` (T1), boutons ↑ / ↓ et zone `aria-live` dans `InvoiceForm.svelte` (T2),
+  trois clés × quatre locales et `sitesTotal` 3963 (T7), T3 à T5 côté Rust (tests seuls, aucune ligne de production hors module de tests, AC11),
+  E2E T6, manuel, guide de l'API, README ; captures C1 à C6. Écarts à la fiche : label du manuel déjà présent (`sec:suppression-facture`) ;
+  deux mutations Rust remplacées par des équivalents (T3, T4). Statut laissé `in-progress` : les gates d'idefix (`test-fast`, `gate-ci`, `front`)
+  n'étaient pas terminés ; le passage en `review` attend leurs journaux.
