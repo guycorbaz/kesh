@@ -1,6 +1,6 @@
 # Story 64-1 : Corrections de la v0.20.1 — taux de TVA, page de modification d'une facture, mode d'interface (#1178, #1758, #1712)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Fiche écrite par bmad-create-story le 2026-11-27 (Sonnet 5.5). Validation P1 (Opus) faite et remédiée le 2026-11-27 (0 CRITICAL, 0 HIGH, 6 MEDIUM, 10 LOW) ; P2 (Sonnet) faite et remédiée le 2026-11-27 (0/0/2/7) ; #1178 réduite au bug signalé par décision du Project Lead du 2026-11-27 (le reste à #1763) ; P3 (Opus) faite le 2026-11-27 (0/0/0/4, LOW corrigés) : statut `ready-for-dev` confirmé. -->
 
@@ -105,7 +105,37 @@ Joindre au Dev Agent Record et au prompt de la revue de code : (1) *Paramètres 
 
 ## Dev Agent Record / Change Log
 
-*(à remplir au développement : captures, gates, passes de validation et de revue, modèles employés ; décomptes recomptés depuis la source avec leur périmètre.)*
+### Dev Agent Record — développement (Opus 5.5), 2026-11-27
+
+**Étape 0** : `origin/main` (`b41d045aa`) repris dans la branche (fusion `e1ca14e76`, sans conflit). Lignes relues contre ce `main` : `lib.rs` route `profile/mode` (`:1380`), `sitesTotal` 3965 à `main` (garde : « expected 3978 to be 3965 » après les ajouts de la story : +13), `user-manual.tex:155`/`:256` et `admin-manual.tex` (tableau des rôles) inchangés, PDF aplatis relus (mêmes deux phrases que le `.tex`).
+
+**Commits** (tous poussés sur `story/64-1-corrections-0201`) : `a7d757794` tests rouges ; `a65e1e69e` frontend + i18n + `sitesTotal` ; `fb13c36a7` route `admin_routes`, `admin_pat_denied_e2e`, commentaire, manuels, guide, trois specs E2E ; `46c15fd6c` remédiation du gate `front` d'idefix (voir plus bas).
+
+**Choix** : D3, variante *avis en place* (non la redirection de la page fournisseur) : l'issue demande « message clair et lien vers la facture ». Le validateur de D2 vit dans `lib/features/vat-rates/vat-rates.validate.ts` (`decimalOf` — nommée d'abord `rateText`, renommée parce que la garde `i18n-libelle-en-dur` relève toute fonction dont le nom finit par `Text` : le littéral `'0'` y était un « libellé en dur » ; `validateRateInput`, `validateDateInput`). Une doublure `invoice-form.stub.svelte` sert au test de la page de modification (SvelteKit réserve `+`, le formulaire réel exige dix mocks d'API).
+
+**Rouge avant vert** : vitest (taux : 16 rouges sur 19 ; page `edit` : 3 rouges sur 6) et Rust (`profile_e2e` : 2 rouges, « Comptable → 403 left: 204 »), exécutés sur le code non corrigé ; puis verts.
+
+**Critères** : AC1, AC2 (`vat-rates-page.test.ts`, createVatRate reçoit `"8.1"`) ; AC3 (cinq cas de refus à la création et au changement, ni `updateVatRate` ni `createVatRate` ; échec après clôture avec `ApiError` et erreur non typée ; échec du `PUT` sans « clôturé ») ; AC4, AC5, AC5-bis (`invoice-edit-page.test.ts`) ; AC6 (`profile_e2e` : Comptable et Consultation `403 FORBIDDEN`, clé d'API d'un Admin `403 API_KEY_ADMIN_FORBIDDEN`, `ui_mode`, `version` et audit intacts ; Admin `204` et trace inchangés par les tests existants ; sans session `401` par le test existant) ; AC7 (spec `user-menu-mode.spec.ts`, E2E **non encore rejouée**, voir Gates) ; AC8 (manuels `user-manual.tex` ×2, `admin-manual.tex`, `docs/api-external.md` : liste des opérations de l'interface et ⚠️ v0.20.1 ; sources françaises seules) ; AC9 (notes de la fiche, inchangées).
+
+**Mutations** (restauration par copie du fichier sauvegardé puis `touch`, jamais `git checkout` ; journaux `$GATE_LOGS/e64/mutations-front.md`, `rust-mutation-route.log`) — chacune rougit un test nommé : conversion retirée (`.trim()` direct) à la création (1 rouge) et au changement (2) ; validateur après `updateVatRate` (6) ; sans contrôle des décimales (4), des bornes (7), du champ vide (7) ; drapeau « clos » retiré (2) ; garde de statut supprimée (2) ; garde de rôle supprimée (1) ; route remise dans `authenticated_routes` (4 : `block_declares_exactly_the_listed_couples`, `every_admin_couple_denies_a_read_write_pat`, les deux tests de `profile_e2e`). **Non jouée** : retirer le `{#if isAdmin}` (seule l'E2E `user-menu-mode.spec.ts` le voit).
+
+**Gates**. Station : vitest ciblé (taux, page `edit`, `i18n-keys`, gardes de `lib/shared`) vert ; `npm run check` 0 erreur ; `lint-i18n-ownership` PASS ; `cargo fmt --check` vert ; Rust ciblé `binary(profile_e2e) | binary(admin_pat_denied_e2e) | binary(rbac_e2e) | binary(audit_route_registry)` : 50 passés (`$GATE_LOGS/e64/rust-cible-1.log`, base `kesh_e641`, commit `fb13c36a7`). idefix, `tout` sur `fb13c36a7` (`$GATE_LOGS/idefix/20261127-173227-story_64-1-corrections-0201-tout/`) : `test-fast` code 0, 6990 passés, 19 ignorés ; `gate-ci` code 0 — **ces deux résultats Rust sont SUSPECTS** (avis de l'orchestrateur du 2026-11-27 : cible cargo `~/cible` partagée entre worktrees avant la correction du script d'idefix ; tout run Rust d'idefix antérieur est à rejouer par l'orchestrateur, sur la station ou sur idefix corrigé) : **le passage en `review` ne s'appuie pas dessus**, seule la ligne « station » (Rust ciblé, 50 passés) vaut pour le Rust, et le gate Rust complet reste à jouer ; `front` **rouge** (5 tests, trois gardes que la story avait touchées : sélecteur E2E figé sur « Se déconnecter », littéral `'0'` de `rateText`, date du jour non zurichoise dans la spec — le total de candidats 172 contre 171 et la ventilation en découlaient), l'E2E n'a pas tourné (le gate s'arrête au `front`). Remédiation `46c15fd6c` ; vitest des gardes et de la page rejoué vert à la station. `front` rejoué sur idefix sur `46c15fd6c` (`$GATE_LOGS/idefix/20261127-205307-story_64-1-corrections-0201-front/`, non concerné par l'avis) : code 0, 331 fichiers, 5817 tests passés, `svelte-check` 0 erreur. `e2e` lancé sur idefix sur `46c15fd6c` (`$GATE_LOGS/idefix/20261127-210542-story_64-1-corrections-0201-e2e/`, non concerné par l'avis) : résultat en fin de section.
+
+**Captures** (thème clair, base de démonstration `kesh_e641`, backend `target/debug/kesh-api` sur le port 3641, `$GATE_LOGS/e64/captures/`) : `1-tva-formulaire-rempli.png`, `2-tva-liste-apres-creation-et-toast.png` (taux 8.10 créé, toast « Taux TVA créé. »), `3-tva-changement-refus-avant-envoi.png` (150 refusé avant envoi), `4-facture-brouillon-formulaire.png`, `5-facture-validee-avis-et-lien.png`, `6-facture-consultation-avis-de-role.png`, `7-menu-admin-avec-mode.png`, `8-menu-consultation-sans-mode.png`. Les cinq vues clés relues à l'œil (2, 5, 8) ; le formulaire de changement de taux (3) et le brouillon (4) sont des captures prises, relues par leurs seules assertions.
+
+**Hors périmètre / à ouvrir par l'orchestrateur** : le défaut des relances (`dunning`, champ vidé = 0, voir tâche 8) est #1761 ; rien d'autre trouvé. README : aucune ligne d'Epic 64 à la feuille de route à ce jour (rien à mettre à jour dans cette story).
+
+**E2E complet** (idefix, `46c15fd6c`, `$GATE_LOGS/idefix/20261127-210542-story_64-1-corrections-0201-e2e/`, `e2e-echecs.txt`) : 562 passés, 20 ignorés, 7 échoués = exactement les sept attendus (`mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77`, `:150`, KF-029) ; les six tests des trois specs neuves passent (`vat-rates-form`, `invoice-edit-guard`, `user-menu-mode`, dont la bascule Admin `data-mode` + `PUT` 204). La mutation « retirer `{#if isAdmin}` » reste non jouée ; les tests Consultation et Comptable de `user-menu-mode.spec.ts` la couvrent par construction.
+
+**Gates Rust : état.** Le Rust complet (`test-fast`, `gate-ci`) n'a tourné que sur idefix avant la correction de son script : résultats suspects, non retenus. À rejouer par l'orchestrateur ; le Rust de la story se limite à un déplacement de route, aux compteurs de `admin_pat_denied_e2e` et à un commentaire.
+
+**File List** : `crates/kesh-api/src/lib.rs`, `crates/kesh-api/src/routes/profile.rs`, `crates/kesh-api/tests/admin_pat_denied_e2e.rs`, `crates/kesh-api/tests/profile_e2e.rs`, `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`, `docs/api-external.md`, `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/user-manual.tex`, `frontend/src/lib/features/vat-rates/vat-rates.validate.ts` (+ `.test.ts`), `frontend/src/lib/shared/i18n-keys.test.ts`, `frontend/src/routes/(app)/+layout.svelte`, `frontend/src/routes/(app)/invoices/[id]/edit/{+page.svelte,invoice-edit-page.test.ts,invoice-form.stub.svelte}`, `frontend/src/routes/(app)/settings/vat-rates/{+page.svelte,vat-rates-page.test.ts}`, `frontend/tests/e2e/{vat-rates-form,invoice-edit-guard,user-menu-mode}.spec.ts`, cette fiche, `sprint-status.yaml`.
+
+### Change Log
+
+- 2026-11-27 — développement (Opus 5.5) : #1178, #1758, #1712 corrigés ; statut `review`.
+
+
 
 ### Validation P1 (Opus, contexte frais, passe complète) — 2026-11-27
 
