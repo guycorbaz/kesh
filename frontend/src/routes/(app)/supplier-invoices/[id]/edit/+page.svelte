@@ -25,6 +25,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { LINK_UNDERLINE_CLASS } from '$lib/shared/navigation/link-class';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { notifySuccess, notifyWarning } from '$lib/shared/utils/notify';
@@ -141,7 +142,7 @@
 	<h1 class="text-2xl font-semibold">
 		{i18nMsg('supplier-invoices-edit-title', 'Modifier le brouillon')}
 	</h1>
-	<a class="text-sm text-primary" href="/supplier-invoices/{id}">
+	<a class="text-sm text-primary {LINK_UNDERLINE_CLASS}" href="/supplier-invoices/{id}">
 		{i18nMsg('supplier-invoices-back-to-invoice', 'Revenir à la facture')}
 	</a>
 </div>

@@ -9,14 +9,15 @@
 	// groupes, hors d'eux), totaux et contrôles restent ceux de la vue à plat.
 	import Big from 'big.js';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import AccountLink from './AccountLink.svelte';
 	import GroupedReportRows, { TRIAL_BALANCE_COLUMNS } from './GroupedReportRows.svelte';
 	import {
 		formatCurrencyFigure,
 		formatReportAmount,
-		formatSwissDate,
 		isReportEmpty,
-		ledgerHref,
 	} from './reports.api';
+	import ReportPeriodHeading from './ReportPeriodHeading.svelte';
+	import type { ExerciceBornes } from './reports-url';
 	import type { TrialBalanceDto, TrialBalanceGroupedRow } from './reports.types';
 
 	/** Ce que la seconde ligne en devise affiche : une ligne de compte ou de groupe. */
@@ -29,8 +30,10 @@
 		dto: TrialBalanceDto;
 		/** Story 46-6b — clic sur l'accordéon d'un groupe (vue groupée seulement). */
 		onToggleGroup?: (row: TrialBalanceGroupedRow) => void;
+		/** Story 55-1a (AC-17) — les exercices de la société, pour l'en-tête de la période. */
+		fiscalYears?: readonly ExerciceBornes[];
 	}
-	let { dto, onToggleGroup = () => {} }: Props = $props();
+	let { dto, onToggleGroup = () => {}, fiscalYears = [] }: Props = $props();
 	let empty = $derived(isReportEmpty('trial-balance', dto));
 
 	// Story 46-6b — vue groupée si la réponse en porte les lignes.
@@ -67,14 +70,14 @@
 </script>
 
 <section class="space-y-4">
-	<header class="text-sm text-gray-600">
-		<strong>{i18nMsg('reports-filter-period', 'Période')}:</strong>
-		{formatSwissDate(dto.period.startDate)} — {formatSwissDate(dto.period.endDate)}
+	<!-- Story 55-1a (AC-17) — la période réelle de la réponse, et l'exercice dont elle est l'entier ou une partie. -->
+	<header>
+		<ReportPeriodHeading from={dto.period.startDate} to={dto.period.endDate} {fiscalYears} />
 	</header>
 
 	{#if empty}
 		<p class="rounded bg-blue-50 p-4 text-blue-900" role="status">
-			{i18nMsg('reports-error-no-entries-in-period', 'Aucune écriture dans la période sélectionnée.')}
+			{i18nMsg('reports-error-no-entries-in-period', 'Aucune écriture sur cette période.')}
 		</p>
 	{:else}
 		<table class="w-full border-collapse">
@@ -123,12 +126,7 @@
 				{#each dto.rows as r (r.accountId)}
 					<tr class:opacity-60={!r.active} data-testid="tb-row">
 						<td class="px-2 py-1 font-mono">
-							<a
-								class="text-indigo-700 hover:underline"
-								href={ledgerHref(r.accountId, dto.period.startDate, dto.period.endDate)}
-								title={i18nMsg('reports-ledger-open-from-balance', 'Voir le détail dans le grand livre')}
-							>{r.accountNumber}</a
-							>
+							<AccountLink accountId={r.accountId} number={r.accountNumber} from={dto.period.startDate} to={dto.period.endDate} />
 						</td>
 						<td class="px-2 py-1">
 							{r.accountName}

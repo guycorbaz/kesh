@@ -155,3 +155,17 @@ describe('GroupedReportRows — règle de rendu (46-1)', () => {
 		expect(groupe[1].style.paddingLeft).toBe('0.5rem');
 	});
 });
+
+// Story 55-2 (AC-1, AC-16) — filet de non-régression du lien inchangé (passé par `AccountLink`).
+describe('GroupedReportRows — Story 55-2, lien de compte', () => {
+	it('lignes `account` et `own` : lien exact, titre, classe LINK_CLASS ; ligne `group` en texte', async () => {
+		const { LINK_CLASS } = await import('$lib/shared/navigation/link-class');
+		const { container } = rendre(lignes('header'), 'header');
+		const a = container.querySelector('[data-testid="grouped-account-1020"] a')!;
+		expect(a.getAttribute('href')).toBe('/reports?tab=general-ledger&accountId=1020&from=2026-01-01&to=2026-12-31');
+		expect(a.getAttribute('title')).toBe('Voir le détail dans le grand livre');
+		expect(a.getAttribute('class')).toBe(LINK_CLASS);
+		expect(container.querySelector('[data-testid="grouped-own-10"] a')?.getAttribute('class')).toBe(LINK_CLASS);
+		expect(container.querySelector('[data-testid="grouped-group-10"] a')).toBeNull();
+	});
+});

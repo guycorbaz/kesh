@@ -8,15 +8,25 @@
 		formatSwissDate,
 		isReportEmpty,
 	} from './reports.api';
+	import AccountLink from './AccountLink.svelte';
+	import EntryDocuments, { entryDocumentsButton } from './EntryDocuments.svelte';
+	import { entryDocumentsTitle } from './entry-documents';
+	import ReportPeriodHeading from './ReportPeriodHeading.svelte';
+	import type { ExerciceBornes } from './reports-url';
 	import type { JournalEntryLineRow, JournalReportDto } from './reports.types';
 
 	interface Props {
 		dto: JournalReportDto;
+		/** Story 55-1a (AC-17) — les exercices de la société, pour l'en-tête de la période. */
+		fiscalYears?: readonly ExerciceBornes[];
 	}
-	let { dto }: Props = $props();
+	let { dto, fiscalYears = [] }: Props = $props();
 	let empty = $derived(isReportEmpty('journals', dto));
 
 	const fmt = formatReportAmount;
+
+	// Story 55-3b (AC-1) — une instance du dialogue des justificatifs pour toute la vue.
+	let documents = $state<ReturnType<typeof EntryDocuments>>();
 
 	/**
 	 * Story 37-4 (AC-7) — la partie en devise d'une ligne : « USD 31.35 × 0.8808 »,
@@ -35,14 +45,14 @@
 </script>
 
 <section class="space-y-4">
-	<header class="text-sm text-gray-600">
-		<strong>{i18nMsg('reports-filter-period', 'Période')}:</strong>
-		{formatSwissDate(dto.period.startDate)} — {formatSwissDate(dto.period.endDate)}
+	<!-- Story 55-1a (AC-17) — la période réelle de la réponse, et l'exercice dont elle est l'entier ou une partie. -->
+	<header>
+		<ReportPeriodHeading from={dto.period.startDate} to={dto.period.endDate} {fiscalYears} />
 	</header>
 
 	{#if empty}
 		<p class="rounded bg-blue-50 p-4 text-blue-900" role="status">
-			{i18nMsg('reports-error-no-entries-in-period', 'Aucune écriture dans la période sélectionnée.')}
+			{i18nMsg('reports-error-no-entries-in-period', 'Aucune écriture sur cette période.')}
 		</p>
 	{:else}
 		{#each dto.journals as section (section.journal)}
@@ -56,8 +66,23 @@
 					{:else}
 						{#each section.entries as entry (entry.entryId)}
 							<div class="mb-3 border-b pb-2 last:border-b-0">
-								<div class="flex justify-between text-sm">
-									<span class="font-mono">#{entry.entryNumber}</span>
+								<div
+									class="flex justify-between text-sm"
+									data-testid="journal-entry-header-{entry.entryId}"
+								>
+									<span class="inline-flex items-center gap-1"
+										><span class="font-mono" data-testid="journal-entry-number-{entry.entryId}"
+											>#{entry.entryNumber}</span
+										>{#if entry.hasDocuments}
+											<!-- Story 55-3b (AC-1) — une icône, quel que soit le nombre de justificatifs. -->
+											{@render entryDocumentsButton({
+												label: entryDocumentsTitle(entry.entryNumber),
+												testId: `journal-entry-documents-${entry.entryId}`,
+												onOpen: (el) =>
+													documents?.openFor(entry.entryId, entryDocumentsTitle(entry.entryNumber), el),
+											})}
+										{/if}</span
+									>
 									<span>{formatSwissDate(entry.entryDate)}</span>
 								</div>
 								<div class="text-sm text-gray-700">{entry.description}</div>
@@ -65,7 +90,10 @@
 									<tbody>
 										{#each entry.lines as l (l.accountId + '_' + l.lineOrder)}
 											<tr>
-												<td class="font-mono">{l.accountNumber}</td>
+												<!-- Story 55-2 (AC-3) — le numéro ouvre le grand livre du compte, période du journal. -->
+												<td class="font-mono"
+													><AccountLink accountId={l.accountId} number={l.accountNumber} from={dto.period.startDate} to={dto.period.endDate} /></td
+												>
 												<td>{l.accountName}</td>
 												<td class="text-right font-mono">{fmt(l.debit)}</td>
 												<td class="text-right font-mono">{fmt(l.credit)}</td>
@@ -106,4 +134,5 @@
 			{i18nMsg('reports-total-credit', 'Total crédit')} = {fmt(dto.grandTotalCredit)}
 		</p>
 	{/if}
+	<EntryDocuments bind:this={documents} />
 </section>

@@ -6,6 +6,9 @@
 //! - [`trial_balance`] — Balance des comptes (soldes débit/crédit)
 //! - [`journal_report`] — Journaux (Achats, Ventes, Banque, Caisse, OD)
 //!
+//! Story 55-3a — [`documents`], les justificatifs d'une écriture (`hasDocuments`
+//! du journal et du grand livre, liste de `GET /journal-entries/{id}/documents`).
+//!
 //! Tous les rapports retournent des structures `Serialize` en camelCase pour
 //! consommation directe par les routes HTTP de `kesh-api`.
 //!
@@ -22,6 +25,7 @@
 pub mod aged_receivables;
 pub mod balance_sheet;
 pub mod csv;
+pub mod documents;
 pub mod errors;
 #[cfg(test)]
 mod essai_groupes;
@@ -43,6 +47,7 @@ pub use aged_receivables::{
 };
 pub use balance_sheet::{AccountBalance, BalanceSheet, generate as generate_balance_sheet};
 pub use csv::{render_aged_receivables_csv, render_general_ledger_csv};
+pub use documents::{EntryDocument, EntryDocumentKind, PdfStatus};
 pub use errors::ReportError;
 pub use general_ledger::{
     GeneralLedger, LedgerLine, LedgerOptions, LedgerPeriod, LedgerSection, MAX_LEDGER_LIMIT,

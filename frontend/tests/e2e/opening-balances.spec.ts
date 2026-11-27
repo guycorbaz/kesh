@@ -119,9 +119,9 @@ test('parcours migrant : grille READY → saisie équilibrée → génération �
 
 	// Présence des soldes au bilan (/reports) — l'OD datée fy_start est
 	// incluse nativement dans le calcul cumulatif.
+	// Story 55-1a (D16) — plus de *Générer* : le bilan se charge à l'ouverture de la page.
 	await page.goto('/reports');
 	await page.waitForLoadState('networkidle');
-	await page.getByRole('button', { name: /générer/i }).click();
 	// Total actifs = 5'000.00 (apostrophe suisse U+2019 → regex laxiste).
 	await expect(page.getByText(/total actifs/i)).toBeVisible({ timeout: 5000 });
 	await expect(page.getByText(/5.000\.00/).first()).toBeVisible();

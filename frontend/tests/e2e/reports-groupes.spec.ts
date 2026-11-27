@@ -55,10 +55,13 @@ async function exporterAPlat(page: Page, route: string, compte: string): Promise
 	expect(texte).toContain(compte);
 }
 
-/** Clique « Générer » et attend la requête du bilan ; rend son URL. */
+/**
+ * Story 55-1a (D16) — plus de *Générer* : le bilan se charge à l'ouverture de la page. Ouvre `/reports`
+ * et attend la requête du bilan ; rend son URL.
+ */
 async function generer(page: Page): Promise<URL> {
 	const req = page.waitForRequest((r) => /\/api\/v1\/reports\/balance-sheet\?/.test(r.url()));
-	await page.getByRole('button', { name: /générer/i }).click();
+	await page.goto('/reports');
 	return new URL((await req).url());
 }
 
@@ -68,12 +71,10 @@ test('bilan par groupes : défaut, niveau 1, ouverture à la main, export, retou
 	await login(page);
 	const g19 = await preparerArbre(page);
 
-	await page.goto('/reports');
-	await page.waitForLoadState('networkidle');
-	await expect(page.getByTestId('grouping-controls')).toBeVisible();
-
 	// 1. Première visite : groupé, tous les comptes, sous-totaux sur le titre (AC-1).
 	let url = await generer(page);
+	await page.waitForLoadState('networkidle');
+	await expect(page.getByTestId('grouping-controls')).toBeVisible();
 	expect(url.searchParams.get('detailLevel')).toBe('all');
 	expect(url.searchParams.get('subtotalPosition')).toBe('header');
 	expect(url.searchParams.has('open')).toBe(false);
@@ -128,10 +129,9 @@ test('bilan par groupes : défaut, niveau 1, ouverture à la main, export, retou
 
 	// 6. Quitter la page, revenir : même niveau, même groupe ouvert, dès la 1re requête (AC-10).
 	await page.goto('/');
-	await page.goto('/reports');
+	url = await generer(page);
 	await page.waitForLoadState('networkidle');
 	await expect(page.getByTestId('grouping-level')).toHaveValue('1');
-	url = await generer(page);
 	expect(url.searchParams.get('detailLevel')).toBe('1');
 	expect(url.searchParams.get('open')).toBe(String(g19));
 	await expect(page.getByTestId('group-toggle-19')).toHaveAttribute('aria-expanded', 'true');
@@ -157,9 +157,9 @@ test('bilan par groupes : défaut, niveau 1, ouverture à la main, export, retou
 	await page.getByTestId('grouping-open-all').click();
 
 	// 8. Compte de résultat : groupé par défaut, son propre réglage.
-	await page.locator('#reports-tab-income-statement').click();
+	// Story 55-1a (D16) — plus de *Générer* : le clic sur l'onglet charge le compte de résultat.
 	const isReq = page.waitForRequest((r) => /reports\/income-statement\?/.test(r.url()));
-	await page.getByRole('button', { name: /générer/i }).click();
+	await page.locator('#reports-tab-income-statement').click();
 	expect(new URL((await isReq).url()).searchParams.get('detailLevel')).toBe('all');
 	await expect(page.getByTestId('grouped-account-3000')).toContainText('1’250.00');
 	await expect(page.getByTestId('grouping-level')).toBeDisabled(); // plan sans groupe ici

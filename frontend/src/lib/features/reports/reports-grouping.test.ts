@@ -7,6 +7,7 @@ import {
 	closeAll,
 	defaultGroupingView,
 	detailLevelOptions,
+	groupingFromParams,
 	groupingParamsOf,
 	groupingStorageKey,
 	openAll,
@@ -241,4 +242,70 @@ describe("règle d'ouverture par le niveau, table partagée avec le Rust (46-7, 
 			expect(c.ouvert ? contre.closed : contre.open).toEqual([5]);
 		});
 	}
+});
+
+// Story 55-1b (D4, AC-8) — la présentation lue dans une adresse, par les règles de ce module.
+describe('groupingFromParams (Story 55-1b)', () => {
+	const lire = (s: string) => groupingFromParams(new URLSearchParams(s));
+
+	it('une présentation complète est lue, les listes par virgule brute ou encodée', () => {
+		expect(lire('view=grouped&level=2&subtotals=footer&open=4,3&closed=7')).toEqual({
+			view: { shown: true, detailLevel: 2, subtotalPosition: 'footer', open: [4, 3], closed: [7] },
+			anyValid: true,
+		});
+		expect(lire('open=4%2C3').view.open).toEqual([4, 3]);
+		expect(lire('level=all').view.detailLevel).toBe('all');
+		expect(lire('view=flat').view.shown).toBe(false);
+	});
+
+	it('sans présentation : vue par défaut, anyValid faux', () => {
+		expect(lire('tab=balance-sheet&fy=2')).toEqual({ view: defaultGroupingView(), anyValid: false });
+	});
+
+	it.each([
+		'level=0',
+		'level=21',
+		'level=03',
+		'level=3.0',
+		'level=%2B3',
+		'level=ALL',
+		'open=1,a',
+		'open=1,,2',
+		'open=99999999999999999999',
+		'closed=x',
+		'view=xyz',
+		'subtotals=bottom',
+		'open=',
+	])('%s seul : ignoré, anyValid faux', (s) => {
+		expect(lire(s)).toEqual({ view: defaultGroupingView(), anyValid: false });
+	});
+
+	it('501 identifiants : la liste est ignorée ; 500 sont admis', () => {
+		const ids = (n: number) => Array.from({ length: n }, (_, i) => i + 1).join(',');
+		expect(lire(`open=${ids(501)}`).anyValid).toBe(false);
+		expect(lire(`open=${ids(500)}`).view.open).toHaveLength(500);
+	});
+
+	it('open=5&closed=5 seul : les deux listes ignorées, aucun champ retenu (anyValid faux)', () => {
+		expect(lire('open=5&closed=5')).toEqual({ view: defaultGroupingView(), anyValid: false });
+		// avec un autre champ valide, ce champ seul est retenu
+		expect(lire('open=5&closed=5&level=2')).toEqual({ view: vue({ detailLevel: 2 }), anyValid: true });
+	});
+
+	it('chaque paramètre est jugé seul : un invalide n’emporte pas les autres', () => {
+		expect(lire('level=21&subtotals=footer&open=1,a&closed=3').view).toEqual(
+			vue({ subtotalPosition: 'footer', closed: [3] }),
+		);
+	});
+
+	it('doublons retirés', () => {
+		expect(lire('open=3,3,2').view.open).toEqual([3, 2]);
+	});
+});
+
+describe('readIdList — borne Number.isSafeInteger (Story 55-1b)', () => {
+	it('un identifiant au-delà des entiers sûrs est refusé, aussi depuis la mémoire', () => {
+		expect(sanitizeGroupingView({ open: [1e20] }).open).toEqual([]);
+		expect(sanitizeGroupingView({ open: [Number.MAX_SAFE_INTEGER] }).open).toEqual([Number.MAX_SAFE_INTEGER]);
+	});
 });
