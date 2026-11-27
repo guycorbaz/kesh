@@ -441,6 +441,54 @@ async fn s536a_ac12_un_autre_exercice_que_celui_de_l_origine_est_un_invariant(po
     );
 }
 
+/// AC-12 (c, D3) — **la mesure des verrous**, origine en 2019 et jour dans
+/// l'exercice suivant (celui du seed) : sous `OriginDate`, la contre-passation
+/// tient l'exercice de l'origine et **pas** l'exercice du jour ; sous `Today`,
+/// elle tient l'exercice du jour. Mesurée par une sonde `FOR UPDATE NOWAIT`
+/// d'une autre connexion, transaction de la contre-passation tenue ouverte
+/// (aucun privilège `PROCESS`, `docs/agents-orchestration.md` § 6.1).
+#[sqlx::test(migrations = "./test-schema")]
+async fn s536a_ac12_la_contre_passation_datee_de_l_origine_ne_tient_pas_l_exercice_du_jour(
+    pool: MySqlPool,
+) {
+    let (seeded, fy_2019, entry, tx_id) = monter(&pool).await;
+    delier(&pool, tx_id).await;
+    let sonde = "SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE NOWAIT";
+    let mut verrous = Vec::new();
+    for dating in [
+        journal_entries::CancellationDating::OriginDate,
+        journal_entries::CancellationDating::Today(crate::jour::aujourd_hui_test()),
+    ] {
+        let mut tx = pool.begin().await.unwrap();
+        journal_entries::reverse_in_tx(
+            &mut tx,
+            seeded.company_id,
+            entry,
+            Acteur::utilisateur(seeded.admin_user_id),
+            dating,
+        )
+        .await
+        .expect("contre-passation");
+        let libre_2019 = kesh_db::test_fixtures::sonde_verrou_nowait(&pool, sonde, fy_2019).await;
+        let libre_du_jour =
+            kesh_db::test_fixtures::sonde_verrou_nowait(&pool, sonde, seeded.fiscal_year_id).await;
+        tx.rollback().await.unwrap();
+        verrous.push((dating, !libre_2019, !libre_du_jour));
+    }
+    assert_eq!(
+        verrous,
+        vec![
+            (journal_entries::CancellationDating::OriginDate, true, false),
+            (
+                journal_entries::CancellationDating::Today(crate::jour::aujourd_hui_test()),
+                true,
+                true
+            ),
+        ],
+        "(datation, 2019 tenu, exercice du jour tenu)"
+    );
+}
+
 /// AC-13 (filet du socle, D2) — **sous `OriginDate`, une origine dans un
 /// exercice clos est refusée par le socle lui-même** (`FiscalYearClosed`),
 /// même appelé sans la queue : le geste la refuse d'abord (rang 2), le socle

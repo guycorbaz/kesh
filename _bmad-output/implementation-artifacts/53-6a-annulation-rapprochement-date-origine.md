@@ -564,9 +564,58 @@ Corps et titres : `kesh-gate-logs/e53/53-6-issues-q3/` (`R7.md`, `R8.md`, `R9.md
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), `bmad-dev-story`, 2026-11-27, worktree `kesh-53-6`.
+
 ### Completion Notes List
 
+**T0 — reprise et relecture.** `origin/main` (`0e99cd2db`, v0.20.0) repris par fusion (`95c577893`) : conflits README (ligne publiée de la v0.20.0, ligne v0.21.0 prévue gardées), `sprint-status.yaml` (lignes `last_updated` des deux côtés), compteurs i18n recomptés par la garde (`sitesTotal` 3973, `CANDIDATES_ATTENDUES` 169) ; `supplier_invoices.rs` (`DuplicatePolicy`) fusionné sans conflit (réexport de `duplicate_policy`). #1674 ouverte (`gh issue view 1674 --json state` → `OPEN`, lecture seule). Lignes relues sur la branche reprise (`git show 95c577893:<fichier> | grep -nF`) : route `aujourd_hui` `:6270` (inchangé), bras `Entry` `reconciliation_cancel.rs:932`, refus fermé `:818`, « limite assumée » `settlement_cancellation.rs:50`, `ReversalDating` `journal_entries.rs:3201` (la fiche disait `:2942` à `main`, `:3170` à la branche d'epic — 53-1b depuis), bras `Today` `:3513`, garde `PeriodLocked` du socle `:684`, refus groupés `grouped_settlements.rs:1813`, `:1989`, `reconciliation_cancel_blocked_text` `kesh-api/src/errors.rs:6922`, FTL `:964`, doc `SettlementCancelBlocker` `kesh-db/src/errors.rs:681`, API `:999`, manuel `:4090` (§ *Annuler un rapprochement*). Toutes les prémisses P1 à P8 et P11 tiennent ; seuls les numéros ont bougé. P7 confirmée : l'éclatement date son écriture de la transaction (`kesh-reconciliation/src/split.rs:72`), le rapprochement manuel reçoit la date du gestionnaire, l'acceptation de facture `routes/reconciliation.rs:3044`. LOW L1 de la P4 corrigé dans D5 (R5 : `:2438`, `:2574`).
+
+**D2 — remède (i) retenu** : `pub enum CancellationDating { Today(NaiveDate), OriginDate }`, converti en `ReversalDating` (privé, troisième valeur `OriginDate`) ; `reverse_in_tx` et `reverse_owned_in_tx` la prennent ; `reverse_at_next_fiscal_year_start_in_tx` inchangée ; aucune entrée ajoutée. Étape (1) : la requête verrouillante lit aussi `je.entry_date`, `je.fiscal_year_id`, `fy.status` (même ligne). Étape (4) `OriginDate` : `reversal_date_verdict` (fonction pure, AC-13, 24 cas) puis `find_open_covering_date` sur la date de l'origine (`None` → `FiscalYearClosed`, autre exercice → `Invariant`) ; audit `"dating": "originDate"`.
+
+**D4 — phrase TVA montrée toujours** (hors retrait seul) : Kesh ne tient pas la périodicité de TVA, et le seuil « mois courant » exigerait le jour, que la vue ne lit plus (D6). Clé `reconciliation-cancel-confirm-vat`.
+
+**D5** — rang `SettlementCancelBlocker::PeriodLocked` (code `PERIOD_LOCKED`, borne en étiquette) entre `AccountArchived` et `NoOpenFiscalYearToday`, évalué sous `OriginDate` seulement, par la même règle pure que le socle (`cancellation_date_verdict`, seuil inclusif). Les gestes groupés gardent leur refus sans filtre : `409 PERIOD_LOCKED` sans `details` (testé, `reconciliation_group_e2e::s536a_un_groupe_sous_le_verrou_est_refuse_en_409`) ; au clic d'un geste unitaire, `400 PERIOD_LOCKED` du socle (`details.lockedThrough`, `attempted`). Au clic d'un 409 groupé, l'écran rend le motif sans borne (aucun `details`).
+
+**D6** — `cancel_in_tx`, `cancel`, `cancel_blocker`, `get_view`, `entry_cancel_outlook`, `entry_cancel_chain`, `group_cancel_blocker`, `supplier_group_cancel_blocker`, `grouped_settlements::{cancel_in_tx, supplier_cancel_in_tx}` perdent `aujourd_hui` ; la route du geste, la vue et les candidates ne lisent plus l'horloge. `date_du_jour_garde.rs` **non édité** : il inventorie les dates tirées **hors** de l'horloge (`FORMES`, l. 136 : `.date_naive(`, `CURDATE(`…), non les lectures de `state.horloge` ; les lectures retirées n'y figuraient pas (binaire vert, `t4-kesh-api-cible-1.log`).
+
+**Gestes depuis la fiche (R7 à R9)** : `CancellationDating::Today(aujourd_hui)`, inchangés (Q3) ; AC-11 fixé par les tests existants `jour_suisse_nuit_e2e::ac3_annulation_d_un_reglement_client_la_nuit` (R7), `ac3_annulation_d_un_reglement_fournisseur_la_nuit` (R8), `ac3_annulation_d_une_facture_fournisseur_la_nuit` (R9) et `ac3_sans_exercice_au_jour_suisse_l_annulation_est_refusee` (rang 5), verts.
+
+**Tests par critère** :
+- AC-1 : `jour_suisse_nuit_e2e::s536a_ac1_…` (horloge au 1.1.2026, écriture du 15.12.2025 rattachée à une transaction du 20.12 : date de l'écriture, exercice 2025, rien dans 2026, libellé, `dating`) ; même exercice : `grouped_settlements::s536a_group_unreconciliation_refuses_an_entry_under_the_period_lock` (15.06, jour réel), `reconciliation_cancel::unreconciling_a_supplier_settlement_undoes_it` (attendu changé : 15.06.2026).
+- AC-2 : `reconciliation_cancel::s536a_ac2_…` ; AC-3 : `s536a_ac3_…` (clôturé, rouvert, reclôturé).
+- AC-4 : `jour_suisse_nuit_e2e::s536a_ac4_…` (409, texte fr) ; tests existants de l'exercice clos pour R2 à R5 (`a_closed_year_refuses_the_supplier_unreconciliation`, `group_unreconciliation_refuses_a_closed_year`, `a_concurrent_close_waits_for_the_unreconciliation`) verts. Le message aux quatre locales : clé existante, parité des locales contrôlée par les gardes i18n.
+- AC-5 : `jour_suisse_nuit_e2e::s536a_ac5_…` (règlement partiel rattaché, verrou, puis datée du règlement, règlement retiré).
+- AC-6 : `reconciliation_cancel::s536a_ac6_…` (2019 ouvert) et le test fournisseur existant.
+- AC-7 : `grouped_settlements::s536a_group_unreconciliation_reverses_in_the_entry_year` (R4, 2019) ; R5 : `grouped_settlements_supplier::s536a_a_supplier_group_under_the_period_lock_is_refused` (datée de l'écriture) et le relevé de caractérisation (attendu changé) ; R6 (Wise groupé) : même bras que R1, `wise_reconciliation_e2e` vert, pas de test neuf dédié.
+- AC-8 : retrait seul inchangé (pas de rang pour `unlink_only`, `entry_cancel_outlook` retourne avant la queue) ; tests existants du retrait seul verts ; manuel et API disent « ni une période verrouillée ».
+- AC-9 : R1 vue, clic 400 et lendemain de la borne (`s536a_ac9_une_ecriture_sous_le_verrou_est_refusee`), candidates (`s536a_ac9_une_candidate_sous_le_verrou_l_annonce`), R2 (`s536a_ac5_…`), R3 (`reconciliation_cancel::s536a_a_supplier_settlement_under_the_period_lock_is_refused_by_the_core`, montage de repli dit), R4 (kesh-db et 409 API), R5 (`ReconciliationNotCancellable { PeriodLocked }`) ; précédence : tests existants (R2, R4) verts, test neuf fournisseur `s536a_a_frozen_supplier_lettering_is_named_before_the_period_lock` ; écran : `CancelReconciliationDialog.test.ts`, `LinkSettlementModal.test.ts`.
+- AC-10 : vue (`reversalDate`, `reversalFiscalYearName`) et cinq confirmations (Vitest, cinq genres).
+- AC-12 : (a) `reconciliation_cancel::s536a_ac12_un_autre_exercice_que_celui_de_l_origine_est_un_invariant` (état forgé) ; (b) `a_concurrent_close_waits_for_the_unreconciliation` (clôture concurrente : l'annulation attend et refuse `FISCAL_YEAR_CLOSED`, jamais d'inverse dans un exercice clos) ; (c) mesure : `s536a_ac12_la_contre_passation_datee_de_l_origine_ne_tient_pas_l_exercice_du_jour` (sonde `FOR UPDATE NOWAIT`, origine en 2019, jour dans l'exercice suivant) — sous `OriginDate`, 2019 tenu, l'exercice du jour libre ; sous `Today`, les deux tenus.
+- AC-13 : `journal_entries::verdict_de_datation::la_table_des_cas` (24 cas) ; précédence en base : `invoice_settlement::s536a_la_precedence_sous_la_date_de_l_origine` (seconde passe du harnais, 20 cas) ; `s536a_le_socle_refuse_une_origine_d_un_exercice_clos` (filet).
+- AC-14 : manuel (`user-manual.tex`, `admin-manual.tex`) et `api-external.md` ; recherche du symptôme dans le PDF aplati (`pdftotext user-manual.pdf`, v0.20.0) : le seul « datée du jour » du dé-rapprochement (§ *Annuler un rapprochement*) est corrigé au `.tex` ; les autres (R7 à R11, fiche fournisseur) restent. `:1119` (exercices en désordre) précisé. Les manuels DE/IT/EN n'existent pas au dépôt (`docs/manual/{de,en,it}` absents). PDF non régénérés (release).
+- AC-15 : `frontend/tests/e2e/reconciliation-cancel.spec.ts`, deux scénarios neufs (non joués : E2E à la clôture).
+- AC-17 : `git diff --stat 0e99cd2db..HEAD -- crates/kesh-db/migrations/ crates/kesh-db/test-schema/` vide.
+
+**Hors périmètre, à signaler** : aucune issue neuve demandée (les trois issues Q3 sont ouvertes par l'orchestrateur, textes `kesh-gate-logs/e53/53-6-issues-q3/`).
+
 ### File List
+
+- `crates/kesh-db/src/errors.rs`
+- `crates/kesh-db/src/repositories/journal_entries.rs`
+- `crates/kesh-db/src/repositories/settlement_cancellation.rs`
+- `crates/kesh-db/src/repositories/reconciliation_cancel.rs`
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs`
+- `crates/kesh-db/src/repositories/supplier_invoices.rs`
+- `crates/kesh-db/src/repositories/grouped_settlements.rs`
+- `crates/kesh-db/tests/{reconciliation_cancel,grouped_settlements,grouped_settlements_supplier,invoice_settlement,invoice_write_off,supplier_invoices_repository,supplier_invoices_draft,filet_bilan_clos,lettering_documents,journal_entries_modification}.rs`
+- `crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/routes/reconciliation.rs`, `crates/kesh-api/src/services/factures.rs`
+- `crates/kesh-api/tests/{jour_suisse_nuit_e2e,reconciliation_group_e2e,bank_accounts_closed_e2e}.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- `frontend/src/lib/features/reconciliation/{CancelReconciliationDialog.svelte,CancelReconciliationDialog.test.ts,LinkSettlementModal.svelte,LinkSettlementModal.test.ts,reconciliation-cancel.ts,reconciliation-cancel.test.ts,reconciliation.api.ts,reconciliation.types.ts}`
+- `frontend/src/lib/shared/{i18n-keys.test.ts,i18n-libelle-en-dur.test.ts}`
+- `frontend/tests/e2e/reconciliation-cancel.spec.ts`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/admin-manual.tex`, `docs/api-external.md`
+- `README.md`, `_bmad-output/implementation-artifacts/sprint-status.yaml` (fusion de `main`, statut)
 
 ## Change Log
 
