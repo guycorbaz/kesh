@@ -6,6 +6,7 @@ Tu conduis la **revue de code P2 de la story 58-2 de Kesh** (logiciel de comptab
 - Fiche : `_bmad-output/implementation-artifacts/58-2-comptes-designes-tests-revue.md` (AC, Décisions, Dev Agent Record, Change Log).
 - Journal des mutations : `$GATE_LOGS/e58/s582-mutations.md` (`$GATE_LOGS` = `/home/gcorbaz/devel/kesh-gate-logs`) ; scripts du développeur : `/tmp/s582/mut.py`, `/tmp/s582/fmut.py`.
 - Rapport P1 (Opus, 0/0/1/4) : `$GATE_LOGS/e58/58-2-revue-p1.md`.
+- Remédiation de la P1 : commits `d03bc3e2b` (R1-3, R1-4 : tests) et le commit de documentation qui le suit (R1-1, R1-2, R1-5 : fiche, journal) ; `git log --oneline 90192c7b3..HEAD` les nomme ; journaux de la remédiation : `$GATE_LOGS/e58/s582-r1-*.log`, `s582-ac5-{avant,apres}.log`.
 - Lis le `CLAUDE.md` du worktree : *Review Iteration Rule*, *Recompter*, *Propagation post-patch*, *Inventorier les sites NON RÉSOLUS*, la règle des LOW (§ *Priorités des défauts*), et le principe « un test qui compare deux sorties d'un même extracteur ne prouve rien ».
 
 ## Axes obligatoires — chacun déclaré exercé ou non exercé
