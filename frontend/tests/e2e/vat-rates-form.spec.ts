@@ -41,7 +41,12 @@ test.describe('Taux TVA — formulaire de création (64-1)', () => {
 		// Sonde positive : le formulaire se referme, jamais « La création a échoué. ».
 		await expect(page.getByTestId('vat-form-submit')).toHaveCount(0);
 		await expect(page.getByTestId('vat-form-error')).toHaveCount(0);
-		const row = page.getByTestId('vat-rate-row').filter({ hasText: '8.1' });
+		// Revue 64-1 (R1-6) : la date de début (2031, absente des taux semés) désigne la ligne
+		// créée ; `hasText: '8.1'` seul attrapait les 8.10 semés. Le serveur rend « 8.10 ».
+		const row = page
+			.getByTestId('vat-rate-row')
+			.filter({ hasText: '01.01.2031' })
+			.filter({ hasText: '8.10 %' });
 		await expect(row.first()).toBeVisible();
 	});
 

@@ -11,6 +11,7 @@
 	// v0172-correctifs (#880, § 24 bis) : dates de validité en forme suisse.
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { isUnknownOutcome } from '$lib/shared/utils/unknown-outcome';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { toast } from 'svelte-sonner';
@@ -141,7 +142,14 @@
 
 	/** Cas évidents refusés AVANT toute écriture ; `null` si le formulaire peut partir. */
 	function inputError(dateMsg: string): string | null {
-		const rateCode = validateRateInput(fRate);
+		// Revue 64-1 (R1-9) : un texte que le champ numérique ne sait pas lire (« 8,1 » selon le
+		// navigateur) est lié à `null`, ce que `validateRateInput` prendrait pour un champ vide.
+		const field = document.querySelector<HTMLInputElement>(
+			'[data-testid="vat-form-rate"], [data-testid="vat-change-rate"]',
+		);
+		const rateCode: RateError | null = field?.validity?.badInput
+			? 'invalid'
+			: validateRateInput(fRate);
 		if (rateCode) return rateErrorMessage(rateCode);
 		if (validateDateInput(fValidFrom)) return dateMsg;
 		return null;
@@ -205,7 +213,13 @@
 			if (closed) {
 				// L'ancien taux est clos, le nouveau n'existe pas : le dire, avec le motif, et
 				// comment finir (seule réparation dans l'écran : refaire à la même date).
-				formError = isApiError(e)
+				// Revue 64-1 (R1-7) : sur une coupure ou un délai, le `POST` a pu aboutir.
+				formError = isUnknownOutcome(e)
+					? i18nMsg(
+							'vat-rates-change-error-closed-unknown',
+							"L'ancien taux a été clôturé à la date de bascule ; le nouveau taux n'a peut-être pas été créé. Vérifiez la liste : s'il manque, refaites « Changer le taux » à la même date.",
+						)
+					: isApiError(e)
 					? i18nMsg(
 							'vat-rates-change-error-closed-reason',
 							"L'ancien taux a été clôturé à la date de bascule, mais le nouveau taux n'a pas été créé : { $reason } Une fois la cause levée, refaites « Changer le taux » à la même date.",

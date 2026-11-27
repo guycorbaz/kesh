@@ -198,6 +198,31 @@ describe('taux de TVA — changement de taux (64-1, AC2, AC3)', () => {
 		expect(listMock).toHaveBeenCalledTimes(2);
 	});
 
+	it.each(['NETWORK_ERROR', 'TIMEOUT'])(
+		'createVatRate : %s après la clôture — « n’a peut-être pas été créé », jamais « n’a pas été créé » (R1-7)',
+		async (code) => {
+			updateMock.mockResolvedValue({});
+			createMock.mockRejectedValue({ code, status: 0, message: 'Coupure' });
+			const r = await openChangeForm();
+			await fill(r, 'vat-change-rate', '8.1');
+			await fill(r, 'vat-change-from', '2027-01-01');
+			await fireEvent.click(r.getByTestId('vat-change-submit'));
+			await waitFor(() => expect(r.getByTestId('vat-change-error').textContent).toMatch(/peut-être/));
+			expect(r.getByTestId('vat-change-error').textContent).toMatch(/Vérifiez la liste/);
+			expect(listMock).toHaveBeenCalledTimes(2);
+		},
+	);
+
+	it('un texte illisible par le champ numérique (« 8,1 » : badInput) : « doit être un nombre », non « Saisissez un taux » (R1-9)', async () => {
+		const r = await openChangeForm();
+		const champ = r.getByTestId('vat-change-rate') as HTMLInputElement;
+		Object.defineProperty(champ, 'validity', { value: { badInput: true }, configurable: true });
+		await fill(r, 'vat-change-from', '2027-01-01');
+		await fireEvent.click(r.getByTestId('vat-change-submit'));
+		await waitFor(() => expect(r.getByTestId('vat-change-error').textContent).toBe('Le taux doit être un nombre.'));
+		expect(updateMock).not.toHaveBeenCalled();
+	});
+
 	it('createVatRate refusé après la clôture (erreur non typée) : « clôturé » sans motif', async () => {
 		updateMock.mockResolvedValue({});
 		createMock.mockRejectedValue(new Error('réseau'));

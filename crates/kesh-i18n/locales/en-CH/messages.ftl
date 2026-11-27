@@ -3080,6 +3080,7 @@ vat-rates-err-from-required = Enter the start date.
 vat-rates-err-switch-required = Enter the switch date.
 vat-rates-change-error-closed = The old rate was closed on the switch date, but the new rate was not created. Once the cause is removed, repeat « Change the rate » with the same date.
 vat-rates-change-error-closed-reason = The old rate was closed on the switch date, but the new rate was not created: { $reason } Once the cause is removed, repeat « Change the rate » with the same date.
+vat-rates-change-error-closed-unknown = The old rate was closed on the switch date; the new rate may not have been created. Check the list: if it is missing, repeat « Change the rate » with the same date.
 vat-rates-change-hint = The old rate will end on the changeover date, and the new rate will take effect on that date.
 vat-rates-changed = Rate updated.
 vat-rates-col-actions = Actions

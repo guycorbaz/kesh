@@ -2827,6 +2827,7 @@ vat-rates-err-from-required = Saisissez la date de début.
 vat-rates-err-switch-required = Saisissez la date de bascule.
 vat-rates-change-error-closed = L'ancien taux a été clôturé à la date de bascule, mais le nouveau taux n'a pas été créé. Une fois la cause levée, refaites « Changer le taux » à la même date.
 vat-rates-change-error-closed-reason = L'ancien taux a été clôturé à la date de bascule, mais le nouveau taux n'a pas été créé : { $reason } Une fois la cause levée, refaites « Changer le taux » à la même date.
+vat-rates-change-error-closed-unknown = L'ancien taux a été clôturé à la date de bascule ; le nouveau taux n'a peut-être pas été créé. Vérifiez la liste : s'il manque, refaites « Changer le taux » à la même date.
 vat-rates-deactivated = Taux désactivé.
 vat-rates-deactivate-error = La désactivation a échoué.
 vat-rates-deactivate-confirm = Désactiver ce taux ? Il ne sera plus proposé à la saisie mais restera dans l'historique.
