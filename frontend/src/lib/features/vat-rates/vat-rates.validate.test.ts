@@ -2,9 +2,9 @@
  * Story 64-1 (#1178, D1/D2) — conversion et validation du taux saisi, fonctions pures.
  */
 import { describe, it, expect } from 'vitest';
-import { rateText, validateRateInput, validateDateInput } from './vat-rates.validate';
+import { decimalOf, validateRateInput, validateDateInput } from './vat-rates.validate';
 
-describe('rateText — le taux lié à un <input type="number"> part en chaîne décimale', () => {
+describe('decimalOf — le taux lié à un <input type="number"> part en chaîne décimale', () => {
 	it.each([
 		[8.1, '8.1'],
 		[7.7, '7.7'],
@@ -17,7 +17,7 @@ describe('rateText — le taux lié à un <input type="number"> part en chaîne 
 		['', ''],
 		[undefined, ''],
 	])('%j → %j', (input, expected) => {
-		expect(rateText(input as string | number | null)).toBe(expected);
+		expect(decimalOf(input as string | number | null)).toBe(expected);
 	});
 });
 

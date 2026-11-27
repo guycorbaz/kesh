@@ -10,6 +10,7 @@ import {
 	ensurePrimaryBankAccountViaApi,
 	createAndValidateInvoiceViaApi,
 	createUser,
+	todayInZurich,
 	USER_PASSWORD,
 } from './helpers/api-fixtures';
 
@@ -41,7 +42,7 @@ async function createDraftViaApi(
 ): Promise<number> {
 	const ctx = await authedApiContext(page);
 	try {
-		const today = new Date().toISOString().slice(0, 10);
+		const today = todayInZurich();
 		const res = await ctx.post('/api/v1/invoices', {
 			data: {
 				contactId,

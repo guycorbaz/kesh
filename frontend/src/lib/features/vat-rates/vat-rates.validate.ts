@@ -18,16 +18,16 @@ export type RateInput = string | number | null | undefined;
 export type RateError = 'required' | 'invalid' | 'range' | 'decimals';
 
 /** Le seul point de conversion : la valeur liée devient une chaîne décimale. */
-export function rateText(value: RateInput): string {
+export function decimalOf(value: RateInput): string {
 	if (value === null || value === undefined) return '';
-	// `-0` s'écrit « 0 ».
-	if (typeof value === 'number') return Object.is(value, -0) ? '0' : String(value);
+	// `-0 + 0` vaut `0` : `-0` s'écrit « 0 ».
+	if (typeof value === 'number') return String(value + 0);
 	return value.trim();
 }
 
 /** `null` si le taux est admis ; sinon la cause du refus. */
 export function validateRateInput(value: RateInput): RateError | null {
-	const text = rateText(value);
+	const text = decimalOf(value);
 	if (text === '') return 'required';
 	const n = Number(text);
 	if (!Number.isFinite(n)) return 'invalid';

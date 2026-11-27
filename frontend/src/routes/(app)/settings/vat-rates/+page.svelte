@@ -22,7 +22,7 @@
 		type VatRateResponse,
 	} from '$lib/features/vat-rates/vat-rates.api';
 	import {
-		rateText,
+		decimalOf,
 		validateRateInput,
 		validateDateInput,
 		type RateInput,
@@ -157,7 +157,7 @@
 			await createVatRate({
 				category: fCategory.trim(),
 				label: fLabel.trim() || undefined,
-				rate: rateText(fRate),
+				rate: decimalOf(fRate),
 				validFrom: fValidFrom,
 				validTo: fValidTo ? fValidTo : null,
 			});
@@ -194,7 +194,7 @@
 			closed = true;
 			await createVatRate({
 				category: old.category,
-				rate: rateText(fRate),
+				rate: decimalOf(fRate),
 				validFrom: fValidFrom,
 				validTo: null,
 			});

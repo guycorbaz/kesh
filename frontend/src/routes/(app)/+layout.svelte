@@ -383,6 +383,7 @@
 
 					<!-- Déconnexion -->
 					<DropdownMenu.Item
+						data-testid="user-menu-logout"
 						onclick={async () => {
 							await authState.logout();
 							window.location.replace('/login');

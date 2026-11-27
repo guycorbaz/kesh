@@ -30,7 +30,7 @@ async function login(page: import('@playwright/test').Page, user: string, pwd: s
 async function openUserMenu(page: import('@playwright/test').Page) {
 	await page.getByTestId('user-menu-trigger').click();
 	// Sonde positive : le menu est bien ouvert (même menu que l'entrée « Mode »).
-	await expect(page.getByText('Se déconnecter')).toBeVisible();
+	await expect(page.getByTestId('user-menu-logout')).toBeVisible();
 }
 
 test.describe('Menu utilisateur — bascule du mode (64-1)', () => {
