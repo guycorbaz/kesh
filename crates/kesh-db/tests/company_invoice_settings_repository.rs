@@ -1947,6 +1947,136 @@ async fn designate_vat_fills_nulls_and_is_idempotent(pool: MySqlPool) {
     );
 }
 
+/// #732 (point 3) — la désignation est bornée à SA société : sur deux sociétés au plan
+/// PME, désigner les comptes de TVA de A laisse les trois colonnes de B à `NULL` et
+/// sa `version` intacte ; la `version` de A ne bouge pas non plus (le doc-comment de
+/// `designate_vat_accounts_in_tx` : « N'incrémente pas `version` »).
+#[sqlx::test(migrations = "./test-schema")]
+async fn designate_vat_is_bounded_to_its_own_company(pool: MySqlPool) {
+    let a = pme_company_with_chart(&pool).await;
+    let b = pme_company_with_chart(&pool).await;
+    assert_ne!(a, b, "montage : deux sociétés");
+    create_settings_row(&pool, a).await;
+    create_settings_row(&pool, b).await;
+
+    // Montage : sans quoi « B reste à NULL » passerait à vide.
+    let b_avant = vat_columns_and_version(&pool, b).await;
+    assert_eq!(
+        (b_avant.0, b_avant.1, b_avant.2),
+        (None, None, None),
+        "montage : les trois colonnes de TVA de B sont à NULL"
+    );
+    let a_avant = vat_columns_and_version(&pool, a).await;
+    assert_eq!(
+        (a_avant.0, a_avant.1, a_avant.2),
+        (None, None, None),
+        "montage : les trois colonnes de TVA de A sont à NULL"
+    );
+
+    let roles = designate_vat(&pool, a).await;
+    assert!(
+        roles.payable.is_some() && roles.recoverable.is_some() && roles.settlement.is_some(),
+        "montage : les trois rôles de TVA de A sont lus, rendu {roles:?}"
+    );
+
+    let a_apres = vat_columns_and_version(&pool, a).await;
+    assert_eq!(
+        (a_apres.0, a_apres.1, a_apres.2),
+        (roles.payable, roles.recoverable, roles.settlement),
+        "A reçoit ses trois comptes"
+    );
+    assert_eq!(a_apres.3, a_avant.3, "la version de A est inchangée");
+    let b_apres = vat_columns_and_version(&pool, b).await;
+    assert_eq!(
+        (b_apres.0, b_apres.1, b_apres.2),
+        (None, None, None),
+        "la désignation de A ne touche pas les colonnes de B"
+    );
+    assert_eq!(b_apres.3, b_avant.3, "la version de B est intacte");
+}
+
+/// #732 (point 2) — la séquence des numéros que le doc-comment de
+/// `lock_vat_role_accounts_in_tx` écrit pour le plan PME, ordre des verrous de la
+/// transaction de `final_body` : `VatRecoverable`, `VatPayable`, `VatSettlement`
+/// (`lock_vat_role_accounts_in_tx`), puis `Receivable`, `DefaultRevenue`, `Payable`
+/// (`complete_default_accounts_in_tx`), puis l'arrondi, puis les natures
+/// `Discount`, `BankFees`, `BadDebt` (`chart_designated_accounts`, qui les écrit EN DUR
+/// dans cet ordre, sans parcourir `WriteOffNature::ALL`).
+///
+/// Ce test tient **le plan** : un plan PME modifié (`pme.json`) ou un rôle réattribué
+/// le fait rougir, de même qu'un `WriteOffNature::ALL` réordonné (seconde assertion :
+/// la phrase du commentaire de production qui dit `ALL` égal à cet ordre).
+///
+/// ⛔ ANGLE MORT ASSUMÉ (Q3) : il ne tient PAS l'ordre réel des verrous, c'est-à-dire
+/// l'ordre des appels dans `lock_vat_role_accounts_in_tx`, `complete_default_accounts_in_tx`
+/// et `chart_designated_accounts` : deux champs permutés dans cette dernière (l'escompte et
+/// les frais bancaires) changent l'ordre des verrous sans rien rougir ici. MariaDB
+/// n'expose pas l'ordre des verrous InnoDB de façon portable.
+#[sqlx::test(migrations = "./test-schema")]
+async fn pme_chart_lock_sequence_matches_the_documented_numbers(pool: MySqlPool) {
+    use kesh_core::chart_of_accounts::{
+        WriteOffNature, rounding_difference_number, write_off_account_number,
+    };
+
+    let company_id = pme_company_with_chart(&pool).await;
+    let chart = kesh_core::chart_of_accounts::load_chart("Pme").expect("plan PME");
+
+    let mut numbers: Vec<String> = Vec::new();
+    for role in [
+        "VatRecoverable",
+        "VatPayable",
+        "VatSettlement",
+        "Receivable",
+        "DefaultRevenue",
+        "Payable",
+    ] {
+        let number: String =
+            sqlx::query_scalar("SELECT number FROM accounts WHERE company_id = ? AND role = ?")
+                .bind(company_id)
+                .bind(role)
+                .fetch_one(&pool)
+                .await
+                .unwrap_or_else(|e| panic!("compte du rôle {role} : {e}"));
+        numbers.push(number);
+    }
+    numbers.push(
+        rounding_difference_number(&chart)
+            .expect("le plan PME marque un compte d'arrondi")
+            .to_string(),
+    );
+    // L'ordre écrit en dur par `chart_designated_accounts`.
+    for nature in [
+        WriteOffNature::Discount,
+        WriteOffNature::BankFees,
+        WriteOffNature::BadDebt,
+    ] {
+        numbers.push(
+            write_off_account_number(&chart, nature)
+                .unwrap_or_else(|| panic!("le plan PME marque la nature {nature:?}"))
+                .to_string(),
+        );
+    }
+    assert_eq!(
+        numbers,
+        [
+            "1171", "2200", "2206", "1100", "3000", "2000", "6940", "3800", "6900", "3805"
+        ],
+        "la séquence par numéro du doc-comment de `lock_vat_role_accounts_in_tx`"
+    );
+
+    // La phrase du commentaire de production (`chart_designated_accounts`) : « les
+    // natures dans l'ordre de `WriteOffNature::ALL` ».
+    assert_eq!(
+        WriteOffNature::ALL,
+        [
+            WriteOffNature::Discount,
+            WriteOffNature::BankFees,
+            WriteOffNature::BadDebt
+        ],
+        "`WriteOffNature::ALL` : l'ordre que `chart_designated_accounts` écrit en dur"
+    );
+}
+
 // ─── Story 36-19 (#1200, refs #987) : la finalisation complète les comptes vides ───
 
 /// Les dix comptes désignés de `s`, dans l'ordre de

@@ -344,14 +344,29 @@ fn nombres_isoles_ne_prend_pas_un_point_de_code_pour_un_compte() {
 /// des mois).
 #[test]
 fn nombres_isoles_ne_prend_pour_date_que_des_mois_et_jours_bornes() {
-    for date in ["entre 1000-01-01 et 9999-12-31", "au 2026-02-28."] {
+    // #732 : les mois `10` et `11`, le jour `30`, une heure collée (`\D` borne le jour).
+    for date in [
+        "entre 1000-01-01 et 9999-12-31",
+        "au 2026-02-28.",
+        "2026-10-15",
+        "2026-11-30",
+        "2026-01-01T10:00",
+    ] {
         assert!(
             nombres_isoles(date).is_empty(),
             "« {date} » : une date ISO n'est pas un compte, rendu {:?}",
             nombres_isoles(date)
         );
     }
-    for pas_une_date in ["1171-99-99", "1171-13-01", "1171-00-10", "1171-12-32"] {
+    // #732 : le jour `00` (borne basse) et un jour à trois chiffres (le garde `(\D|$)`).
+    for pas_une_date in [
+        "1171-99-99",
+        "1171-13-01",
+        "1171-00-10",
+        "1171-12-32",
+        "1171-12-00",
+        "1171-01-011",
+    ] {
         let rendus: Vec<String> = nombres_isoles(pas_une_date)
             .into_iter()
             .map(|(n, ..)| n)
