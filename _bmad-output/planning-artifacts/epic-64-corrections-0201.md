@@ -14,7 +14,7 @@ l'installation ouverte au rôle Consultation (#1712).
 
 | Story | Issues | Objet |
 |---|---|---|
-| 64-1 — Corrections de la v0.20.1 | #1178 (P2), #1758 (P3), #1712 (P3) | le taux de TVA saisi part en chaîne décimale ; `/invoices/{id}/edit` refuse une facture qui n'est pas un brouillon ; `PUT /profile/mode` réservé à l'Administrateur |
+| 64-1 — Corrections de la v0.20.1 | #1178 (P2), #1758 (P3), #1712 (P3) | le taux de TVA saisi part en chaîne décimale ; `/invoices/{id}/edit` refuse une facture qui n'est pas un brouillon, et un rôle sans droit d'écriture ; `PUT /profile/mode` réservé à l'Administrateur |
 
 Une seule story : trois correctifs indépendants, sans migration, sur **cinq modules** (recompté par la validation P1 de la
 fiche : écran des taux de TVA, écran des factures, cadre de l'application `(app)/+layout.svelte`, `kesh-api`, `kesh-i18n`) ;

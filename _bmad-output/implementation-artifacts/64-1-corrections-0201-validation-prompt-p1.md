@@ -6,8 +6,8 @@ Kesh tient les livres réels du Project Lead (Guy). Trois défauts : le formulai
 `/invoices/{id}/edit` s'ouvre sur une facture validée (#1758, P3), `PUT /api/v1/profile/mode` sans garde de rôle (#1712, P3).
 
 - **Modèle : Opus. Contexte frais. Passe complète** (première passe : jamais ciblée, jamais Haiku). Langue du rapport : français.
-- Worktree : `/home/gcorbaz/devel/kesh-64-1`, branche `story/64-1-corrections-0201`, partie de `epic/64-corrections-0201`
-  (= `main` `0e99cd2db`). Fiche : `/home/gcorbaz/devel/kesh-64-1/_bmad-output/implementation-artifacts/64-1-corrections-0201.md` ;
+- Worktree : `kesh-64-1` (à côté du dépôt principal), branche `story/64-1-corrections-0201`, partie de `epic/64-corrections-0201`
+  (= `main` `0e99cd2db`). Fiche : `_bmad-output/implementation-artifacts/64-1-corrections-0201.md` ;
   epic : `_bmad-output/planning-artifacts/epic-64-corrections-0201.md`.
 - Lis d'abord : le `CLAUDE.md` du worktree (Qualité du code, Recette visuelle, Test Locally First, Review Iteration Rule, Inventorier
   les sites NON RÉSOLUS, Propagation post-patch, Priorités des défauts, Issue Tracking Rule, Règle de splitting préventif, Versions
@@ -26,7 +26,7 @@ Tu n'écris **aucun fichier** hors de ton rapport. En particulier, tu ne lances 
 Permis : `git log`, `git show`, `git diff`, `git grep`, `grep`, `sed -n`, `cat`, `ls`, `wc`, `pdftotext … -` (vers la sortie standard,
 **en tube**, jamais vers un fichier), `gh … view|list`.
 
-Rapport : **`/home/gcorbaz/devel/kesh-gate-logs/s64-1/validation-p1.md`** (le seul fichier que tu écris, par l'outil d'écriture).
+Rapport : **`$GATE_LOGS/s64-1/validation-p1.md`** (le seul fichier que tu écris, par l'outil d'écriture).
 
 ## Axes (chacun exercé, ou déclaré non exercé avec sa raison)
 
@@ -76,7 +76,7 @@ Rapport : **`/home/gcorbaz/devel/kesh-gate-logs/s64-1/validation-p1.md`** (le se
 8. **Règle de splitting et périmètre.** Recompte les modules au grain du domaine (crate / `features/<domaine>`) depuis la liste des
    fichiers touchés ; au-delà de cinq, finding. La fiche élargit-elle l'issue (D2, D6) au-delà de ce que décident les issues et le
    Project Lead ? Les trois correctifs sont-ils réellement indépendants ?
-9. **Gates et processus.** Gates sur idefix (`/home/gcorbaz/devel/kesh-gate-logs/serveur/gate-distant.sh <branche> tout` : branche
+9. **Gates et processus.** Gates sur idefix (`$GATE_LOGS/serveur/gate-distant.sh <branche> tout` : branche
    poussée, usage lu dans le script) ; E2E complet au dernier commit de code ; recette visuelle de **chaque état touché** (TVA, page
    d'édition, menu utilisateur) ; PDF des manuels non commités ; aucune migration : rien n'oblige-t-il pourtant à toucher
    `post_restore.rs`, l'audit d'idempotence ou `kesh_version_min_required` ?
