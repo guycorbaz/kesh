@@ -16,9 +16,11 @@ l'installation ouverte au rôle Consultation (#1712).
 |---|---|---|
 | 64-1 — Corrections de la v0.20.1 | #1178 (P2), #1758 (P3), #1712 (P3) | le taux de TVA saisi part en chaîne décimale ; `/invoices/{id}/edit` refuse une facture qui n'est pas un brouillon, et un rôle sans droit d'écriture ; `PUT /profile/mode` réservé à l'Administrateur |
 
-Une seule story : trois correctifs indépendants, sans migration, sur **cinq modules** (recompté par la validation P1 de la
+Une seule story : trois correctifs indépendants, sans migration, sur **cinq modules** au kickoff (recompté par la validation P1 de la
 fiche : écran des taux de TVA, écran des factures, cadre de l'application `(app)/+layout.svelte`, `kesh-api`, `kesh-i18n`) ;
-la règle de splitting préventif (plus de cinq modules) ne s'applique pas. Pas de story de solde : l'epic ne laisse pas
+la règle de splitting préventif (plus de cinq modules) ne s'appliquait pas alors. *Revue de code P1 (R1-1), 2026-11-27 : deux
+correctifs d'une ligne ajoutent `InvoiceForm.svelte` (composant de facture) et `products/+page.svelte` (catalogue) : **sept
+modules** ; ni découpage ni dérogation écrits, les défauts n'étant pas recyclés — à déclarer au Project Lead.* Pas de story de solde : l'epic ne laisse pas
 de dette propre (toute dette découverte s'ouvre en issue, § *On trace toujours*).
 
 ## Dépendances
