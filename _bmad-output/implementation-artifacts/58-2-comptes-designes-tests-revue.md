@@ -1,10 +1,10 @@
 # Story 58-2 : Comptes désignés et tests Rust de revue — dix trous de couverture (#592, #732, #736, #1060, #1062, #1063, #1064, #1066, #1127, #1433)
 
-Status: ready-for-dev (validation P1 remédiée : 0/0/6/7 ; sous réserve de la validation P2)
+Status: ready-for-dev (validation P1 remédiée : 0/0/6/7 ; validation P2 remédiée : 0/0/1/3 ; sous réserve de la passe P3 ciblée)
 
 *Fiche rédigée le 2026-11-27 (Sonnet 5.5, en autonomie), workflow `bmad-create-story`. Worktree `/home/gcorbaz/devel/kesh-58-2`, branche
 `story/58-2-comptes-designes-tests-revue` partie de `epic/58-nettoyage` à `90192c7b3` (qui contient la v0.20.0, la 58-1 et la 58-3). Fichier d'epic :
-`_bmad-output/planning-artifacts/epic-58-nettoyage.md` (§ *Story 58-2*). Epic 58 (nettoyage), release visée v0.21.0 (numéro attribué au tag). **Aucune migration,
+`_bmad-output/planning-artifacts/epic-58-nettoyage.md` (§ *Story 58-2*). Epic 58 (nettoyage) ; la 58-2 vise la **v0.20.1** (dimanche 2026-11-29 ou lundi 2026-11-30, décision de l'orchestrateur du 2026-11-27 ; numéro attribué au tag) : elle entre dans `main` **avant** l'Epic 53 (v0.21.0, vendredi 2026-12-04). **Aucune migration,
 aucun code de production, aucun changement d'API, aucun texte visible** : la story n'ajoute que des tests (et la correction d'un verrou de test) ; aucune
 compilation ni aucun gate n'a été lancé pour écrire la fiche, qui ne modifie que ce fichier, le prompt de validation et `sprint-status.yaml`.*
 
@@ -90,12 +90,14 @@ Le premier `update_account(Liability, Some(AccountRole::Payable))` pose le rôle
 Fiche `35-5a-date-du-jour-horloge.md` : AC2 (solde d'ouverture, 3 sites : `bank_accounts.rs`, `opening_balances.rs` complément et statut), AC3 (contre-passation et quatre annulations : règlement client,
 facture fournisseur, règlement fournisseur, rapprochement). ⚠️ **Le `grep -n 'horloge.aujourd_hui()'` ne délimite pas l'ensemble** (validation P1, V1-5) : rejoué à `90192c7b3`, il rend **25** lignes des routes,
 dont beaucoup hors d'AC2/AC3 (`InvoiceResponse::from_parts` de `invoices.rs`, l. 872, 944, 1059, 1502…), et **0** dans `kesh-db` — les dépôts reçoivent la date en **paramètre** `aujourd_hui` (`invoice_settlements_write.rs:1024`,
-`settlement_cancellation.rs:96`, `reconciliation_cancel.rs:706`…), si bien que les sites de **M7** n'y paraissent pas. L'ensemble clos se relève donc **par les chemins des tests** (§ AC12), non par ce `grep`.
+`settlement_cancellation.rs:96`, `reconciliation_cancel.rs:706`…), si bien que les sites de **M7** n'y paraissent pas. ⚠️ **Le `grep` ne voit pas non plus la couche `services/`** (validation P2, V2-1) : la liste des règlements
+(`GET /api/v1/invoices/{id}/settlements`, appelée par `ac3_sans_exercice_au_jour_suisse_l_annulation_est_refusee`, l. 736 et suivantes) lit la date par **`lecture.aujourd_hui()`** (`crates/kesh-api/src/services/factures.rs:582`, qui passe `aujourd_hui` à
+`settlement_cancel_blocker`), non par `state.horloge.aujourd_hui()` des routes ; `poignees.rs:62-63` est le relais (`self.horloge.aujourd_hui()`). L'ensemble clos se relève donc **par les chemins des tests** (§ AC12), non par ce `grep`.
 Les tests : `ac2_solde_d_ouverture_la_nuit_du_nouvel_an` (l. 540), `ac3_contre_passation_la_nuit_du_nouvel_an` (l. 616), `ac3_annulation_d_un_reglement_client_la_nuit` (l. 635), `…_d_une_facture_fournisseur_la_nuit` (l. 653),
 `…_d_un_reglement_fournisseur_la_nuit` (l. 668), `…_d_un_rapprochement_la_nuit` (l. 699), `ac3_sans_exercice_au_jour_suisse_l_annulation_est_refusee` (l. 736). Le fichier porte aussi des tests d'autres stories (l. 876 et suivantes) : hors périmètre.
 
 ### #1433 (P3) — `PUT /accounts/{id}` avec `parentId`
-`accounts::update` (l. 1149) : introuvable/archivé → **version** (l. 1224) → no-op → … → `guard_parent_change_in_tx` (l. 1266). Test existant de l'ordre : `le_conflit_de_version_precede_la_garde_de_retypage` (`accounts.rs:4062`, `kesh-db`),
+`accounts::update` (l. 1149) : introuvable/archivé → **version** (l. 1224) → no-op → … → `guard_parent_change_in_tx` (l. 1266). Test existant de l'ordre : `le_conflit_de_version_precede_la_garde_de_retypage` (`accounts.rs:4065`, `kesh-db`),
 pour le retypage seulement. HTTP : `put_parent` (`accounts_e2e.rs:1185`) lit la version courante et laisse `extra` la surcharger (`body[k] = v`) : une version périmée s'y passe par `extra`.
 ⚠️ **Deux filets derrière le contrôle de version** (validation P1, V1-4) : l'`UPDATE` porte lui-même `WHERE id = ? AND version = ?` (l. 1324-1327) et rend `OptimisticLockConflict` sur `rows == 0` (l. 1344-1348).
 Avec un parent **valide**, retirer ou déplacer le contrôle de la l. 1224 rend donc **toujours 409** : la mutation survit. Seul un parent que `guard_parent_change_in_tx` **refuse** la démasque.
@@ -192,12 +194,14 @@ retrouve **par la chaîne**.
   (`aujourd_hui`) date la contre-passation ou juge le rang 5 (site de **M7** : `chrono::Utc::now().date_naive()` à la place du paramètre). L'inventaire (test → route:ligne → dépôt:ligne) s'écrit au journal
   `kesh-gate-logs/e58/s582-mutations-1127.md` **avant** la première mutation ; les deux sites déjà joués par la 35-5a (M3 `routes/journal_entries.rs:534`, M7 `invoice_settlements_write.rs`) y figurent, marqués « joué en 35-5a ».
   Chaque autre site : la mutation, la sortie de nextest citée (le **nom** du test rouge), la restauration (copie + `touch`, garde de D4 vide). Le **compte** des lignes jouées égale celui de l'inventaire moins les deux déjà jouées
-  (recomptage depuis le journal). Une survivante → un test (D4) ; un site mort → angle mort écrit. Le `grep -n 'horloge.aujourd_hui()'` (25 lignes des routes à `90192c7b3`) sert de **contrôle de complétude** : chaque ligne
-  qu'il rend dans les six fichiers de routes est soit dans l'inventaire, soit écrite « hors AC2/AC3 » avec le chemin qui la lit.
+  (recomptage depuis le journal). Une survivante → un test (D4) ; un site mort → angle mort écrit. Le contrôle de complétude est `grep -rn 'aujourd_hui()' crates/kesh-api/src` (routes **et** `services/`, `exchange_rates/`, relais de `poignees.rs`), non le seul `horloge.aujourd_hui()` des routes : à `90192c7b3`, les routes en rendent **25**
+  dans six fichiers (`journal_entries` 1, `opening_balances` 2, `supplier_invoices` 6, `bank_accounts` 3, `reconciliation` 4, `invoices` 9), la couche `services/` ajoute `factures.rs` (l. 286, 334, 537, 582), `factures_fournisseur.rs:206`, `postes_ouverts.rs:91`,
+  `rapports.rs` (l. 977, 1025, 1115) et `poignees.rs:63` ; chaque ligne rendue est soit dans l'inventaire, soit écrite « hors AC2/AC3 » avec le chemin qui la lit. **Le site de la liste des règlements** (`services/factures.rs:582`) entre à l'inventaire de
+  `ac3_sans_exercice_…` (jambe `GET`), avec sa mutation M3 (`Utc::now().date_naive()` à la place de `lecture.aujourd_hui()`) : le test asserte `cancelBlockedBy == FISCAL_YEAR_INVALID` avant l'annulation.
 - **AC13 (#1433)** — Deux tests de `accounts_e2e.rs` : (a) `PUT /accounts/{id}` avec `version` périmée **et** un `parentId` que `guard_parent_change_in_tx` **refuserait** (un compte qui porte des écritures, comme `caisse` de
   `put_range_un_compte_mouvemente_sous_un_groupe` → `ACCOUNT_PARENT_HAS_ENTRIES`, ou le compte lui-même → cycle) → **409** de code **`OPTIMISTIC_LOCK_CONFLICT`** (le code, non le seul statut : `ACCOUNT_PARENT_HAS_ENTRIES` est aussi un 409),
   parent **relu inchangé** en base ; un parent **valide** ne prouve pas l'ordre (V1-4 : l'`UPDATE … AND version = ?` rend 409 de toute façon). (b) `PUT` sans `parentId` mais avec un autre champ modifié (le nom) → 200, nom changé,
-  `parentId` **inchangé** (compte rangé sous un groupe au préalable, `version` + 1). Mutations : (a) le bloc du garde de parent (`accounts.rs:1262-1268`, avec la résolution d'`own_fx` de la l. 1256) **déplacé avant** le `match` de la l. 1216, lisant `before_opt` — survit **avant**
+  `parentId` **inchangé** (compte rangé sous un groupe au préalable, `version` + 1). Mutations : (a) le bloc du garde de parent (`accounts.rs:1262-1268`, avec la résolution d'`own_fx` de la l. 1256) **déplacé avant** le `match` de la l. 1216, gardé par `if let Some(before) = &before_opt` (`own_fx` ne dépend que de `before` et de `changes` : la mutation compile ; elle s'écrit sur la copie, la l. 1266 d'origine étant retirée) — survit **avant**
   (`le_conflit_de_version_precede_la_garde_de_retypage` ne passe aucun parent), rougit (a) **après**. Le simple retrait du bras `Some(a) if a.version != version` (l. 1224) n'est **pas** la bonne mutation : ce test
   `kesh-db` la tue déjà (le garde de retypage parle alors avant), ce que le Dev Agent Record peut constater sans la compter comme preuve d'(a) ;
   (b) `.bind(parent_id)` (l. 1336) remplacé par `.bind(match changes.parent { <absent> => None, _ => parent_id })` (variante à écrire selon le type de `changes.parent`) — survit **avant** (le cas « absent » existant est un no-op,
@@ -218,7 +222,7 @@ la fiche n'en annonce pas le nombre d'avance.
 
 ## Tâches
 
-0. **Étape 0** : relire les lignes citées **par la chaîne** ; relever les sites d'AC12 (`grep`) ; vérifier D6 (la validation lit-elle le réglage ou le rôle ?), D7 (l'avoir sur la TVA due retypée passe-t-il ?), la table de D5 (`WriteOffNature::ALL`, ordre des natures
+0. **Étape 0** : relire les lignes citées **par la chaîne** ; relever les sites d'AC12 (chemins des tests, puis `grep -rn 'aujourd_hui()' crates/kesh-api/src`, services compris) ; vérifier D6 (la validation lit-elle le réglage ou le rôle ?), D7 (l'avoir sur la TVA due retypée passe-t-il ?), la table de D5 (`WriteOffNature::ALL`, ordre des natures
    au plan PME), l'attendu de version d'AC4 ; relever, pour chaque AC, la **mutation** et le **test qui la tue**. Recontrôler les corrections des validations (ligne lue citée au Dev Agent Record) : l'ordre en dur de
    `chart_designated_accounts` (V1-1), la garde `git status --porcelain` de D4 (V1-2, sonde positive jouée sur une mutation réelle avant la première restauration), l'ordre des entrées de `check_written` (V1-3), les deux filets de version
    de `accounts::update` et le type de `changes.parent` (V1-4), l'inventaire d'AC12 (V1-5), l'état de l'Epic 53 dans `main` (V1-6), l'import d'`i18nMsg` du formulaire (V1-7).
@@ -242,7 +246,7 @@ Un commit par étape franchie (`test(58-2): …`, `refs #N` des issues touchées
 
 ## Note de version
 
-*(Pour le CHANGELOG de la release du vendredi 2026-12-04, rubrique « Interne » ou « Tests », assemblée à l'intégration ; la story n'écrit pas le CHANGELOG.)*
+*(Pour le CHANGELOG de la v0.20.1 (dimanche 2026-11-29 ou lundi 2026-11-30), rubrique « Interne » ou « Tests », assemblée à l'intégration ; la story n'écrit pas le CHANGELOG.)*
 
 **Tests** — Dix gardes de la revue de code sont désormais tenues par un test : la clé i18n de chaque motif d'écran de modification bloquée, le type attendu en mots des refus de comptes désignés (actif, passif, charge ou produit),
 le même compte faux pour deux réglages, l'avoir possible sur une créance retypée, l'ordre de la version périmée et du déplacement d'un compte, les bornes de la reconnaissance d'une date dans la garde des textes, et le verrou
@@ -266,12 +270,14 @@ Toutes tranchées le 2026-11-27 (Q1 à Q3 par l'orchestrateur, choix techniques 
 Code de production : **aucun**. Fichiers de test : quatre ensembles (D2), borne de cinq respectée. Pas de dérogation à la règle de splitting. Signal de recyclage : sans objet (première passe).
 
 ### Fichiers communs
-Relevé à la validation P1 par `git diff --name-only 90192c7b3...origin/<branche>` sur les branches `epic/53*`, `story/53-*`, `epic/58*`, `story/58-*` ouvertes (V1-6) ; l'Epic 53 n'est pas dans `90192c7b3`.
+Relevé à la validation P1 par `git diff --name-only 90192c7b3...origin/<branche>` sur les branches `epic/53*`, `story/53-*`, `epic/58*`, `story/58-*` ouvertes (V1-6), **rejoué et complété à la P2** ; l'Epic 53 n'est pas dans `90192c7b3`.
+- **Ordre d'entrée (décision de l'orchestrateur, 2026-11-27)** : la 58-2 (v0.20.1) entre dans `main` **la première** ; l'Epic 53 (v0.21.0, 2026-12-04) la reprend. La fiche n'attend donc pas l'Epic 53. **Ce qui se rejoue si l'ordre changeait** (l'Epic 53 d'abord) : la 58-2 reprend `main`, recompte
+  `sitesTotal`, relève de nouveau l'inventaire d'AC12 et rejoue les mutations des sites que la 53-6 a changés ; les numéros de ligne de `accounts.rs` (AC13 ; l'Epic 53 renomme `find_types_by_ids_in_tx` en `lock_types_by_ids_in_tx`, +19 lignes dès la l. 458) et de `kesh-db/src/errors.rs` (AC8 ; +13 lignes dès la l. 570,
+  avant `WrongTypeDesignatedAccounts::new`) bougent, les mutations se retrouvent par la chaîne ; **aucun** des deux fichiers n'y change de comportement aux sites mutés (`accounts::update`, `new`).
 - `crates/kesh-api/tests/*` : seule la 58-2 de l'Epic 58. **Epic 53** : `designated_account_type_e2e.rs` n'est touché par **aucune** de ses branches ; en revanche `story/53-6-annulation-rapprochement-exercice` réécrit
   **`jour_suisse_nuit_e2e.rs`** (+377 lignes) et touche **`crates/kesh-db/tests/supplier_invoices_repository.rs`** (AC11), et, en production, **les sites mêmes de #1127** : `routes/{journal_entries,opening_balances,reconciliation}.rs`,
-  `repositories/{invoice_settlements_write,reconciliation_cancel,settlement_cancellation,supplier_invoices}.rs`. Conséquence : le journal d'AC12 vaut **pour le code de `90192c7b3`** et le dit en tête ; si l'Epic 53 entre
-  dans `main` avant la 58-2, celle-ci reprend `main`, **relève de nouveau l'inventaire** d'AC12 et rejoue les mutations des sites que la 53-6 a changés ; dans l'autre ordre, c'est la 53-6 qui reprend la 58-2 (second arrivé
-  résout, deux côtés gardés, à signaler au Project Lead au compte rendu de la PR).
+  `repositories/{invoice_settlements_write,reconciliation_cancel,settlement_cancellation,supplier_invoices}.rs`. Conséquence : le journal d'AC12 vaut **pour le code de `90192c7b3`** et le dit en tête ; dans l'ordre décidé (58-2 d'abord), c'est la 53-6 qui reprend la 58-2 (second arrivé
+  résout, deux côtés gardés : `jour_suisse_nuit_e2e.rs`, `supplier_invoices_repository.rs`, `JournalEntryForm.edit.test.ts`, `i18n-keys.test.ts` ; à signaler au Project Lead au compte rendu de la PR) et rejoue les mutations d'AC12 sur ses propres sites.
 - `frontend/src/lib/features/journal-entries/*` : 58-4 (textes d'interface) et 58-5 dans l'Epic 58 ; **Epic 53** (`story/53-1-ecriture-unique`, `53-1b`, `53-6`) modifie `JournalEntryForm.svelte` (le site de la l. 687 peut bouger : le
   retrouver par la chaîne) et `JournalEntryForm.edit.test.ts`, ainsi que `i18n-keys.test.ts`. **Le nouveau fichier de test** ne recoupe aucun fichier existant ; reprendre `epic/58-nettoyage` avant le dernier commit.
 - `sprint-status.yaml` : un bloc par story (conflit : garder les deux côtés).
@@ -318,3 +324,7 @@ Environ une journée : dix tests courts (S), deux M (#592 : 14 mutations ; #1127
   (oui, oui, oui) ; Q4 tranchée au code : l'avoir ne contrôle pas le type de la TVA due, comme le dit le manuel (PDF compris) — aucune issue. Prémisses confirmées : les dix issues sont ouvertes et non couvertes ;
   D1 (aucun `crates/*/src/*` au diff de la fiche) ; D6 (la validation lit le réglage) ; D7 (l'avoir passe) ; `sitesTotal` inchangé (`dansLePerimetreDeFichier` exclut `.test.`). Passe P2 (Sonnet, complète) à lancer :
   `58-2-comptes-designes-tests-revue-validation-prompt-p2.md`.
+- 2026-11-27 — **Validation P2** (Sonnet 5.5, passe complète, contexte frais ; rapport `kesh-gate-logs/e58/58-2-validation-p2.md`) : **0 CRITICAL / 0 HIGH / 1 MEDIUM / 3 LOW**, tous remédiés dans la fiche. Les six remédiations de la P1 (V1-1 à V1-6) tiennent au code ;
+  pas de recyclage (le MEDIUM est d'origine neuve : un site non résolu de l'ensemble clos d'AC12, que la P1 avait fermé par un `grep` limité aux routes). MEDIUM : V2-1 (AC12 : la couche `services/` lit la date par `lecture.aujourd_hui()`, `services/factures.rs:582`,
+  jambe `GET /settlements` d'`ac3_sans_exercice_…` : contrôle de complétude élargi à `crates/kesh-api/src`). LOW : V2-2 (release visée v0.20.1 et ordre d'entrée avant l'Epic 53, ce qui se rejoue si l'ordre change ; l'Epic 53 touche aussi `kesh-db/src/{repositories/accounts,errors}.rs` : lignes qui bougent, comportement
+  inchangé aux sites mutés) ; V2-3 (`accounts.rs:4062` → `4065`) ; V2-4 (AC13(a) : forme compilable de la mutation). Tendance : 0/0/6/7 → 0/0/1/3. Passe P3 (ciblée, Haiku, sur le seul commit de remédiation de la P2, fiche seule) : `58-2-comptes-designes-tests-revue-validation-prompt-p3.md`.
