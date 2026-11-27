@@ -1023,6 +1023,99 @@ async fn partielle_en_une_ecriture_puis_annulation(pool: MySqlPool) {
     assert_eq!(revue["proposals"][0]["type"], "card_group", "{revue}");
 }
 
+/// Story 53-6a (#1674, AC-2, AC-3, AC-4, AC-7, R6) — **le paiement Wise groupé
+/// d'un exercice antérieur encore ouvert** : l'écriture du groupe est du
+/// 10 mars 2020 ; l'exercice du montage (2020-2030) est coupé au 31 décembre
+/// 2020 et un exercice suivant couvre le jour (état forgé, dit tel : l'écriture
+/// reste dans le premier).
+///
+/// - **clos** : le geste est refusé `409 FISCAL_YEAR_CLOSED`, rien n'est écrit,
+///   les trois transactions restent rapprochées ;
+/// - **rouvert** : une seule inverse, datée de l'écriture (10 mars 2020), dans
+///   l'exercice de l'écriture ; rien dans l'exercice du jour ; les trois
+///   transactions reviennent en attente.
+///
+/// La réouverture est posée par le statut (SQL) : la clôture réelle exigerait la
+/// réévaluation des soldes en devises du montage, qui n'est pas le sujet. Tue M1
+/// pour le groupe Wise (le bras `Entry` daté du jour au lieu de l'écriture).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s536a_ac7_un_paiement_wise_groupe_se_contre_passe_dans_son_exercice(pool: MySqlPool) {
+    let (ctx, regle, ids) = monter_partielle(&pool).await;
+    let (s, b) = ctx.accepter(vec![groupe(&ids, regle, ctx.charge)]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    let ecriture = b["accepted"][0]["journalEntryIds"][0].as_i64().unwrap();
+    let premier = ctx.seeded.fiscal_year_id;
+    sqlx::query("UPDATE fiscal_years SET end_date = '2020-12-31' WHERE id = ?")
+        .bind(premier)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let suivant: i64 = sqlx::query_scalar(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+         VALUES (?, 'Exercice suivant', '2021-01-01', '2030-12-31', 'Open') RETURNING id",
+    )
+    .bind(ctx.seeded.company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let frais = ctx.tx("FEE-CARD-90000020", ctx.usd).await;
+    let chemin = format!("/api/v1/reconciliation/transactions/{frais}/cancel");
+
+    // AC-4 — l'exercice de l'écriture est clos : refusé, rien n'est écrit.
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(premier)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let avant = ctx.count("SELECT COUNT(*) FROM journal_entries").await;
+    let (s, b) = ctx.post(&chemin, json!({})).await;
+    assert_eq!(s, 409, "{b}");
+    assert_eq!(b["error"]["code"], "FISCAL_YEAR_CLOSED", "{b}");
+    assert_eq!(
+        ctx.count("SELECT COUNT(*) FROM journal_entries").await,
+        avant,
+        "rien d'écrit"
+    );
+    for id in ids {
+        assert_eq!(ctx.etat(id).await, ("reconciled".into(), Some(ecriture)));
+    }
+
+    // AC-3 — l'exercice est rouvert : l'inverse y est datée de l'écriture.
+    sqlx::query("UPDATE fiscal_years SET status = 'Open' WHERE id = ?")
+        .bind(premier)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (s, b) = ctx.post(&chemin, json!({})).await;
+    assert_eq!(s, 200, "{b}");
+    let inverses: Vec<(chrono::NaiveDate, i64)> = sqlx::query_as(
+        "SELECT entry_date, fiscal_year_id FROM journal_entries WHERE reverses_entry_id = ?",
+    )
+    .bind(ecriture)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        inverses,
+        vec![(
+            chrono::NaiveDate::from_ymd_opt(2020, 3, 10).unwrap(),
+            premier
+        )],
+        "une seule inverse, datée de l'écriture, dans son exercice"
+    );
+    assert_eq!(
+        ctx.count(&format!(
+            "SELECT COUNT(*) FROM journal_entries WHERE fiscal_year_id = {suivant}"
+        ))
+        .await,
+        0,
+        "rien dans l'exercice du jour"
+    );
+    for id in ids {
+        assert_eq!(ctx.etat(id).await, ("pending".into(), None), "{id}");
+    }
+}
+
 /// Amendement A-3 (décision (c)) : la proposition qu'on n'accepte pas se
 /// traite à la main par l'API, en plusieurs appels, sans être perdue — une
 /// écriture par la route des écritures, puis le rattachement ; le reste suit

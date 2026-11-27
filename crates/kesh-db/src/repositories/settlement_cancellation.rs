@@ -55,25 +55,34 @@ pub type SettlementCancelHit = (SettlementCancelBlocker, Option<i64>, Option<Str
 ///   borne** (seuil inclusif) est refusée — rang `PeriodLocked`, à la place du
 ///   rang 5, qui y est inatteignable (l'exercice de l'écriture, ouvert au rang
 ///   2, couvre sa date). La borne et la date sont lues **sans verrou**, même
-///   tolérance que l'étape 0-bis du socle ; la borne voyage en étiquette ;
+///   tolérance que l'étape 0-bis du socle ; la borne voyage en étiquette.
+///   Cette tolérance vaut désormais **pour une écriture du passé** : avant la
+///   53-6a, la contre-passation du dé-rapprochement, datée du jour, ne tombait
+///   jamais sous une borne (strictement antérieure au jour) ; datée de
+///   l'écriture, elle peut entrer dans une période dont le verrou est posé dans
+///   le même instant — la tolérance de toute saisie antidatée, sans remède
+///   attendu (revue P1, L13) ;
 /// - sous [`CancellationDating::Today`] (les gestes depuis la fiche), il n'est
 ///   **pas** évalué — limite assumée : il se contrôle au clic (`PERIOD_LOCKED`,
 ///   400). Une borne ne peut pas être future ; seule une borne égale au jour
 ///   l'atteindrait.
 ///
-/// ⚠️ **Angle mort assumé — l'exercice du jour suivi d'un exercice clos**
-/// (Story 15-12b, #543, C120 ; rang tracé par l'issue **#568**). Le rang 5
-/// contrôle qu'un exercice **ouvert** couvre le jour où la contre-passation
-/// serait datée, **pas** qu'aucun exercice postérieur à celui-ci n'est clos.
-/// Dans l'état hérité où l'exercice du jour est suivi d'un exercice clos (un
-/// exercice futur clôturé d'avance), ce prédicteur rend `None` — l'écran
-/// annonce l'annulation possible — et le clic est refusé par le filet de
+/// ⚠️ **Angle mort assumé — l'exercice de la contre-passation suivi d'un
+/// exercice clos** (Story 15-12b, #543, C120 ; rang tracé par l'issue
+/// **#568**). Le rang 5 (sous `Today`) contrôle qu'un exercice **ouvert** couvre
+/// le jour où la contre-passation serait datée, et le rang 2 (sous
+/// `OriginDate`) que l'exercice de l'écriture est ouvert ; ni l'un ni l'autre ne
+/// contrôle qu'**aucun exercice postérieur à celui de la contre-passation n'est
+/// clos**. Dans cet état hérité (sous `Today`, l'exercice du jour suivi d'un
+/// exercice futur clôturé d'avance ; sous `OriginDate`, un exercice ouvert
+/// suivi d'un exercice clos), ce prédicteur rend `None` — l'écran annonce
+/// l'annulation possible — et le clic est refusé par le filet de
 /// `journal_entries::create_in_tx_inner` (`400 LATER_FISCAL_YEAR_CLOSED`, dont
 /// le message porte sa propre marche à suivre). Même nature que la limite
 /// précédente : un refus du socle, au clic, que la lecture ne reproduit pas.
-/// Fixé par le test `predicteur_muet_sous_un_exercice_futur_clos`
-/// (`kesh-db/tests/filet_bilan_clos.rs`), qui rougira le jour où le rang sera
-/// ajouté.
+/// Fixé, pour chaque datation, par `predicteur_muet_sous_un_exercice_futur_clos`
+/// et `…_a_la_date_de_l_origine` (`kesh-db/tests/filet_bilan_clos.rs`), qui
+/// rougiront le jour où le rang sera ajouté.
 ///
 /// **Lecture seule** : aucun verrou n'est posé ici. ⛔ **Un geste qui s'en sert
 /// pour REFUSER doit donc verrouiller avant** — la pièce, puis l'écriture de

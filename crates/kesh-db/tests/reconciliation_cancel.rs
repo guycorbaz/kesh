@@ -447,6 +447,15 @@ async fn s536a_ac12_un_autre_exercice_que_celui_de_l_origine_est_un_invariant(po
 /// elle tient l'exercice du jour. Mesurée par une sonde `FOR UPDATE NOWAIT`
 /// d'une autre connexion, transaction de la contre-passation tenue ouverte
 /// (aucun privilège `PROCESS`, `docs/agents-orchestration.md` § 6.1).
+///
+/// **Portée exacte** (revue P1, L7) : la sonde appelle `reverse_in_tx` seul —
+/// non le geste entier `cancel_in_tx`, dont elle ne couvre ni l'ordre des
+/// verrous ni les lectures de la queue — et ne regarde que deux lignes de
+/// `fiscal_years`. Elle établit que l'exercice du jour est tenu sous `Today` et
+/// **libre** sous `OriginDate` (la thèse de D3 : l'ensemble des verrous
+/// diminue). Elle n'établit ni que « 2019 tenu » vienne de l'étape (4) — l'étape
+/// (1) du socle le tient déjà —, ni l'absence de verrou sur une autre table, ni
+/// les verrous d'intervalle.
 #[sqlx::test(migrations = "./test-schema")]
 async fn s536a_ac12_la_contre_passation_datee_de_l_origine_ne_tient_pas_l_exercice_du_jour(
     pool: MySqlPool,
@@ -905,6 +914,42 @@ async fn s536a_ac6_a_supplier_settlement_reverses_in_its_open_year(pool: MySqlPo
         .await
         .unwrap();
     assert_eq!(statut, "open");
+}
+
+/// Story 53-6a (#1674, AC-3, AC-6, R3) — **le paiement fournisseur d'un
+/// exercice 2019 clôturé puis rouvert** : l'inverse y est datée du paiement
+/// (3 juin 2019), comme à l'exercice jamais clôturé ; rien dans l'exercice du
+/// jour ; la facture redevient `open` ; puis 2019 se clôture de nouveau. Tue M3.
+#[sqlx::test(migrations = "./test-schema")]
+async fn s536a_ac6_a_supplier_settlement_reverses_in_a_reopened_year(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let (c, u) = (seeded.company_id, seeded.admin_user_id);
+    let fy_2019 = exercice_2019(&pool, c).await;
+    let f = preparer(&pool, &seeded).await;
+    let r = reglement_rapproche(&pool, &seeded, f, "FF-2019R", jour(2019, 6, 3), dec!(75.50)).await;
+    kesh_db::repositories::fiscal_years::close(&pool, u, c, fy_2019)
+        .await
+        .expect("clôture de 2019");
+    kesh_db::repositories::fiscal_years::reopen(&pool, u, c, fy_2019, "correction".into())
+        .await
+        .expect("réouverture de 2019");
+    let du_jour = ecritures_de(&pool, seeded.fiscal_year_id).await;
+
+    reconciliation_cancel::cancel(&pool, c, r.bank_transaction_id, Acteur::utilisateur(u))
+        .await
+        .expect("dé-rapprochement dans l'exercice rouvert");
+    let ((_, date, fy, _), _) = inverse_de(&pool, r.settlement_entry_id).await;
+    assert_eq!((date, fy), (jour(2019, 6, 3), fy_2019));
+    assert_eq!(ecritures_de(&pool, seeded.fiscal_year_id).await, du_jour);
+    let statut: String = sqlx::query_scalar("SELECT status FROM supplier_invoices WHERE id = ?")
+        .bind(r.supplier_invoice_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(statut, "open");
+    kesh_db::repositories::fiscal_years::close(&pool, u, c, fy_2019)
+        .await
+        .expect("2019 se clôture de nouveau");
 }
 
 /// Rien n'a bougé : le lien, la facture payée, le nombre d'écritures.

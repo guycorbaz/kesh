@@ -1963,6 +1963,54 @@ async fn s536a_group_unreconciliation_reverses_in_the_entry_year(pool: MySqlPool
     }
 }
 
+/// Story 53-6a (#1674, AC-3, AC-7, R4) — **l'exercice du groupe clôturé puis
+/// rouvert** : l'inverse y est datée de l'écriture (15 juin 2019), comme à
+/// l'exercice jamais clôturé ; rien dans l'exercice du jour ; puis 2019 se
+/// clôture de nouveau sans obstacle nouveau. Tue M4.
+#[sqlx::test(migrations = "./test-schema")]
+async fn s536a_group_unreconciliation_reverses_in_a_reopened_year(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let fy = exercice_2019(&pool, m.s.company_id).await;
+    let a = facture(&pool, &m, "R-1", dec!(100.00), en_2019(6, 1), None).await;
+    let b = facture(&pool, &m, "R-2", dec!(200.00), en_2019(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(300.00), en_2019(6, 15)).await;
+    regler(&pool, &m, bt, &[a, b], None).await.expect("réglé");
+    let (c, u) = (m.s.company_id, m.s.admin_user_id);
+    kesh_db::repositories::fiscal_years::close(&pool, u, c, fy)
+        .await
+        .expect("clôture de 2019");
+    kesh_db::repositories::fiscal_years::reopen(&pool, u, c, fy, "correction".into())
+        .await
+        .expect("réouverture de 2019");
+    let du_jour: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE fiscal_year_id = ?")
+            .bind(m.s.fiscal_year_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    let undone = reconciliation_cancel::cancel(&pool, c, bt, acteur(&m))
+        .await
+        .expect("dé-rapproché dans l'exercice rouvert");
+    let (date, exercice): (NaiveDate, i64) =
+        sqlx::query_as("SELECT entry_date, fiscal_year_id FROM journal_entries WHERE id = ?")
+            .bind(undone.reversal_journal_entry_id.expect("contre-passée"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((date, exercice), (en_2019(6, 15), fy));
+    let apres: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE fiscal_year_id = ?")
+            .bind(m.s.fiscal_year_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(apres, du_jour, "rien dans l'exercice du jour");
+    kesh_db::repositories::fiscal_years::close(&pool, u, c, fy)
+        .await
+        .expect("2019 se clôture de nouveau");
+}
+
 #[sqlx::test(migrations = "./test-schema")]
 async fn group_unreconciliation_refuses_a_credited_invoice_and_names_it(pool: MySqlPool) {
     use kesh_db::errors::SettlementCancelBlocker as B;

@@ -3821,10 +3821,14 @@ async fn reverse_in_tx_inner(
                     )));
                 }
             };
-            // ⚠️ Angle mort assumé (D2, M7) : sur le chemin du dé-rapprochement,
-            // l'exercice de l'origine est déjà tenu (étape 3 du geste) ; une
-            // lecture ordinaire verrait ici le même état. La confirmation reste,
-            // défense d'un appelant futur qui n'aurait pas verrouillé avant.
+            // ⚠️ Mutant équivalent assumé (D2, M7 ; revue P1, L6) : l'étape (1)
+            // verrouille, **pour tout appelant**, l'écriture d'origine et son
+            // exercice (`… JOIN fiscal_years … FOR UPDATE`). Quand cette lecture
+            // relit la même ligne, la transaction la tient déjà : une lecture
+            // ordinaire verrait le même état, pour le dé-rapprochement comme pour
+            // un appelant futur. Ce qui garde sa valeur, c'est le contrôle
+            // `fy.id != origin_fy_id` ci-dessous (état forgé, AC-12 a), non le
+            // mode de lecture.
             let fy = super::fiscal_years::find_open_covering_date(tx, company_id, entry_date)
                 .await?
                 .ok_or(DbError::FiscalYearClosed)?;
