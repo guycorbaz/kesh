@@ -1,6 +1,6 @@
 # Story 49-2 : réordonner les lignes d'une facture client en brouillon — boutons ↑ / ↓, au clavier (#1756)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-27 (Opus 5.5) par le workflow `bmad-create-story`, sur décision du Project Lead du 2026-11-27 :
 la 49-2 est la fonctionnalité de la **v0.20.1** (milestone `v0.20.1`, échéance lundi 2026-11-30 ; la fiche disait d'abord
@@ -527,3 +527,7 @@ Journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e492/` : `vert-T1.log`, `rouge
 - 2026-11-27 — **Revue de code P1** (Opus 5.5, `bmad-code-review`, `kesh-gate-logs/e492/49-2-revue-p1.md`) : **0/0/2/11**, plus trois constats antérieurs à la story. **Remédiée** (Opus 5.5) : M1, M2, L1 à L5, L7 à L11 corrigés (L6 : reprise de `main`) ; poubelle verrouillée et libellé en i18n ; l'effacement des messages sans rapport (D7) laissé tel quel. Détail et journaux au Dev Agent Record. Passe P2 (Sonnet) à lancer, prompt `49-2-reordonnancement-lignes-revue-prompt-p2.md`.
 - 2026-11-27 — **Revue de code P2** (Sonnet 5.5, `kesh-gate-logs/e492/49-2-revue-p2.md`) : **0/0/1/0** — M-P2-1 : l'E2E appelait `pdftotext`, absent d'idefix et de tout prérequis documenté. **Remédié par l'orchestrateur** : bloc et import retirés, en-tête et titre du test ramenés à ce qu'il prouve, l'ordre dans le PDF renvoyé à T4. Passe P3 ciblée (Haiku) sur ce seul commit, prompt `49-2-reordonnancement-lignes-revue-prompt-p3.md`.
 - 2026-11-27 — **Revue de code P3** (Haiku 5.5, passe ciblée sur `7becc66d7`, `kesh-gate-logs/e492/49-2-revue-p3.md`) : **0/0/0/1** — tendance P1 Opus 0/0/2/11 → P2 Sonnet 0/0/1/0 → P3 Haiku 0/0/0/1. M-P2-1 résolu : plus de `pdftotext`, `execFileSync` ni `testInfo` dans la spec ; `fs` et `path` encore employés (captures) ; `%PDF-` conservé ; T4 (`de_haut_en_bas`, facture et avoir) prouve l'ordre dans le PDF ; L9 exacte. LOW-1 non corrigé (commentaire d'en-tête de la spec, « à la fiche de la facture validée » alors que l'ordre se lit par l'API ; hors périmètre de la fiche). Boucle close, aucun finding au-dessus de LOW. Statut passé à `review` sur décision de l'orchestrateur ; les journaux des gates d'idefix du 2026-11-27 (`test-fast`, `gate-ci`, `front`) ne contiennent aucun résultat (attente du verrou, code 255) : à produire avant la fusion.
+
+## Clôture (2026-11-27)
+
+Boucle de revue close : P1 Opus 0/0/2/11 → P2 Sonnet 0/0/1/0 (M-P2-1, `pdftotext`, remédié par l'orchestrateur, `7becc66d7`) → P3 Haiku ciblée 0/0/0/1 (LOW de l'en-tête corrigé, `c32249466`, vérifié par `grep`). Gates de clôture au dernier commit de code `c32249466` : `gate-ci` 7009 tests, 0 échec, et frontend complet (check, lint i18n, 5786 tests, build) sur la station (`$GATE_LOGS/e492/cloture/`) ; E2E complet sur idefix : 557 passés, 20 ignorés, 7 échecs, exactement ceux de la KF-029 (`$GATE_LOGS/idefix/20261127-223042-story_49-2-reordonnancement-lignes-e2e/`). Un premier E2E sur la station (84 échecs) est écarté : `pool timed out` de MariaDB, trois agents testant sur le même conteneur — montage, non la story.
