@@ -458,8 +458,10 @@ pub const EXEMPT_MIGRATIONS: &[(i64, ExemptionBasis, &str)] = &[
     (
         20260909000001,
         ExemptionBasis::PerishableSince(20260827000001),
-        "Parc vide, et NON « hors fenêtre » — cette migration EST dans la fenêtre d'importabilité, \
-         et invoquer la fenêtre serait faux. L'argument porte sur le PARC : l'intervalle où un \
+        "Fondement déclaré : le PARC vide, non la fenêtre. Cette migration est hors fenêtre \
+         d'importabilité depuis 20260917000001 (journal_entry_number_sequences, Story 25-2-c), \
+         comme 20260828000001 et 20260910000001 ; le parc reste le fondement déclaré, et ne dit \
+         rien de la fenêtre. L'argument porte sur le PARC : l'intervalle où un \
          backup porterait `postable = TRUE` sur les comptes de clôture est \
          [20260827000001 .. celle-ci), et AUCUNE version publiée ne s'y trouve — la dernière est \
          v0.11.1 (2026-08-24), antérieure à la borne basse ; l'instance en service exécute cette \
@@ -481,9 +483,10 @@ pub const EXEMPT_MIGRATIONS: &[(i64, ExemptionBasis, &str)] = &[
     (
         20260915000001,
         ExemptionBasis::PerishableSince(20260827000001),
-        "Parc vide, et NON « hors fenêtre » — cette migration ne crée aucune table : elle EST dans \
-         la fenêtre d'importabilité, et invoquer la fenêtre serait faux. L'argument porte sur le \
-         PARC : un backup importable porte `invoice_settlements` (20260827000001), et il ne manque \
+        "Fondement déclaré : le PARC vide, non la fenêtre. Cette migration ne crée aucune table et \
+         est hors fenêtre d'importabilité depuis 20260917000001 (journal_entry_number_sequences, \
+         Story 25-2-c), comme 20260828000001 et 20260910000001 ; le parc reste le fondement \
+         déclaré, et ne dit rien de la fenêtre. L'argument porte sur le PARC : un backup importable porte `invoice_settlements` (20260827000001), et il ne manque \
          `audit_log.company_id` que s'il précède celle-ci. L'intervalle \
          [20260827000001 .. celle-ci) ne contient AUCUNE version publiée — la dernière est v0.11.1 \
          (2026-08-24), antérieure à la borne basse ; l'instance en service exécute cette version. \

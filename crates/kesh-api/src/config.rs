@@ -1343,7 +1343,8 @@ fn parse_max_files(raw: &str, warnings: &mut Vec<String>) -> usize {
 ///   collecté (cf. doc du module).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogConfig {
-    /// Chemin complet du fichier de log (ex. `/var/log/kesh/kesh.log`).
+    /// Dossier, préfixe et suffixe du fichier de log (ex. `/var/log/kesh/kesh.log`) ;
+    /// avec la rotation, le nom reçoit la date (`kesh.2026-11-27.log`).
     /// `None` désactive la sortie fichier.
     pub file_path: Option<String>,
     pub rotation: LogRotation,
