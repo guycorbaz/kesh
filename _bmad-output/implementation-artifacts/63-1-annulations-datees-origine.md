@@ -1,6 +1,6 @@
 # Story 63-1 : Les annulations depuis la fiche contre-passent dans l'exercice de l'écriture, à sa date (#1752, #1753, #1754)
 
-Status: ready-for-dev  <!-- sous réserve de la validation : P1 (Sonnet) et P2 (Opus) faites le 2026-11-27, MEDIUM corrigés ; P3 (Sonnet, complète) à lancer : 63-1-annulations-datees-origine-validation-prompt-p3.md -->
+Status: ready-for-dev  <!-- validation terminée le 2026-11-27 : P1 (Sonnet) 0/0/2/6, P2 (Opus) 0/0/1/6, P3 (Sonnet, complète) 0/0/0/5 ; aucune passe de plus -->
 
 *Fiche rédigée le 2026-11-27 (Opus 5.5, `bmad-create-story`), worktree `kesh-63-1`, branche `story/63-1-annulations-datees-origine`, partie
 de `story/53-6-annulation-rapprochement-exercice` à `6b71d4c21` (la 53-6a en développement). Epic 63 « Annulations datées de l'origine »
@@ -233,8 +233,8 @@ changement de datation, lui, change des attendus** (AC-11, « Autres tests qui c
   `reverse_in_tx`. La variante `NoOpenFiscalYearToday`, le bras `Today` de `settlement_entry_cancel_blocker`, leurs clés et replis restent
   (exhaustivité des `match`, tests du harnais de précédence) ; leurs doc-comments disent « inatteignable en production depuis la 63-1 ».
   *Écartée* : les retirer ici — le retrait touche aussi `frontend/src/lib/features/reconciliation/` (union `FISCAL_YEAR_INVALID` de
-  `reconciliation-cancel.ts`), soit un sixième module (§ *Règle de splitting préventif*). Il fait l'objet d'une issue `technical-debt` (Q-C),
-  texte au § *Issues à ouvrir*.
+  `reconciliation-cancel.ts`), soit un sixième module (§ *Règle de splitting préventif*). Il fait l'objet de l'issue `technical-debt` **#1759** (Q-C),
+  texte au § *Issues ouvertes*.
 - **D8 — Aucune migration, aucun backfill** : les annulations passées ne se réparent pas d'office (CLAUDE.md § *Ce qu'impose la production*) ;
   leur détection est l'objet de Q-B.
 
@@ -286,7 +286,7 @@ patron.
   jeton) ; **angle mort écrit** : un `#[cfg(test)] mod x;` sans accolades fait masquer par `blocs_de_test` le code de production jusqu'à la fin du
   premier bloc `{ … }` qui suit (`bloc_apres` prend la première `{`) — trois sites à `6b71d4c21` : `kesh-api/src/pre_upgrade_backup.rs:432` et
   `kesh-core/src/exchange_rates/parse.rs:736` (fin de fichier, rien de masqué), `kesh-report/src/lib.rs:26` (masque `:26-43`, des `pub mod`/`pub use`,
-  sans jeton) ; défaut de l'outil commun, hors story (§ *Issues à ouvrir*). ⚠️ **Retrait des tests par bloc, non par troncature à la première ligne `#[cfg(test)]`** : `journal_entries.rs` en
+  sans jeton) ; défaut de l'outil commun, hors story (issue **#1760**, § *Issues ouvertes*). ⚠️ **Retrait des tests par bloc, non par troncature à la première ligne `#[cfg(test)]`** : `journal_entries.rs` en
   porte une dès `:3322` (module `verdict_de_datation`), avant `reverse` (`:3994`) : une troncature ne verrait pas R10 et la garde passerait à vide. Sonde positive
   écrite au test : R10 **doit** être trouvé (le test échoue s'il ne trouve aucune construction), plus des échantillons synthétiques rougissants —
   un argument sur plusieurs lignes, un bras `=> CancellationDating::Today(j)`, un alias `use … as D; D::Today(j)` (mémoire « pathspec git muet »).
@@ -320,6 +320,25 @@ patron.
     branche du geste public est jouée sous `OriginDate` (lecture comprise). Pour l'annulation de facture, qui n'a plus de datation en
     paramètre, les lignes `NoOpenFiscalYearToday` deviennent « lecture `None`, clic accepté » (AC-9 pour #1754) et une ligne `PeriodLocked`
     s'ajoute (facture validée non payée sous la borne) ; le rang 5 de cette famille devient inatteignable (D7), ce que le doc-comment dit.
+  - `kesh-db/tests/open_items.rs::as_of_under_the_lock_is_stable_until_an_admin_unlocks` (`:871`, relevé à la validation P3) : la facture est datée
+    `jours_avant(100)`, le règlement `jours_avant(90)`, `X = jours_avant(85)` (`:887`) ; après `unlock_books(… None …)` (`:923`),
+    `invoice_settlements_write::cancel_settlement` (`:933`) contre-passe **à la date du règlement** (−90), non au jour. Le groupe `reversal`
+    {règlement, miroir} est lettré à `MAX(entry_date)` = −90 ≤ `X` : il est **acquis au X** (`open_items.rs:71-77` de `letterings/`). Les attendus de
+    `:955-962` changent : `item(&apres, l_regl)` ne trouve plus la ligne (elle n'est plus listée), `OpenReason::LetteredAfterAsOf` (`:948`) ne s'y
+    applique plus, `apres.total == avant.total + 2` (`:952`) devient `+ 1` (seule la créance de la vente, `Unlettered`, réapparaît) ; l'invariant
+    `invariant(&pool, &m, &apres)` tient toujours (le miroir daté −90 entre dans la balance au X). Le doc-comment (`:865-869`, « la créance et la ligne
+    de règlement réapparaissent ») se réécrit ; la démonstration « lettrée après `X` » ne peut plus se faire par ce geste (l'inverse n'est jamais
+    postérieure à son origine) : elle reste portée par les autres tests du fichier (`:444`, `:487`, `:630`, `:861-862`).
+  - **Montages relus à la validation P3 sans changement d'attendu attendu** (la date de l'inverse y passe du jour à l'origine, sans que rien ne la
+    compare ; à confirmer par le vert, non à croire) : `tests/support/lettering_documents.rs::seed_lettering_documents` (annulation de `apres`
+    = −150, verrou posé ensuite à −300), `lettering_documents_backfill.rs::rattrapage` (annulations à −200/−140, borne −250 ensuite),
+    `admin_full_import_e2e.rs::lettering_pieces` (annulations avant la borne du 2026-03-31), `letterings_e2e.rs::forecast_equals_delete_over_http`
+    (annulations avant le verrou `jours_avant(1)`), `letterings.rs::group_detail_of_reversal_pairs` (borne = le jour, couvre l'inverse datée −100 ;
+    commentaire `:2392` « datée du jour » à réécrire), `supplier_invoices_internal_number.rs::cancelled_then_draft_keeps_the_number` (`:340`,
+    « la contre-passation se date du jour : A doit le couvrir » devient faux ; `UPDATE fiscal_years SET end_date = '2099-12-31'` n'est plus
+    nécessaire), `invoice_settlement.rs` `:764` (« contre-passation datée du jour ») et `:1652-1654` (le garde « exercice du jour » ne
+    s'applique plus : le socle ne tient plus l'exercice du jour ; le test garde sa preuve, le rang 2 bis étant refusé avant le socle), `:2531`.
+    Les commentaires de test qui disent « datée du jour » pour l'un des trois gestes se corrigent au même patch (propagation du symptôme).
   - **Méthode de clôture, à T1/T2** : la liste ci-dessus vient de la lecture (`FISCAL_YEAR_INVALID`/`NoOpenFiscalYearToday`, verrou puis geste
     public dans une même fonction de test) ; un test dont le montage pose verrou ou exercices dans un auxiliaire lui échappe. Après T2, le
     développeur lance `kesh-db` et `kesh-api` entiers, **inventorie chaque rouge** au Dev Agent Record (fichier, test, attendu ancien → nouveau,
@@ -368,6 +387,11 @@ patron.
 
 ## Mutations (une à une, fichier touché après restauration — mémoire « mutation restaurée, binaire périmé »)
 
+⚠️ **Forme des mutations M1 à M6 après D3** : les gestes et lecteurs de ces mutations n'ont plus de paramètre de date ; « `OriginDate` → `Today` » se
+fait donc en réintroduisant une date, `Today(chrono::Utc::now().date_naive())` (le jour réel du poste, qui diffère de l'origine dans tous les
+montages d'AC-1 à AC-9, passée en `jours_avant` ou posée en 2025 sous l'horloge d'`kesh-api`), et non en rendant un paramètre qui n'existe plus.
+Après chaque mutation, toucher le fichier à la restauration.
+
 | # | Mutation | Test qui la tue |
 |---|---|---|
 | M1 | R7 : `OriginDate` → `Today` dans `invoice_settlements_write::cancel_settlement` | AC-1 (et AC-3 pour le solde) |
@@ -394,7 +418,12 @@ patron.
   `supplier_invoice_cancel_blocker`, routes `invoices.rs:1601-1610`, `supplier_invoices.rs:1007-1016`, `:1046-1055`) ; commit, push.
 - [ ] **T3 — Textes serveur** (D5, D7) : `kesh-api/src/errors.rs` (deux bras `PeriodLocked`, commentaires des rangs 5) ; quatre locales
   (deux motifs neufs, quatre confirmations) ; garde lexicale d'AC-10 ; commit, push.
-- [ ] **T4 — Écran** : `settlement-cancel-blocked.ts`, `invoice-cancel.ts` (unions, textes, borne) ; `invoices/[id]/+page.svelte` et
+- [ ] **T4 — Écran** : `settlement-cancel-blocked.ts`, `invoice-cancel.ts` (unions, textes, borne) ; **les quatre replis inline des deux pages**
+  (`invoices/[id]/+page.svelte:1867` et `:1871`, `supplier-invoices/[id]/+page.svelte:319` et `:366`, qui disent « datée d'aujourd'hui » et
+  doivent dire mot pour mot le FTL fr-CH réécrit — garde `i18n-un-repli-par-cle.test.ts`) ; grep de la **valeur** `datée d'aujourd'hui` /
+  `d'aujourd'hui` sur `frontend/src` et `kesh-i18n/locales` (quatre locales : DE « heutigen Datum », IT « oggi », EN « today »), et relecture
+  — sans changement forcé — de `supplier-invoices-unvalidate-confirm-body-cancelled` (« la période de l'achat et de celle de l'annulation » reste
+  vrai pour une annulation d'avant la v0.21.0, `+page.svelte:1342-1346`, commentaire `:14`) ; `invoices/[id]/+page.svelte` et
   `supplier-invoices/[id]/+page.svelte` (lecture de ce qu'ils affichent d'un `400 PERIOD_LOCKED` au clic) ; tests unitaires ; `sitesTotal` ;
   commit, push.
 - [ ] **T5 — Manuel et API** (AC-14) ; commit, push.
@@ -485,14 +514,14 @@ préférée : les trois gestes partagent la queue, les textes et le manuel, et l
 > facture fournisseur (`settlementCancelBlockedBy`, `cancelBlockedBy`) gagnent la valeur `PERIOD_LOCKED`, borne dans le champ `…Label` ; le
 > détail d'audit `journal_entry.reversed` de ces gestes gagne `"dating": "originDate"`. Aucune migration.
 
-### Issues à ouvrir (par l'orchestrateur, une par problème, ≥ 5 s d'écart)
+### Issues ouvertes (le 2026-11-27, par l'orchestrateur, une par problème)
 
-- **Q-C, acceptée le 2026-11-27** — `technical-debt`, `P3` : « La queue commune des annulations garde un rang « aucun exercice ouvert au
+- **#1759 — Q-C, acceptée le 2026-11-27** — `technical-debt`, `P3` : « La queue commune des annulations garde un rang « aucun exercice ouvert au
   jour » et une datation `Today` que plus aucune annulation n'emploie » — corps : D7 de cette fiche ; retrait de
   `SettlementCancelBlocker::NoOpenFiscalYearToday`, du bras `Today` de `settlement_entry_cancel_blocker` et du paramètre `dating` des formes
   qui ne reçoivent plus qu'`OriginDate`, des clés `*-blocked-no-fiscal-year` (trois familles, quatre locales) et des bras `FISCAL_YEAR_INVALID`
   des unions TS (`settlement-cancel-blocked.ts`, `invoice-cancel.ts`, `reconciliation-cancel.ts`) ; aucune donnée réelle.
-- **Relevée à la validation P2** — `technical-debt`, `P3` (proposée ; rattachement au Project Lead) : « `lexique::blocs_de_test` masque du code
+- **#1760 — relevée à la validation P2** — `technical-debt`, `P3` (rattachement au Project Lead) : « `lexique::blocs_de_test` masque du code
   de production après un `#[cfg(test)] mod x;` sans accolades » — corps : `bloc_apres` prend la première `{` qui suit l'attribut ; à
   `6b71d4c21`, `kesh-report/src/lib.rs:26` masque `:26-43` (sans conséquence aujourd'hui), `pre_upgrade_backup.rs:432` et
   `exchange_rates/parse.rs:736` sont en fin de fichier ; toute garde lexicale de `kesh-db/tests/` (`letterings_lexical.rs`,
@@ -518,7 +547,7 @@ préférée : les trois gestes partagent la queue, les textes et le manuel, et l
 - **Q-B — tranchée** : la détection de la **53-6b** s'élargit à toute contre-passation d'annulation dont l'origine et l'inverse sont dans deux exercices,
   quel que soit le geste (critère `reverses_entry_id`). **La fiche de la 53-6b n'est pas touchée ici** : l'orchestrateur la met à jour.
 - **Q-C — tranchée** : le retrait du rang « aucun exercice ouvert au jour » et de `Today` dans la queue va en issue `technical-debt` P3, **hors de la
-  v0.21.0** ; l'orchestrateur l'ouvre (texte au § *Issues à ouvrir*).
+  v0.21.0** ; l'orchestrateur l'a ouverte : **#1759** (texte au § *Issues ouvertes*).
 - **Q-D — tranchée** : la dette de l'Epic 63 se verse à la story de solde de l'Epic 53 (**53-5**) ; l'orchestrateur l'écrit au fichier d'epic.
 
 *Questions posées, avec la recommandation de la fiche entre parenthèses :*
@@ -578,3 +607,13 @@ préférée : les trois gestes partagent la queue, les textes et le manuel, et l
   (présent dès la création, sur un axe que la P1 n'avait exercé qu'en partie, A7), distinct de V1 (signatures) et non né d'un correctif ; le seul
   défaut né du correctif de la P1 (le recompte) est LOW. Splitting : la cascade ne touche que des fichiers de test ; modules de production toujours
   cinq. Tendance : P1 0/0/2/6 → P2 0/0/1/6. Passe P3 requise (MEDIUM corrigé) : complète, Sonnet (`63-1-annulations-datees-origine-validation-prompt-p3.md`).
+- 2026-11-27 — **Validation P3** (Sonnet 5.5, `bmad-create-story` validate, contexte frais, passe complète ; rapport `kesh-gate-logs/e63/63-1-validation-p3.md`) :
+  0 CRITICAL, 0 HIGH, 0 MEDIUM, **5 LOW corrigés**. Remède V3 de la P2 contrôlé : les cinq tests de l'AC-11 changent bien d'attendu, la prescription des
+  harnais (branche `Today` par la forme `_in_tx`, geste public sous `OriginDate`) garde la queue `Today` testée sans test vrai par construction ;
+  recompte de D3 : 230 occurrences / 35 fichiers (confirmé). Montages dans les fonctions auxiliaires parcourus (`monter`, `facture_lettree`,
+  `seed_lettering_documents`, `rattrapage`, `lettering_pieces`, helpers `monter`/`annuler`/`verrouiller` des fichiers de dépôt) : **un** test
+  omis de l'AC-11, `open_items.rs::as_of_under_the_lock_is_stable_until_an_admin_unlocks` (LOW : la méthode de clôture le trouvait au premier rouge ;
+  son attendu neuf est maintenant prescrit). Autres LOW : forme des mutations M1 à M6 (plus de paramètre de date après D3), quatre replis inline des
+  deux pages Svelte non nommés à T4, commentaires de tests périmés (voir le rapport). Numéros d'issues portés (#1759, #1760).
+  Axes A3, A6, A9, mutations M1 à M8 une à une, notes de version exercés. **Recyclage : non** (aucun défaut né d'un correctif ; tendance P1 0/0/2/6 →
+  P2 0/0/1/6 → P3 0/0/0/5). Plus de passe requise : `ready-for-dev`.
