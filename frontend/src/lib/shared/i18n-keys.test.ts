@@ -1288,7 +1288,10 @@ const ATTENDU = {
 	// `kesh-gate-logs/e53/s536a/t5-vitest-gardes.log`) — `reconciliation-cancel-blocked-period-locked`
 	// (`reconciliation-cancel.ts`) et `reconciliation-cancel-confirm-vat`
 	// (`CancelReconciliationDialog.svelte`).
-	sitesTotal: 3975,
+	// Revue P1 de la 53-6a (L1) : **3975 → 3976**, relevé par la garde (« expected 3976 to be 3975 »,
+	// `$GATE_LOGS/e53/s536a/remediation/front-vitest-1.log`) — `reconciliation-cancel-blocked-period-locked-through`
+	// (`reconciliation-cancel.ts`), la phrase qui nomme la borne du verrou.
+	sitesTotal: 3976,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

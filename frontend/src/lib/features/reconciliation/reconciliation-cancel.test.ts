@@ -94,8 +94,11 @@ describe('reconciliationCancelMessage', () => {
 	});
 
 	it('Story 53-6a — la BORNE du verrou est ajoutée en date suisse (mutation : `label` ignoré)', () => {
-		expect(reconciliationCancelMessage('PERIOD_LOCKED', '2026-06-30')).toContain('(30.06.2026)');
-		expect(reconciliationCancelMessage('PERIOD_LOCKED', null)).not.toContain('(');
+		// Revue P1, L1 — la borne est nommée comme telle, jamais lue comme la date de l'écriture.
+		const avec = reconciliationCancelMessage('PERIOD_LOCKED', '2026-06-30');
+		expect(avec).toContain("La période est verrouillée jusqu'au 30.06.2026 inclus.");
+		expect(avec).not.toContain('(30.06.2026)');
+		expect(reconciliationCancelMessage('PERIOD_LOCKED', null)).not.toContain('jusqu');
 	});
 });
 
@@ -122,7 +125,7 @@ describe('reconciliationCancelErrorMessage', () => {
 			details: { lockedThrough: '2026-06-30', attempted: '2026-06-15' },
 		});
 		expect(auClic).toContain('période verrouillée');
-		expect(auClic).toContain('(30.06.2026)');
+		expect(auClic).toContain("verrouillée jusqu'au 30.06.2026 inclus");
 		expect(auClic).not.toContain('texte serveur');
 		const groupe = reconciliationCancelErrorMessage({
 			code: 'PERIOD_LOCKED',
