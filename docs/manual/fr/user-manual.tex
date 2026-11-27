@@ -381,9 +381,10 @@ de valeur postérieure, ne crée donc pas d'écart. Trois limites :
     \item quand plusieurs comptes bancaires partagent un même compte du grand livre,
     l'écart n'est pas calculable — la tuile l'indique : le solde de ce compte ne
     s'attribue à aucun d'eux ;
-    \item après l'\textbf{annulation d'un rapprochement}, un mouvement comptabilisé par la
-    banque après la date du relevé mais dont l'écriture d'origine la précédait peut laisser
-    un écart fictif — l'écriture de contre-passation est datée du jour de l'annulation.
+    \item avant la version~0.21.0, l'\textbf{annulation d'un rapprochement} datait sa
+    contre-passation du jour de l'annulation~: une annulation faite après la date du relevé
+    peut encore laisser un écart fictif. Depuis, la contre-passation est datée de l'écriture
+    d'origine, et cette cause d'écart ne se produit plus.
 \end{itemize}
 
 Un compte bancaire sans compte du grand livre lié n'a pas de solde comptable ; la tuile
@@ -838,7 +839,9 @@ facture fournisseur dont le lettrage s'est figé avec la période est donc \text
 administrateur fait reculer le verrou avant la date la plus récente du lettrage --- en général
 celle du dernier règlement --- pour la permettre, et rouvre aussi les exercices clôturés si
 l'exercice de cette date l'est \textbf{ou s'il est suivi d'un exercice clôturé} --- jusqu'à
-celui-ci, en commençant par le plus récent.
+celui-ci, en commençant par le plus récent. L'\textbf{annulation d'un rapprochement} est en
+outre refusée, lettrage ou non, quand l'écriture du rapprochement est elle-même dans la période
+verrouillée~: elle se contre-passe à sa propre date (\S\ref{sec:annuler-rapprochement}).
 
 \begin{keshtip}[title={\faLightbulb\ Deux gestes, deux exigences différentes}]
 \textbf{Verrouiller} est un geste d'hygiène~: un comptable comme un administrateur peut le
@@ -862,6 +865,13 @@ propose cette veille --- la veille du jour de Zurich, quel que soit le fuseau de
 \textbf{Une exception}~: l'annulation d'un règlement (ou d'un paiement) dont le
 \textbf{lettrage} s'est figé avec la période est refusée --- elle défairait un lettrage de la
 période verrouillée~; le verrou doit reculer pour la permettre (ci-dessus).
+\textbf{Une seconde}, depuis la version~0.21.0~: l'\textbf{annulation d'un rapprochement}
+contre-passe l'écriture \textbf{à sa propre date}, non au jour, pour ne jamais fausser deux
+exercices (\S\ref{sec:annuler-rapprochement})~; une écriture rapprochée dans la période
+verrouillée ne se défait donc pas sans faire reculer le verrou. La contre-passation depuis la
+fiche d'une écriture \textbf{non rapprochée} reste datée du jour et passe~; celle d'une écriture
+rapprochée est refusée par la contre-passation directe, qui renvoie à l'annulation du
+rapprochement.
 \end{keshwarning}
 
 Le verrou et la clôture d'exercice sont \textbf{indépendants}~: clôturer ne touche pas la borne,
@@ -884,7 +894,8 @@ apparente}.
 
 \begin{keshnote}[title={La date du jour est celle de Zurich, même la nuit}]\label{sec:date-du-jour}
 Ce que Kesh date \textbf{du jour} --- la contre-passation et les annulations qui contre-passent
-(règlement, facture fournisseur, rapprochement), le solde d'ouverture d'un compte bancaire et
+(règlement, facture fournisseur ; l'annulation d'un rapprochement, elle, se date de l'écriture
+depuis la version~0.21.0, \S\ref{sec:annuler-rapprochement}), le solde d'ouverture d'un compte bancaire et
 la régularisation des soldes de départ, l'année du premier exercice que l'assistant crée quand
 on ne lui donne pas de dates (son écran, lui, propose l'année de votre poste, \S\ref{sec:premier-exercice}) --- et la borne du verrou de période, que Kesh refuse au jour même, prennent \textbf{la
 date de Zurich}, même entre minuit et une heure du matin (deux heures en été)~: une correction
@@ -1138,7 +1149,7 @@ On rouvre les exercices \textbf{du plus récent vers l'ancien} : si un exercice 
 
 Les exercices se clôturant désormais dans l'ordre, un exercice ouvert ne peut plus précéder un exercice clôturé. Des données plus anciennes --- une installation mise à jour, une sauvegarde restaurée --- peuvent pourtant porter cet état. Kesh le tolère sans le réparer d'office, et l'écran \emph{Exercices comptables} l'affiche dans un \textbf{bandeau d'avertissement}, visible de tous les rôles~: il nomme l'exercice ouvert le plus ancien, l'exercice clôturé qui le suit, et l'exercice clôturé le plus récent.
 
-Tant que l'ordre n'est pas rétabli, \textbf{rien ne s'enregistre} dans l'exercice ouvert concerné~: ni saisie, ni validation ou règlement de facture, ni paiement fournisseur, ni complément des soldes de départ, ni dévalidation, ni modification, ni suppression. Le bilan étant cumulatif, chacune de ces écritures changerait le bilan de l'exercice clôturé qui le suit. Le refus nomme cet exercice. Une contre-passation, datée du jour, n'est refusée que si l'exercice du jour est lui-même suivi d'un exercice clôturé~; une contre-passation au début de l'exercice suivant (\S\ref{sec:transitoires}), que si \textbf{cet} exercice est clôturé ou suivi d'un exercice clôturé.
+Tant que l'ordre n'est pas rétabli, \textbf{rien ne s'enregistre} dans l'exercice ouvert concerné~: ni saisie, ni validation ou règlement de facture, ni paiement fournisseur, ni complément des soldes de départ, ni dévalidation, ni modification, ni suppression. Le bilan étant cumulatif, chacune de ces écritures changerait le bilan de l'exercice clôturé qui le suit. Le refus nomme cet exercice. Une contre-passation, datée du jour, n'est refusée que si l'exercice du jour est lui-même suivi d'un exercice clôturé~; une contre-passation au début de l'exercice suivant (\S\ref{sec:transitoires}), que si \textbf{cet} exercice est clôturé ou suivi d'un exercice clôturé~; l'annulation d'un rapprochement, datée de son écriture (\S\ref{sec:annuler-rapprochement}), que si l'exercice \textbf{de l'écriture} est suivi d'un exercice clôturé.
 
 \textbf{Des boutons offerts, puis refusés au clic.} Dans cet état, l'écran ne prévoit pas toujours le refus~: les boutons \emph{Annuler} d'un règlement client, d'un rapprochement bancaire, d'un paiement ou d'une facture fournisseur, et \emph{Contre-passer} sur une écriture, restent affichés --- de même \emph{Contre-passer au début de l'exercice suivant} quand cet exercice, ouvert, est suivi d'un exercice clôturé ---, et le complément des soldes de départ reste proposé. Le clic est alors refusé, avec un message qui nomme l'exercice clôturé~: rien n'a été enregistré. Rétablissez l'ordre ci-dessous, puis recommencez (issue \#568).
 
@@ -3994,7 +4005,7 @@ L'avis ne suit que le \textbf{rôle} du compte, jamais son numéro~: un compte d
 
 \paragraph{Un virement entre deux de vos comptes.} L'écriture d'un virement --- passée d'un côté par \emph{Écriture manuelle} sur le compte du grand livre de l'autre compte, ou saisie au journal --- est proposée, de l'autre côté, dans la section des écritures~: même montant, sens contraire. La fenêtre dit alors qu'elle est celle d'un virement déjà rapproché de l'autre côté, et qu'\textbf{aujourd'hui} annuler ce rattachement ne retirerait que son lien --- un constat daté~: si l'autre côté est annulé d'abord, ce rattachement devient le dernier, son annulation contre-passe l'écriture, et un exercice clôturé l'empêche~; elle ne demande aucune case à cocher, même dans un exercice clôturé. Une écriture de \textbf{règlement} (facture client ou fournisseur) n'a jamais d'autre côté~: une fois rapprochée, elle ne se rattache plus. Après le rattachement, l'écriture est rapprochée des \textbf{deux} transactions --- une écriture, une transaction de chaque côté ---, et chacun des deux comptes est réconcilié. Cela vaut pour tout virement entre deux de vos comptes~: compte courant et épargne, compte courant et carte de crédit (\S\ref{sec:tenir-carte}).
 
-\textbf{Défaire un rattachement.} \emph{Annuler le rapprochement} (\S\ref{sec:annuler-rapprochement}) défait le lien \textbf{et défait aussi l'écriture}, comme pour une proposition acceptée~: une écriture saisie au journal est \textbf{contre-passée}~; un règlement de facture client est \textbf{retiré}, la facture est de nouveau à régler~; le paiement d'une facture fournisseur est \textbf{annulé}, la facture redevient validée, à payer. Il n'y a pas de geste qui défasse le seul lien (issue \#672) --- sauf pour l'un des deux côtés d'un virement rapproché des deux côtés, dont l'annulation ne retire que le lien (\S\ref{sec:annuler-rapprochement}). Quand vous choisissez une écriture, la fenêtre dit ce qu'il en serait \textbf{aujourd'hui}~: si Kesh ne voit aucun obstacle, que l'annulation contre-passerait l'écriture (ou annulerait le règlement qu'elle porte), en rappelant qu'une clôture d'exercice, une période verrouillée ou un exercice postérieur clos pourraient l'empêcher~; si un obstacle existe déjà --- un exercice clôturé, un compte archivé, un solde de facture ---, qu'elle \textbf{ne pourra pas être annulée tant qu'il dure}, avec ce qui le lève~; il faut alors cocher la case qui le reconnaît pour pouvoir rattacher. C'est un constat daté, non une promesse~: un obstacle peut apparaître plus tard (la clôture de l'exercice), ou disparaître (l'exercice rouvert, le compte réactivé). La section des règlements de factures clients ne porte pas ce constat~; l'annulation d'un tel rattachement suit les mêmes règles (\S\ref{sec:annuler-rapprochement}).
+\textbf{Défaire un rattachement.} \emph{Annuler le rapprochement} (\S\ref{sec:annuler-rapprochement}) défait le lien \textbf{et défait aussi l'écriture}, comme pour une proposition acceptée~: une écriture saisie au journal est \textbf{contre-passée}~; un règlement de facture client est \textbf{retiré}, la facture est de nouveau à régler~; le paiement d'une facture fournisseur est \textbf{annulé}, la facture redevient validée, à payer. Il n'y a pas de geste qui défasse le seul lien (issue \#672) --- sauf pour l'un des deux côtés d'un virement rapproché des deux côtés, dont l'annulation ne retire que le lien (\S\ref{sec:annuler-rapprochement}). Quand vous choisissez une écriture, la fenêtre dit ce qu'il en serait \textbf{aujourd'hui}~: si Kesh ne voit aucun obstacle, que l'annulation contre-passerait l'écriture, à sa date (ou annulerait le règlement qu'elle porte), en rappelant qu'une clôture d'exercice ou un exercice postérieur clos pourraient l'empêcher, comme un verrou de période posé d'ici là~; si un obstacle existe déjà --- un exercice clôturé, une écriture dans la période verrouillée, un compte archivé, un solde de facture ---, qu'elle \textbf{ne pourra pas être annulée tant qu'il dure}, avec ce qui le lève~; il faut alors cocher la case qui le reconnaît pour pouvoir rattacher. C'est un constat daté, non une promesse~: un obstacle peut apparaître plus tard (la clôture de l'exercice), ou disparaître (l'exercice rouvert, le compte réactivé). La section des règlements de factures clients ne porte pas ce constat~; l'annulation d'un tel rattachement suit les mêmes règles (\S\ref{sec:annuler-rapprochement}).
 
 \textbf{Ce qui ne se rattache pas}~:
 \begin{itemize}
@@ -4035,7 +4046,7 @@ Dès qu'un écart existe, un sélecteur \emph{Compte de l'écart} apparaît sous
 
 \textbf{Défaire un règlement groupé.} \emph{Annuler le rapprochement} (\S\ref{sec:annuler-rapprochement}) le défait \textbf{en entier}~: toutes ses factures redeviennent à régler, l'écriture est contre-passée, écart compris. Une facture ne se retire pas seule d'un règlement groupé.
 
-\textbf{Limites.} La ligne de la banque et la ligne de l'écart d'un règlement groupé ne portent \textbf{aucun compte analytique}~; la ligne de chaque facture porte celui de sa facture. Le \textbf{changement de compte analytique} d'une facture réglée en groupe est refusé (\S\ref{sec:reimputation-analytique})~; il redevient possible une fois le rapprochement du groupe annulé. Quand ce rapprochement ne peut pas s'annuler --- exercice clôturé, lettrage figé, facture créditée ou soldée (\S\ref{sec:annuler-rapprochement}) ---, la facture garde son compte analytique. Un paiement \textbf{déjà enregistré} --- règlement saisi depuis la fiche --- ne s'ajoute pas à un règlement groupé~; seules des factures encore à régler s'y ajoutent. Seules les transactions en CHF se règlent ainsi.
+\textbf{Limites.} La ligne de la banque et la ligne de l'écart d'un règlement groupé ne portent \textbf{aucun compte analytique}~; la ligne de chaque facture porte celui de sa facture. Le \textbf{changement de compte analytique} d'une facture réglée en groupe est refusé (\S\ref{sec:reimputation-analytique})~; il redevient possible une fois le rapprochement du groupe annulé. Quand ce rapprochement ne peut pas s'annuler --- exercice clôturé, lettrage figé, écriture dans une période verrouillée, facture créditée ou soldée (\S\ref{sec:annuler-rapprochement}) ---, la facture garde son compte analytique. Un paiement \textbf{déjà enregistré} --- règlement saisi depuis la fiche --- ne s'ajoute pas à un règlement groupé~; seules des factures encore à régler s'y ajoutent. Seules les transactions en CHF se règlent ainsi.
 
 \textbf{Un lot de paiement (pain.001) n'est pas un règlement groupé.} Seules les factures fournisseur \textbf{ouvertes et hors de tout lot de paiement} se règlent par ce geste. Une facture d'un lot \textbf{en cours} (fichier généré) est refusée, et celle d'un lot \textbf{confirmé} est déjà payée~: le débit d'un lot de plusieurs factures, passé en une ligne par la banque, reste à \textbf{rejeter} (\S\ref{sec:matching-fournisseur}). Pour régler ces factures ici, annulez d'abord le lot~: elles redeviennent ouvertes et hors lot, et le débit se règle alors par ce geste.
 
@@ -4105,8 +4116,11 @@ l'annulation du paiement en le disant.
 Avant de confirmer, Kesh dit ce qui va se passer. À la confirmation~:
 
 \begin{itemize}
-    \item une \textbf{écriture inverse}, datée du jour, contre-passe l'écriture du rapprochement
-          --- l'une et l'autre restent au grand livre~;
+    \item une \textbf{écriture inverse} contre-passe l'écriture du rapprochement, \textbf{à sa
+          date et dans son exercice} --- l'une et l'autre restent au grand livre. Depuis la
+          version~0.21.0, annuler en janvier le rapprochement d'un paiement de décembre ne passe
+          plus rien dans le nouvel exercice~: l'écriture et son inverse s'annulent dans le même
+          exercice. La confirmation dit cette date et cet exercice~;
     \item si le rapprochement avait réglé une facture, son \textbf{règlement est retiré}~: la
           facture redevient à régler (ou partiellement réglée, si d'autres règlements
           subsistent). Il en va de même d'une transaction \textbf{rattachée} à un règlement
@@ -4122,6 +4136,14 @@ Avant de confirmer, Kesh dit ce qui va se passer. À la confirmation~:
           prête à être rattachée à la bonne pièce.
 \end{itemize}
 
+\keshAttention\ L'écriture inverse change les \textbf{totaux de la période} de l'écriture, TVA
+comprise~: si ce décompte de TVA a déjà été déclaré, faites d'abord verrouiller la période
+(\S\ref{sec:verrou-periode}) --- l'annulation sera alors refusée, ce qui protège la déclaration.
+La confirmation le rappelle. Si une \textbf{réévaluation de fin d'exercice} des comptes en devise
+(\S\ref{sec:reevaluation-devises}) a déjà été passée dans l'exercice de l'écriture, elle ne se recalcule
+pas d'elle-même~: l'inverse change le solde en devise sur lequel elle portait~; rejouez-la après
+l'annulation.
+
 \paragraph{Un règlement de plusieurs factures.} Depuis la version~0.19.0, un règlement groupé
 (\S\ref{sec:reglement-groupe}) s'annule \textbf{en entier} --- jamais une facture seule. La
 confirmation liste ses factures, qui redeviendront toutes à régler (ou, pour des factures
@@ -4136,8 +4158,8 @@ transaction de sens contraire d'un autre de vos comptes bancaires (\S\ref{sec:ra
 cette transaction~: \textbf{aucune} écriture inverse, l'écriture du virement reste rapprochée de
 l'autre côté, et la transaction redevient à rapprocher. La confirmation le dit, comme le message
 qui suit («~Le lien est retiré~; l'écriture reste celle de l'autre côté du virement~»). Le retrait
-d'un seul lien n'écrit rien au journal~: un exercice clôturé ou un lettrage figé ne l'empêchent
-pas~; un compte bancaire clos, si. L'annulation du \textbf{dernier} côté suit ensuite le chemin
+d'un seul lien n'écrit rien au journal~: un exercice clôturé, un lettrage figé ou une période
+verrouillée ne l'empêchent pas~; un compte bancaire clos, si. L'annulation du \textbf{dernier} côté suit ensuite le chemin
 ordinaire~: elle contre-passe l'écriture, avec les refus ci-dessous. Si les deux côtés sont annulés
 au même instant, l'un retire son lien et l'autre contre-passe~: l'écriture n'est jamais
 contre-passée avec un lien vivant.
@@ -4164,11 +4186,23 @@ possible, Kesh en donne la raison~:
           celle du dernier règlement)~: si elle est sous le verrou de période, un administrateur
           doit faire reculer le verrou avant elle~; et si son exercice est suivi d'un exercice
           clôturé, ou clôturé lui-même, il doit rouvrir les exercices clôturés jusqu'à
-          celui-ci, en commençant par le plus récent (\S\ref{sec:verrou-periode})~;
+          celui-ci, en commençant par le plus récent (\S\ref{sec:verrou-periode}). Pour une
+          facture réglée en plusieurs fois, l'écriture de ce rapprochement peut être plus
+          ancienne que le dernier règlement~: une fois le verrou reculé avant celui-ci,
+          l'annulation peut encore être refusée pour la \textbf{période verrouillée} (puce
+          suivante) --- le verrou recule alors avant la date de \textbf{cette} écriture~;
+    \item \textbf{l'écriture du rapprochement est dans une période verrouillée} (sa date est au
+          plus tard celle du verrou, \S\ref{sec:verrou-periode})~: l'inverse, datée d'elle, serait
+          refusée. Un administrateur doit faire reculer le verrou avant sa date~; la raison
+          affichée dit la date du verrou. C'est le cas courant d'une période de TVA déclarée puis
+          verrouillée~: le verrou la protège, et c'est voulu~;
     \item \textbf{un compte de l'écriture a été archivé}~: réactivez-le (son numéro est
-          indiqué)~;
-    \item \textbf{aucun exercice ouvert ne couvre la date du jour}~: créez-le.
+          indiqué).
 \end{itemize}
+
+Un exercice de l'écriture \textbf{rouvert} par un administrateur est ouvert comme un autre~:
+l'annulation s'y date, et il se clôture ensuite de nouveau. L'exercice du jour, lui, n'intervient
+plus~: il n'a pas besoin d'exister ni d'être ouvert.
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Lettrage et postes ouverts}\label{sec:lettrage}
