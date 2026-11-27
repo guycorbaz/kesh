@@ -354,7 +354,7 @@
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger>
 					{#snippet child({ props })}
-						<Button variant="ghost" class="flex items-center gap-2" {...props}>
+						<Button variant="ghost" class="flex items-center gap-2" data-testid="user-menu-trigger" {...props}>
 							<User class="h-4 w-4" aria-hidden="true" />
 							<span class="text-sm">
 								{authState.currentUser?.role ?? 'Utilisateur'}
@@ -372,11 +372,14 @@
 					<DropdownMenu.Item disabled>EN - English</DropdownMenu.Item>
 					<DropdownMenu.Separator />
 
-					<!-- Bascule mode -->
-					<DropdownMenu.Item onclick={toggleMode}>
-						Mode : {modeState.value === 'guided' ? i18nMsg('mode-guided-label', 'Guidé') : i18nMsg('mode-expert-label', 'Expert')}
-					</DropdownMenu.Item>
-					<DropdownMenu.Separator />
+					<!-- Bascule mode : réglage de l'installation, réservé à l'Administrateur
+					     (PUT /profile/mode en admin_routes) ; les autres rôles suivent le mode du serveur. -->
+					{#if isAdmin}
+						<DropdownMenu.Item onclick={toggleMode} data-testid="user-menu-mode">
+							Mode : {modeState.value === 'guided' ? i18nMsg('mode-guided-label', 'Guidé') : i18nMsg('mode-expert-label', 'Expert')}
+						</DropdownMenu.Item>
+						<DropdownMenu.Separator />
+					{/if}
 
 					<!-- Déconnexion -->
 					<DropdownMenu.Item

@@ -21,6 +21,13 @@
 		deactivateVatRate,
 		type VatRateResponse,
 	} from '$lib/features/vat-rates/vat-rates.api';
+	import {
+		rateText,
+		validateRateInput,
+		validateDateInput,
+		type RateInput,
+		type RateError,
+	} from '$lib/features/vat-rates/vat-rates.validate';
 
 	const KNOWN_CATEGORIES = ['normal', 'reduced', 'special', 'exempt', 'custom'];
 
@@ -40,7 +47,8 @@
 	// Champs de formulaire (création / changement).
 	let fCategory = $state('normal');
 	let fLabel = $state('');
-	let fRate = $state('');
+	// Story 64-1 (#1178) : un `<input type="number">` lié rend un NOMBRE (`null` si vidé).
+	let fRate = $state<RateInput>('');
 	let fValidFrom = $state('');
 	let fValidTo = $state('');
 
@@ -114,14 +122,42 @@
 		formError = null;
 	}
 
+	/** Message du refus d'un taux avant l'envoi (Story 64-1, D2). */
+	function rateErrorMessage(code: RateError): string {
+		switch (code) {
+			case 'required':
+				return i18nMsg('vat-rates-err-rate-required', 'Saisissez un taux.');
+			case 'invalid':
+				return i18nMsg('vat-rates-err-rate-invalid', 'Le taux doit être un nombre.');
+			case 'range':
+				return i18nMsg('vat-rates-err-rate-range', 'Le taux doit être compris entre 0 et 100.');
+			case 'decimals':
+				return i18nMsg(
+					'vat-rates-err-rate-decimals',
+					'Le taux ne peut avoir plus de deux décimales.',
+				);
+		}
+	}
+
+	/** Cas évidents refusés AVANT toute écriture ; `null` si le formulaire peut partir. */
+	function inputError(dateMsg: string): string | null {
+		const rateCode = validateRateInput(fRate);
+		if (rateCode) return rateErrorMessage(rateCode);
+		if (validateDateInput(fValidFrom)) return dateMsg;
+		return null;
+	}
+
 	async function submitCreate() {
+		formError = inputError(
+			i18nMsg('vat-rates-err-from-required', 'Saisissez la date de début.'),
+		);
+		if (formError) return;
 		submitting = true;
-		formError = null;
 		try {
 			await createVatRate({
 				category: fCategory.trim(),
 				label: fLabel.trim() || undefined,
-				rate: fRate.trim(),
+				rate: rateText(fRate),
 				validFrom: fValidFrom,
 				validTo: fValidTo ? fValidTo : null,
 			});
@@ -141,8 +177,13 @@
 	// PUIS crée le nouveau (POST même catégorie, valid_from = bascule). Ordre
 	// imposé par l'invariant de non-chevauchement (sinon rejet).
 	async function submitChange(old: VatRateResponse) {
+		formError = inputError(
+			i18nMsg('vat-rates-err-switch-required', 'Saisissez la date de bascule.'),
+		);
+		if (formError) return;
 		submitting = true;
-		formError = null;
+		// Posé juste après la clôture : dit quel appel a échoué (rien n'est clos si c'est le PUT).
+		let closed = false;
 		try {
 			await updateVatRate(old.id, {
 				label: old.label,
@@ -150,9 +191,10 @@
 				active: true,
 				version: old.version,
 			});
+			closed = true;
 			await createVatRate({
 				category: old.category,
-				rate: fRate.trim(),
+				rate: rateText(fRate),
 				validFrom: fValidFrom,
 				validTo: null,
 			});
@@ -160,9 +202,24 @@
 			mode = { kind: 'none' };
 			await load();
 		} catch (e) {
-			formError = isApiError(e)
-				? e.message
-				: i18nMsg('vat-rates-change-error', 'Le changement de taux a échoué.');
+			if (closed) {
+				// L'ancien taux est clos, le nouveau n'existe pas : le dire, avec le motif, et
+				// comment finir (seule réparation dans l'écran : refaire à la même date).
+				formError = isApiError(e)
+					? i18nMsg(
+							'vat-rates-change-error-closed-reason',
+							"L'ancien taux a été clôturé à la date de bascule, mais le nouveau taux n'a pas été créé : { $reason } Une fois la cause levée, refaites « Changer le taux » à la même date.",
+							{ reason: e.message },
+						)
+					: i18nMsg(
+							'vat-rates-change-error-closed',
+							"L'ancien taux a été clôturé à la date de bascule, mais le nouveau taux n'a pas été créé. Une fois la cause levée, refaites « Changer le taux » à la même date.",
+						);
+			} else {
+				formError = isApiError(e)
+					? e.message
+					: i18nMsg('vat-rates-change-error', 'Le changement de taux a échoué.');
+			}
 			// Recharger : l'ancien a pu être clôturé même si la création a échoué.
 			await load();
 		} finally {

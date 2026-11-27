@@ -94,7 +94,7 @@ async function openCreateForm() {
 	return r;
 }
 
-async function fill(r: ReturnType<typeof render>, id: string, value: string) {
+async function fill(r: { getByTestId: (id: string) => HTMLElement }, id: string, value: string) {
 	await fireEvent.input(r.getByTestId(id), { target: { value } });
 }
 

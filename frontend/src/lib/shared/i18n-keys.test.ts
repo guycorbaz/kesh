@@ -1290,7 +1290,9 @@ const ATTENDU = {
 	// Fusion de pr/46-rapports-groupes-v2 (ecf6cf835, main avec les Epics 39 et 40, garde de la 46-5) dans
 	// epic/55-navigation (2026-11-26) : les deux côtés gardés ; 3958 (pr/46) + 7 (Epic 55, 3789 → 3796 de son côté)
 	// = **3965**, confirmé par la garde (`kesh-gate-logs/s55-revue/fusion/gardes-1.log`).
-	sitesTotal: 3965,
+	// Story 64-1 (#1178, #1758) : **3965 → 3978** (+13 : six messages de la page des taux de TVA, deux du changement
+	// de taux après clôture, cinq de la page de modification d'une facture), relevé par la garde (« expected 3978 to be 3965 »).
+	sitesTotal: 3978,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
@@ -1384,9 +1386,10 @@ const MOTIFS_DYNAMIQUES: Record<string, readonly string[]> = {
  * que découvert.*
  *
  * (`:52` → `:54` le 2026-11-04, v0172-correctifs : deux lignes d'import de
- * `formatSwissDate` ajoutées au-dessus, #880.)
+ * `formatSwissDate` ajoutées au-dessus, #880 ; `:54` → `:62` le 2026-11-27, 64-1 : huit
+ * lignes d'import et de type du validateur ajoutées au-dessus, #1178.)
  */
-const ANGLE_MORT_CLE_EN_COLONNE = 'routes/(app)/settings/vat-rates/+page.svelte:54';
+const ANGLE_MORT_CLE_EN_COLONNE = 'routes/(app)/settings/vat-rates/+page.svelte:62';
 
 /**
  * Cardinalité attendue de chaque préfixe dynamique — **la contrepartie des valeurs
