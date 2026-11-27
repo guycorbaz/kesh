@@ -1,3 +1,4 @@
+# last_updated: 2026-11-27 (Epic 64 ouvert : 64-1-corrections-0201 ready-for-dev, fiche écrite, validation P1 à lancer)
 # last_updated: 2026-11-22 (Epic 39 : 39-11d partie d'epic/39-wise avec epic/40-stripe fusionné, page commune des prestataires ; Epic 39 : fiche 39-11e rédigée, zip de Wise et format des frais). Avant : 2026-11-21 (Epic 39 : remédiation de la validation P1 des fiches 39-12a — 39-12a4a scindée en 39-12a4a1 et 39-12a4a2, fiche neuve 39-12a2b, 39-12a2, 39-12a3 et 39-12b repassées backlog à revalider)
 # last_updated: 2026-11-18 (découpages : 48-13 → 48-13 et 48-15-troncatures-silencieuses (#1331 à #1334, dérogation à la règle de splitting, décision de Guy) ; Epic 48 à huit stories, dérogation à la borne de six élargie ; 49-1 split en 49-1a à 49-1d (règle de splitting, neuf modules) ; 48-13, 48-15 et 49-1a en validation (P3))
 # last_updated: 2026-11-18 (kickoff de la 0.20.0 révisé sur les réponses de Guy aux points ouverts : sous-totaux repoussés, 49-3-titres-et-sous-totaux renommée 49-3-titres-de-section ; #1234 retirée de la 48-13 ; 48-13 fusionnée avant l'Epic 49 ; issues de la solde #1263, #1262, #1261, #1255 au milestone v0.20.0)
@@ -1317,3 +1318,8 @@ development_status:
 
   # 2026-11-25 — Stories hors epic de la 0.20.0 (demandes du Project Lead) : visées vendredi 2026-11-27 ; non closes le jeudi soir, elles passent à la 0.21.0 sans retarder la release (décision du Project Lead).
   1582-nom-comptabilite: done  # 2026-11-25 close : revue de code P1 (Opus 0/0/0/8) et P2 ciblée (Haiku 0/0/0/2), gates et E2E verts (7 échecs KF-029) ; fiche écrite (Sonnet 5.5), validations P1 (Opus) et P2 (Sonnet) faites et remédiées, P3 ciblée (Haiku) remédiée, passe ciblée P4 (Sonnet) à lancer : 1582-nom-comptabilite-validation-prompt-p4.md ; #1582 (P3) ; nom de la comptabilité sous le logo et dans le titre de l'onglet ; frontend seul, sans migration ni changement d'API ; questions Q1 à Q3 au Project Lead (Change Log de la fiche)
+
+  # 2026-11-27 — Epic 64 « Corrections de la v0.20.1 » : une story de correction (#1178 P2, #1758 P3, #1712 P3), sans migration ; release visée dimanche 2026-11-29 ou lundi 2026-11-30 (décision du Project Lead du 2026-11-27) ; fichier epic-64-corrections-0201.md
+  epic-64: in-progress
+  64-1-corrections-0201: ready-for-dev  # 2026-11-27 fiche écrite (Sonnet 5.5) sous réserve de sa validation (P1 Opus : prompt 64-1-corrections-0201-validation-prompt-p1.md) ; #1178 confirmé au code et par un test vitest d'essai (createVatRate jamais appelé, « La création a échoué. »)
+  epic-64-retrospective: optional
