@@ -20,8 +20,8 @@ clavier. Une facture validée ne se réordonne jamais : son PDF et son écriture
 
 | Story | Issues | Détail |
 |---|---|---|
-| 49-2-reordonnancement-lignes | #1242 | ↑ / ↓ sur chaque ligne du formulaire de facture (création et brouillon), au clavier ; glisser-déposer écarté par la fiche ; `_bmad-output/implementation-artifacts/49-2-reordonnancement-lignes.md` |
-| 52-solde-dette-epic | plafond proposé : **deux issues** (à confirmer par le Project Lead) | la seule dette de la 49-2 (LOW de revue renvoyés en issue) |
+| 49-2-reordonnancement-lignes | #1756 (ferme) ; #1242 (`refs`) | ↑ / ↓ sur chaque ligne du formulaire de facture (création et brouillon), au clavier ; glisser-déposer écarté par la fiche (#1757, « Plus tard ») ; `_bmad-output/implementation-artifacts/49-2-reordonnancement-lignes.md` |
+| 52-solde-dette-epic | plafond : **deux issues** (décision du Project Lead du 2026-11-27) | la seule dette de la 49-2 (LOW de revue renvoyés en issue) |
 
 Deux stories : l'epic tient dans la borne de six. **Fonctionnalité nouvelle** de la release : la 49-2. La story de
 correction de la release (CLAUDE.md § *Cadence*) n'est pas dans cet epic.
@@ -46,4 +46,6 @@ avec tous les epics de la release.
 
 Issues ouvertes, bugs et P1 : à recompter depuis GitHub au lancement de la 49-2 (CLAUDE.md § *Priorités des défauts*) ;
 le décompte du tag précédent et l'objectif s'écrivent ici à ce moment-là. #1242 (`enhancement`, P2) est au milestone
-`v0.22.0` : elle ne se ferme pas avec la 49-2 (titres de section à l'Epic 62, sous-totaux #1330).
+`v0.22.0` : elle ne se ferme pas avec la 49-2 (titres de section à l'Epic 62, sous-totaux #1330). L'issue propre au
+réordonnancement est **#1756** (milestone `v0.21.0`), que la 49-2 ferme (décision du Project Lead du 2026-11-27) ; la page
+de modification ouverte sur une facture validée est #1758 (P3, hors de l'epic).
