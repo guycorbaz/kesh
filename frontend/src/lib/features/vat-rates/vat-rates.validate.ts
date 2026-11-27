@@ -32,10 +32,10 @@ export function validateRateInput(value: RateInput): RateError | null {
 	const n = Number(text);
 	if (!Number.isFinite(n)) return 'invalid';
 	if (n < 0 || n > 100) return 'range';
-	// Au plus deux décimales (miroir de `validate_rate`) ; la tolérance absorbe l'erreur
-	// binaire (8.1 × 100 = 810.0000000000001).
-	const centi = n * 100;
-	if (Math.abs(centi - Math.round(centi)) > 1e-9) return 'decimals';
+	// Au plus deux décimales, jugées sur le **texte** que le serveur recevra (`decimalOf`) et non
+	// sur `n × 100` : le serveur compte l'échelle de la chaîne (`scale_within(rate, 2)`, `vat.rs`),
+	// et une tolérance flottante laisserait passer `8.12000000001` ou `1e-12`.
+	if (!/^\d+(\.\d{1,2})?$/.test(text)) return 'decimals';
 	return null;
 }
 

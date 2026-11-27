@@ -58,8 +58,9 @@ vi.mock('$lib/features/accounts/accounts.api', () => ({
 	fetchAccounts: (includeArchived?: boolean) => fetchAccountsMock(includeArchived),
 }));
 
+const getVatRatesMock = vi.fn();
 vi.mock('$lib/features/vat-rates', () => ({
-	getVatRates: vi.fn(async () => [{ rate: '8.10', label: 'product-vat-normal' }]),
+	getVatRates: () => getVatRatesMock(),
 }));
 
 import Page from './+page.svelte';
@@ -90,6 +91,7 @@ async function settle() {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	getVatRatesMock.mockResolvedValue([{ rate: '8.10', label: 'product-vat-normal' }]);
 	fetchAccountsMock.mockResolvedValue([SALES, ARCHIVED]);
 	listProductsMock.mockResolvedValue({ items: [], total: 0, limit: 20, offset: 0 });
 });
@@ -473,5 +475,25 @@ describe('fiche produit — prix ambigu (Story 48-10)', () => {
 		expect(prix().form!.textContent).toContain('Le nom est obligatoire');
 		expect(messageSousLeChamp()?.textContent).toContain(AMBIGU);
 		expect(soumettre().disabled).toBe(true);
+	});
+});
+
+describe('fiche produit — taux de TVA de même valeur (revue 64-1, R1-1)', () => {
+	it('deux taux actifs de même valeur : une seule option par valeur, la liste reste montée', async () => {
+		getVatRatesMock.mockResolvedValue([
+			{ rate: '8.10', label: 'product-vat-normal' },
+			{ rate: '8.10', label: 'product-vat-custom' },
+			{ rate: '2.60', label: 'product-vat-reduced' },
+		]);
+		render(Page);
+		await settle();
+		const bouton = [...document.querySelectorAll('button')].find((b) =>
+			/Nouveau produit/.test(b.textContent ?? '')
+		)!;
+		await fireEvent.click(bouton);
+		await settle();
+
+		const select = document.querySelector<HTMLSelectElement>('#form-vat-rate')!;
+		expect([...select.options].map((o) => o.value)).toEqual(['8.10', '2.60']);
 	});
 });

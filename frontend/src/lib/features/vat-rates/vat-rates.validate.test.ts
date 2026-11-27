@@ -22,7 +22,7 @@ describe('decimalOf — le taux lié à un <input type="number"> part en chaîne
 });
 
 describe('validateRateInput — les cas évidents que le formulaire arrête avant tout envoi', () => {
-	it.each([[0], [8.1], [7.7], ['7.70'], [100], [2.5]])('%j est admis', (v) => {
+	it.each([[0], [8.1], [7.7], ['7.70'], [100], [2.5], ['8.10'], ['8.1']])('%j est admis', (v) => {
 		expect(validateRateInput(v as string | number | null)).toBeNull();
 	});
 	it.each([
@@ -37,6 +37,11 @@ describe('validateRateInput — les cas évidents que le formulaire arrête avan
 		[-1, 'range'],
 		[8.125, 'decimals'],
 		[0.0000001, 'decimals'],
+		// Revue 64-1 (R1-2) : jugés sur le texte envoyé, non sur `n × 100` avec tolérance.
+		[8.12000000001, 'decimals'],
+		[8.100000000001, 'decimals'],
+		[1e-12, 'decimals'],
+		['8.12000000001', 'decimals'],
 	])('%j est refusé : %s', (v, code) => {
 		expect(validateRateInput(v as string | number | null)).toBe(code);
 	});

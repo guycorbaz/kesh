@@ -58,11 +58,15 @@
 			try {
 				const rates = await getVatRates();
 				if (!cancelled) {
-					vatOptions = rates.map((r) => ({
-						value: r.rate,
-						labelKey: r.label,
-						fallback: `${r.rate} % — ${r.label.replace('product-vat-', '')}`,
-					}));
+					// Revue 64-1 (R1-1) : une valeur n'est proposée qu'une fois (clé du `{#each}`
+					// unique), la première rencontrée donne le libellé.
+					vatOptions = rates
+						.filter((r, i, all) => all.findIndex((x) => x.rate === r.rate) === i)
+						.map((r) => ({
+							value: r.rate,
+							labelKey: r.label,
+							fallback: `${r.rate} % — ${r.label.replace('product-vat-', '')}`,
+						}));
 					vatLoadState = 'ready';
 				}
 			} catch {
