@@ -27,7 +27,7 @@ use crate::errors::{
     ClaimSide, DbError, NonPostableAccount, SettlementCancelBlocker, map_db_error,
 };
 use crate::repositories::invoice_settlements::{ClaimSubject, GapAccountRole, PaymentAgainstDue};
-use crate::repositories::journal_entries::ReversalAuthority;
+use crate::repositories::journal_entries::{CancellationDating, ReversalAuthority};
 use crate::repositories::letterings::{self, Actor};
 use crate::repositories::settlement_cancellation::{
     SettlementCancelHit, settlement_entry_cancel_blocker,
@@ -869,14 +869,17 @@ pub async fn write_off_invoice(
 /// pour refuser. Une lecture qui divergerait de l'écriture afficherait un
 /// bouton qui échoue.
 ///
+/// `dating` (Story 53-6a) : celle que la contre-passation recevra —
+/// `Today(jour)` depuis la fiche, `OriginDate` pour le dé-rapprochement.
+///
 /// Règlement introuvable (ou d'une autre société) → [`DbError::NotFound`].
 pub async fn settlement_cancel_blocker(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     settlement_id: i64,
-    aujourd_hui: NaiveDate,
+    dating: CancellationDating,
 ) -> Result<Option<SettlementCancelHit>, DbError> {
-    settlement_cancel_blocker_unlinking(conn, company_id, settlement_id, None, aujourd_hui).await
+    settlement_cancel_blocker_unlinking(conn, company_id, settlement_id, None, dating).await
 }
 
 /// [`settlement_cancel_blocker`], avec l'**exemption étroite** du rang 3 pour
@@ -888,13 +891,13 @@ pub async fn settlement_cancel_blocker_unlinking(
     company_id: i64,
     settlement_id: i64,
     unlinking: Option<i64>,
-    aujourd_hui: NaiveDate,
+    dating: CancellationDating,
 ) -> Result<Option<SettlementCancelHit>, DbError> {
     let (entry_id, head) = settlement_cancel_head(conn, company_id, settlement_id).await?;
     if head.is_some() {
         return Ok(head);
     }
-    settlement_entry_cancel_blocker(conn, company_id, entry_id, unlinking, aujourd_hui).await
+    settlement_entry_cancel_blocker(conn, company_id, entry_id, unlinking, dating).await
 }
 
 /// La **tête** client des motifs d'annulation d'un règlement — rang 1
@@ -983,7 +986,8 @@ pub(crate) async fn delete_grouped_settlements_in_tx(
 /// Ce que rend une annulation de règlement.
 #[derive(Debug, Clone)]
 pub struct SettlementCancellation {
-    /// L'écriture inverse, datée du jour.
+    /// L'écriture inverse, datée selon la datation reçue (le jour depuis la
+    /// fiche, l'écriture de règlement pour le dé-rapprochement — Story 53-6a).
     pub reversal_journal_entry_id: i64,
     /// Le reste dû après l'annulation.
     pub amount_due_after: Decimal,
@@ -992,7 +996,9 @@ pub struct SettlementCancellation {
 /// Annule un règlement client **dans une transaction fournie**, sans `BEGIN`
 /// ni `COMMIT` (Story 25-3-a-1, #414).
 ///
-/// Contre-passe l'écriture de règlement (datée du jour), **retire** la ligne
+/// Contre-passe l'écriture de règlement — datée selon `dating` (Story 53-6a,
+/// #1674) : `Today(jour)` depuis la fiche ([`cancel_settlement`]),
+/// `OriginDate` pour le dé-rapprochement —, **retire** la ligne
 /// `invoice_settlements` (arbitrage : retirée, non marquée annulée — le
 /// résiduel se calcule depuis cette table), projette `paid_at` et journalise.
 ///
@@ -1003,11 +1009,11 @@ pub struct SettlementCancellation {
 ///
 /// ⛔ **Qui refuse** : ce geste ne refuse lui-même que les rangs 1, 1 bis, 2 et
 /// 2 bis — le lettrage de pièce figé par la période, Story 15-1a2-0
-/// ([`DbError::SettlementNotCancellable`]) ; les rangs 3 à 5 sont refusés par
-/// la contre-passation, avec son erreur canonique (409 `EntryNotReversable`,
-/// 400 qui nomme les comptes, 400 `FiscalYearInvalid`). Une seule garde par
-/// motif : deux gardes du même motif masqueraient chacune la mutation de
-/// l'autre.
+/// ([`DbError::SettlementNotCancellable`]) ; les rangs 3, 4, `PeriodLocked`
+/// (sous `OriginDate`) et 5 sont refusés par la contre-passation, avec son
+/// erreur canonique (409 `EntryNotReversable`, 400 qui nomme les comptes, 400
+/// `PeriodLocked`, 400 `FiscalYearInvalid`). Une seule garde par motif : deux
+/// gardes du même motif masqueraient chacune la mutation de l'autre.
 ///
 /// `acteur` est l'auteur du geste, clé d'API comprise (Story 36-4, #1131) : le
 /// délettrage de la pièce, la contre-passation (son lettrage compris) et
@@ -1021,7 +1027,7 @@ pub async fn cancel_settlement_in_tx(
     invoice_id: i64,
     settlement_id: i64,
     acteur: Acteur,
-    aujourd_hui: NaiveDate,
+    dating: CancellationDating,
 ) -> Result<SettlementCancellation, DbError> {
     // (1) Verrou facture — même ordre que `settle_invoice`.
     let locked: Option<i64> =
@@ -1101,7 +1107,7 @@ pub async fn cancel_settlement_in_tx(
         | SettlementCancelBlocker::DocumentLetteringInClosedPeriods),
         _,
         _,
-    )) = settlement_cancel_blocker(tx, company_id, settlement_id, aujourd_hui).await?
+    )) = settlement_cancel_blocker(tx, company_id, settlement_id, dating).await?
     {
         return Err(DbError::SettlementNotCancellable { blocker });
     }
@@ -1132,7 +1138,7 @@ pub async fn cancel_settlement_in_tx(
         // Story 36-4 (#1131) : l'acteur du geste, clé comprise.
         acteur,
         ReversalAuthority::ClientSettlement { settlement_id },
-        aujourd_hui,
+        dating,
     )
     .await?;
 
@@ -1256,7 +1262,9 @@ pub async fn cancel_settlement(
             invoice_id,
             settlement_id,
             acteur,
-            aujourd_hui,
+            // Depuis la fiche : datée du jour, inchangé (Q3 du Project Lead du
+            // 2026-11-27 ; la datation de ce geste relève d'une issue à part).
+            CancellationDating::Today(aujourd_hui),
         )
         .await?;
         let (invoice, lines, amount_settled) =

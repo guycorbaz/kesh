@@ -458,7 +458,6 @@ async fn unreconcile_dissolves_and_pairs(pool: MySqlPool) {
         seeded.company_id,
         bt,
         Acteur::utilisateur(seeded.admin_user_id),
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("dé-rapprochement");
@@ -1623,7 +1622,9 @@ async fn locked_period_supplier_cancels_are_refused_until_unlocked(pool: MySqlPo
         &mut conn,
         seeded.company_id,
         s1,
-        crate::jour::aujourd_hui_test(),
+        kesh_db::repositories::journal_entries::CancellationDating::Today(
+            crate::jour::aujourd_hui_test(),
+        ),
     )
     .await
     .unwrap()

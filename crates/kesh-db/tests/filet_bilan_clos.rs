@@ -588,7 +588,7 @@ async fn la_contre_passation_du_jour_sous_un_futur_clos_est_refusee(pool: MySqlP
         s.company_id,
         e.entry.id,
         Acteur::utilisateur(s.admin_user_id),
-        crate::jour::aujourd_hui_test(),
+        journal_entries::CancellationDating::Today(crate::jour::aujourd_hui_test()),
     )
     .await;
     drop(tx);
@@ -706,7 +706,7 @@ async fn predicteur_muet_sous_un_exercice_futur_clos(pool: MySqlPool) {
         s.company_id,
         e.entry.id,
         None,
-        crate::jour::aujourd_hui_test(),
+        journal_entries::CancellationDating::Today(crate::jour::aujourd_hui_test()),
     )
     .await
     .expect("lecture");
@@ -722,7 +722,7 @@ async fn predicteur_muet_sous_un_exercice_futur_clos(pool: MySqlPool) {
         s.company_id,
         e.entry.id,
         Acteur::utilisateur(s.admin_user_id),
-        crate::jour::aujourd_hui_test(),
+        journal_entries::CancellationDating::Today(crate::jour::aujourd_hui_test()),
     )
     .await;
     drop(tx);

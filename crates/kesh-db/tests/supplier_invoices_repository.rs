@@ -1242,7 +1242,7 @@ async fn pay_succeeds_when_project_archived_after_tagging(pool: MySqlPool) {
 // ===========================================================================
 
 use kesh_db::errors::{ReversalBlocker, SettlementCancelBlocker};
-use kesh_db::repositories::journal_entries::{self, ReversalAuthority};
+use kesh_db::repositories::journal_entries::{self, CancellationDating, ReversalAuthority};
 use kesh_db::repositories::{accounts, fiscal_years};
 
 /// Facture créée à `inv_date` puis réglée en espèces (1000) à `paid_on` ; rend
@@ -1469,7 +1469,7 @@ async fn supplier_authority_never_covers_the_purchase_entry(pool: MySqlPool) {
         purchase,
         kesh_db::entities::audit_log::Acteur::utilisateur(ctx.seeded.admin_user_id),
         authority,
-        crate::jour::aujourd_hui_test(),
+        CancellationDating::Today(crate::jour::aujourd_hui_test()),
     )
     .await
     .expect_err("l'écriture d'achat ne se contre-passe pas au titre du règlement");
@@ -1492,7 +1492,7 @@ async fn supplier_authority_never_covers_the_purchase_entry(pool: MySqlPool) {
         settlement,
         kesh_db::entities::audit_log::Acteur::utilisateur(ctx.seeded.admin_user_id),
         authority,
-        crate::jour::aujourd_hui_test(),
+        CancellationDating::Today(crate::jour::aujourd_hui_test()),
     )
     .await
     .expect("témoin : l'écriture de règlement, elle, se contre-passe");
@@ -1512,7 +1512,7 @@ async fn cancel_settlement_composes_and_rolls_back(pool: MySqlPool) {
             ctx.seeded.company_id,
             id,
             Acteur::utilisateur(ctx.seeded.admin_user_id),
-            crate::jour::aujourd_hui_test(),
+            CancellationDating::Today(crate::jour::aujourd_hui_test()),
         )
         .await
         .expect("annulation dans la transaction");
@@ -1647,7 +1647,7 @@ async fn another_company_cannot_cancel_the_settlement(pool: MySqlPool) {
         &mut conn,
         other,
         id,
-        crate::jour::aujourd_hui_test(),
+        CancellationDating::Today(crate::jour::aujourd_hui_test()),
     )
     .await
     .expect_err("autre société — lecture");
@@ -1790,7 +1790,7 @@ async fn tail_motives_through_the_supplier_path(pool: MySqlPool) {
             &mut conn,
             ctx.seeded.company_id,
             id,
-            crate::jour::aujourd_hui_test(),
+            CancellationDating::Today(crate::jour::aujourd_hui_test()),
         )
         .await
         .expect("lecture");
@@ -1905,7 +1905,7 @@ async fn purchase_authority_never_covers_the_settlement_entry(pool: MySqlPool) {
         settlement,
         kesh_db::entities::audit_log::Acteur::utilisateur(ctx.seeded.admin_user_id),
         authority,
-        crate::jour::aujourd_hui_test(),
+        CancellationDating::Today(crate::jour::aujourd_hui_test()),
     )
     .await
     .expect_err("le règlement ne se contre-passe pas au titre de l'achat");
@@ -1928,7 +1928,7 @@ async fn purchase_authority_never_covers_the_settlement_entry(pool: MySqlPool) {
         purchase,
         kesh_db::entities::audit_log::Acteur::utilisateur(ctx.seeded.admin_user_id),
         authority,
-        crate::jour::aujourd_hui_test(),
+        CancellationDating::Today(crate::jour::aujourd_hui_test()),
     )
     .await
     .expect("témoin : l'écriture d'achat, elle, se contre-passe");
@@ -3063,7 +3063,7 @@ async fn supplier_cancels_are_refused_under_a_frozen_lettering(pool: MySqlPool) 
         &mut conn,
         company_id,
         id,
-        crate::jour::aujourd_hui_test(),
+        CancellationDating::Today(crate::jour::aujourd_hui_test()),
     )
     .await
     .expect("prédicteur du paiement");

@@ -664,7 +664,9 @@ async fn a_settlement_cannot_be_cancelled_while_a_write_off_exists(pool: MySqlPo
         &mut conn,
         seeded.company_id,
         settlement,
-        crate::jour::aujourd_hui_test(),
+        kesh_db::repositories::journal_entries::CancellationDating::Today(
+            crate::jour::aujourd_hui_test(),
+        ),
     )
     .await
     .unwrap();
@@ -677,7 +679,9 @@ async fn a_settlement_cannot_be_cancelled_while_a_write_off_exists(pool: MySqlPo
             &mut conn,
             seeded.company_id,
             write_off_id,
-            crate::jour::aujourd_hui_test()
+            kesh_db::repositories::journal_entries::CancellationDating::Today(
+                crate::jour::aujourd_hui_test()
+            )
         )
         .await
         .unwrap()
@@ -790,7 +794,9 @@ async fn the_write_off_motive_comes_before_a_closed_fiscal_year(pool: MySqlPool)
         &mut conn,
         seeded.company_id,
         settlement,
-        crate::jour::aujourd_hui_test(),
+        kesh_db::repositories::journal_entries::CancellationDating::Today(
+            crate::jour::aujourd_hui_test(),
+        ),
     )
     .await
     .unwrap();
@@ -1131,7 +1137,6 @@ async fn unlinking_a_reconciled_settlement_is_refused_while_a_write_off_exists(p
         &pool,
         seeded.company_id,
         bt,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap()
@@ -1145,7 +1150,6 @@ async fn unlinking_a_reconciled_settlement_is_refused_while_a_write_off_exists(p
         seeded.company_id,
         bt,
         Acteur::utilisateur(seeded.admin_user_id),
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap_err();
@@ -1903,7 +1907,9 @@ async fn read_blocker(
         &mut conn,
         seeded.company_id,
         settlement_id,
-        crate::jour::aujourd_hui_test(),
+        kesh_db::repositories::journal_entries::CancellationDating::Today(
+            crate::jour::aujourd_hui_test(),
+        ),
     )
     .await
     .expect("lecture")

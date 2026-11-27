@@ -3081,11 +3081,13 @@ where
 /// transaction) : l'appelant, propriétaire, en est responsable — le drop de
 /// `Transaction` déclenche le rollback automatique de `sqlx`.
 ///
-/// `aujourd_hui` (Story 35-5a0, #929, #1022, #907) : la date du jour, lue
-/// **une fois** sur l'horloge de la requête par l'appelant — la contre-passation
-/// en est datée, dans l'exercice ouvert qui la couvre. La contre-passation ne
-/// lit plus l'heure elle-même (d'autres dépôts le font encore, Story 35-5b :
-/// `kesh-api/tests/date_du_jour_garde.rs` les inventorie).
+/// `dating` (Story 53-6a, #1674) : la datation de l'inverse —
+/// [`CancellationDating::Today`], la date du jour lue **une fois** sur l'horloge
+/// de la requête par l'appelant (Story 35-5a0, #929, #1022, #907 : la
+/// contre-passation ne lit pas l'heure elle-même ;
+/// `kesh-api/tests/date_du_jour_garde.rs` inventorie ceux qui la lisent), ou
+/// [`CancellationDating::OriginDate`], la date de l'écriture d'origine, dans son
+/// exercice — celle du dé-rapprochement.
 ///
 /// `acteur` (Story 35-8a2, #431) : qui contre-passe — l'écriture inverse, la
 /// trace `journal_entry.reversed` et le lettrage `reversal` portent sa clé d'API
@@ -3095,17 +3097,9 @@ pub async fn reverse_in_tx(
     company_id: i64,
     id: i64,
     acteur: Acteur,
-    aujourd_hui: NaiveDate,
+    dating: CancellationDating,
 ) -> Result<JournalEntryWithLines, DbError> {
-    reverse_in_tx_inner(
-        tx,
-        company_id,
-        id,
-        acteur,
-        None,
-        ReversalDating::Today(aujourd_hui),
-    )
-    .await
+    reverse_in_tx_inner(tx, company_id, id, acteur, None, dating.into()).await
 }
 
 /// Ce qu'un appelant a **qualité** pour lever quand il contre-passe l'écriture
@@ -3170,44 +3164,217 @@ impl ReversalAuthority {
 /// à ceci près que le motif que l'`authority` a qualité pour lever n'est pas
 /// opposé. Tous les autres le restent, dans leur ordre.
 ///
-/// `aujourd_hui` : la date du jour reçue de l'appelant (Story 35-5a0), cf.
-/// [`reverse_in_tx`].
+/// `dating` : la datation de l'inverse (Story 53-6a), cf. [`reverse_in_tx`]. Les
+/// gestes depuis la fiche passent `Today`, le dé-rapprochement `OriginDate`.
 pub async fn reverse_owned_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
     acteur: Acteur,
     authority: ReversalAuthority,
-    aujourd_hui: NaiveDate,
+    dating: CancellationDating,
 ) -> Result<JournalEntryWithLines, DbError> {
-    reverse_in_tx_inner(
-        tx,
-        company_id,
-        id,
-        acteur,
-        Some(authority),
-        ReversalDating::Today(aujourd_hui),
-    )
-    .await
+    reverse_in_tx_inner(tx, company_id, id, acteur, Some(authority), dating.into()).await
+}
+
+/// La datation qu'une **annulation** choisit pour sa contre-passation — le type
+/// public **étroit** des deux entrées [`reverse_in_tx`] et
+/// [`reverse_owned_in_tx`] (Story 53-6a, #1674, D2, remède (i) de la validation
+/// P2).
+///
+/// ⛔ **Pourquoi pas [`ReversalDating`] lui-même** : rendu public, il rendrait
+/// `NextFiscalYearStart` passable à `reverse_owned_in_tx`, **avec une
+/// autorité** — combinaison que le socle n'a jamais connue (aucune annulation de
+/// pièce ne date au début de l'exercice suivant). Ce type n'expose que les deux
+/// datations d'une annulation ; il se convertit en [`ReversalDating`], qui reste
+/// privé, et la contre-passation reste **une** fonction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CancellationDating {
+    /// Datée **du jour** reçu (lu une fois sur l'horloge de la requête, Story
+    /// 35-5a0), dans l'exercice ouvert qui le couvre — `/reverse` et les
+    /// annulations depuis la fiche (règlement client, paiement fournisseur,
+    /// facture fournisseur).
+    Today(NaiveDate),
+    /// Datée de l'**écriture d'origine**, dans **son** exercice, qui doit être
+    /// ouvert (rouvert compris) — le dé-rapprochement (Story 53-6a, Q1 du
+    /// Project Lead du 2026-11-27) : annuler un rapprochement ne fausse jamais
+    /// deux exercices.
+    OriginDate,
+}
+
+impl From<CancellationDating> for ReversalDating {
+    fn from(dating: CancellationDating) -> Self {
+        match dating {
+            CancellationDating::Today(today) => Self::Today(today),
+            CancellationDating::OriginDate => Self::OriginDate,
+        }
+    }
 }
 
 /// La **datation** d'une contre-passation — paramètre interne de
 /// [`reverse_in_tx_inner`], la contre-passation unique (Story 29-1b, #232).
 ///
-/// ⛔ Ce n'est pas un second chemin : les deux valeurs passent par la **même**
+/// ⛔ Ce n'est pas un second chemin : les trois valeurs passent par la **même**
 /// fonction, et ne diffèrent qu'à l'étape (4) — l'exercice et la date de
 /// l'écriture inverse. Liaison, lettrage, refus et audit sont communs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ReversalDating {
     /// Datée **du jour**, dans l'exercice ouvert qui couvre ce jour — la
     /// contre-passation historique (Story 24-4a), celle de `/reverse` et des
-    /// quatre annulations. Le jour est celui que l'appelant a lu sur
+    /// annulations depuis la fiche. Le jour est celui que l'appelant a lu sur
     /// l'horloge de la requête (Story 35-5a0).
     Today(NaiveDate),
     /// Datée du **premier jour de l'exercice qui suit** celui de l'origine,
     /// dans cet exercice — pour les transitoires de fin d'exercice
     /// (`/reverse-at-next-fiscal-year-start`).
     NextFiscalYearStart,
+    /// Datée de l'**écriture d'origine**, dans son exercice — le
+    /// dé-rapprochement (Story 53-6a, #1674).
+    OriginDate,
+}
+
+/// Ce que la règle de datation dit de l'écriture inverse — verdict **pur**,
+/// sans base (Story 53-6a, AC-13).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReversalDateVerdict {
+    /// L'inverse se date de ce jour, dans l'exercice **ouvert** qui le couvre —
+    /// que la contre-passation **confirme** ensuite par une lecture
+    /// verrouillante.
+    Dated(NaiveDate),
+    /// L'inverse se date au premier jour de l'exercice qui suit celui de
+    /// l'origine : la date se lit en base (`NextFiscalYearStart`), le verrou de
+    /// période se juge alors sur elle.
+    FirstDayOfNextFiscalYear,
+    /// Datation `OriginDate`, exercice de l'origine **clos** : refus
+    /// (`FISCAL_YEAR_CLOSED`, Q6 — on ne rouvre pas d'office).
+    FiscalYearClosed,
+    /// La date de l'inverse est **sous la borne** du verrou de période (seuil
+    /// **inclusif**, celui de `create_in_tx_inner`, étape 1-bis) : refus
+    /// `PERIOD_LOCKED` (Q2).
+    PeriodLocked {
+        locked_through: NaiveDate,
+        attempted: NaiveDate,
+    },
+}
+
+/// La règle de datation d'une contre-passation, **une fois** (Story 53-6a,
+/// AC-13) : selon la datation, l'état de l'exercice de l'origine et la borne du
+/// verrou de période, la date de l'inverse ou le motif qui la refuse.
+///
+/// - `Today(d)` : datée de `d` ; l'exercice de l'origine n'importe pas (une
+///   écriture d'un exercice clos se contre-passe au jour, dans l'exercice
+///   ouvert) ; `d <= borne` → `PeriodLocked`.
+/// - `OriginDate` : exercice de l'origine clos → `FiscalYearClosed` (avant
+///   tout) ; sinon datée de `origin_date`, et `origin_date <= borne` →
+///   `PeriodLocked`.
+/// - `NextFiscalYearStart` : la date se lit en base —
+///   `FirstDayOfNextFiscalYear`, quels que soient l'état et la borne.
+///
+/// ⛔ « Rouvert » n'existe pas ici : un exercice rouvert est `Open` comme un
+/// autre (il se teste en base, AC-3). Lecteurs : la queue commune des
+/// annulations (rang `PeriodLocked`, `settlement_cancellation`) et l'étape (4)
+/// de la contre-passation (sans borne : c'est `create_in_tx_inner` qui oppose le
+/// verrou, avec ses deux dates — une seule garde par motif).
+fn reversal_date_verdict(
+    dating: ReversalDating,
+    origin_date: NaiveDate,
+    origin_fiscal_year_closed: bool,
+    books_locked_through: Option<NaiveDate>,
+) -> ReversalDateVerdict {
+    let attempted = match dating {
+        ReversalDating::NextFiscalYearStart => {
+            return ReversalDateVerdict::FirstDayOfNextFiscalYear;
+        }
+        ReversalDating::OriginDate if origin_fiscal_year_closed => {
+            return ReversalDateVerdict::FiscalYearClosed;
+        }
+        ReversalDating::OriginDate => origin_date,
+        ReversalDating::Today(today) => today,
+    };
+    match books_locked_through {
+        Some(locked_through) if attempted <= locked_through => ReversalDateVerdict::PeriodLocked {
+            locked_through,
+            attempted,
+        },
+        _ => ReversalDateVerdict::Dated(attempted),
+    }
+}
+
+/// [`reversal_date_verdict`] pour une datation d'annulation — l'entrée de la
+/// queue commune (`settlement_cancellation`), hors du module.
+pub(crate) fn cancellation_date_verdict(
+    dating: CancellationDating,
+    origin_date: NaiveDate,
+    origin_fiscal_year_closed: bool,
+    books_locked_through: Option<NaiveDate>,
+) -> ReversalDateVerdict {
+    reversal_date_verdict(
+        dating.into(),
+        origin_date,
+        origin_fiscal_year_closed,
+        books_locked_through,
+    )
+}
+
+/// Story 53-6a (#1674, AC-13) — la règle de datation, sans base : chaque
+/// datation × exercice de l'origine ouvert/clos × borne absente, antérieure,
+/// égale, postérieure à la date de l'inverse.
+#[cfg(test)]
+mod verdict_de_datation {
+    use super::{ReversalDateVerdict as V, ReversalDating as D, reversal_date_verdict};
+    use chrono::NaiveDate;
+
+    fn j(m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, m, d).unwrap()
+    }
+
+    #[test]
+    fn la_table_des_cas() {
+        let origine = j(3, 14);
+        let jour = j(11, 20);
+        let verrou = |borne: NaiveDate, tentee: NaiveDate| V::PeriodLocked {
+            locked_through: borne,
+            attempted: tentee,
+        };
+        // (datation, exercice de l'origine clos, borne, verdict attendu)
+        let cas: [(D, bool, Option<NaiveDate>, V); 24] = [
+            // OriginDate, exercice ouvert : datée de l'origine, sauf sous la borne.
+            (D::OriginDate, false, None, V::Dated(origine)),
+            (D::OriginDate, false, Some(j(3, 13)), V::Dated(origine)),
+            (D::OriginDate, false, Some(j(3, 14)), verrou(j(3, 14), origine)),
+            (D::OriginDate, false, Some(j(3, 15)), verrou(j(3, 15), origine)),
+            // OriginDate, exercice clos : refus, quelle que soit la borne.
+            (D::OriginDate, true, None, V::FiscalYearClosed),
+            (D::OriginDate, true, Some(j(3, 13)), V::FiscalYearClosed),
+            (D::OriginDate, true, Some(j(3, 14)), V::FiscalYearClosed),
+            (D::OriginDate, true, Some(j(3, 15)), V::FiscalYearClosed),
+            // Today : datée du jour, l'exercice de l'origine n'importe pas.
+            (D::Today(jour), false, None, V::Dated(jour)),
+            (D::Today(jour), false, Some(j(11, 19)), V::Dated(jour)),
+            (D::Today(jour), false, Some(j(11, 20)), verrou(j(11, 20), jour)),
+            (D::Today(jour), false, Some(j(11, 21)), verrou(j(11, 21), jour)),
+            (D::Today(jour), true, None, V::Dated(jour)),
+            (D::Today(jour), true, Some(j(11, 19)), V::Dated(jour)),
+            (D::Today(jour), true, Some(j(11, 20)), verrou(j(11, 20), jour)),
+            (D::Today(jour), true, Some(j(11, 21)), verrou(j(11, 21), jour)),
+            // NextFiscalYearStart : la date se lit en base.
+            (D::NextFiscalYearStart, false, None, V::FirstDayOfNextFiscalYear),
+            (D::NextFiscalYearStart, false, Some(j(3, 13)), V::FirstDayOfNextFiscalYear),
+            (D::NextFiscalYearStart, false, Some(j(3, 14)), V::FirstDayOfNextFiscalYear),
+            (D::NextFiscalYearStart, false, Some(j(3, 15)), V::FirstDayOfNextFiscalYear),
+            (D::NextFiscalYearStart, true, None, V::FirstDayOfNextFiscalYear),
+            (D::NextFiscalYearStart, true, Some(j(3, 13)), V::FirstDayOfNextFiscalYear),
+            (D::NextFiscalYearStart, true, Some(j(3, 14)), V::FirstDayOfNextFiscalYear),
+            (D::NextFiscalYearStart, true, Some(j(3, 15)), V::FirstDayOfNextFiscalYear),
+        ];
+        for (dating, clos, borne, attendu) in cas {
+            assert_eq!(
+                reversal_date_verdict(dating, origine, clos, borne),
+                attendu,
+                "{dating:?}, clos {clos}, borne {borne:?}"
+            );
+        }
+    }
 }
 
 /// Contre-passe une écriture **au premier jour de l'exercice qui suit le
@@ -3290,7 +3457,14 @@ type OriginLine = (
 ///
 /// # La datation (Story 29-1b, #232)
 ///
-/// `dating` ne change que l'étape (4). [`ReversalDating::Today`] : l'exercice
+/// `dating` ne change que l'étape (4). [`ReversalDating::OriginDate`] (Story
+/// 53-6a, #1674) : la date de l'origine, lue à l'étape (1) par la même requête
+/// verrouillante, dans **son** exercice, **confirmé** ouvert par
+/// `find_open_covering_date` (`None` → `FiscalYearClosed`, filet du rang 2 de la
+/// queue ; un autre exercice → `Invariant`) ; son parcours s'arrête à
+/// l'exercice de l'origine, il verrouille donc **moins** que celui du jour
+/// quand l'annulation est faite plus tard, dans le même ordre ascendant.
+/// [`ReversalDating::Today`] : l'exercice
 /// ouvert du jour, daté du jour. [`ReversalDating::NextFiscalYearStart`] :
 /// l'exercice qui suit celui de l'origine — **trouvé** par une lecture
 /// ordinaire (`fiscal_years::find_next_after`, celle du contrôle K7, sur la
@@ -3364,9 +3538,13 @@ async fn reverse_in_tx_inner(
 ) -> Result<JournalEntryWithLines, DbError> {
     // (1) Verrou sur l'origine, puis recensement des empêchements. La fin de
     // l'exercice de l'origine (`fy.end_date`) est lue par la MÊME requête — mêmes
-    // lignes verrouillées, aucun verrou ajouté (Story 29-1b, AC11).
-    let origin: Option<(i64, i64, String, NaiveDate)> = sqlx::query_as(
-        "SELECT je.id, je.entry_number, fy.name, fy.end_date \
+    // lignes verrouillées, aucun verrou ajouté (Story 29-1b, AC11) ; de même la
+    // date de l'origine, son exercice et l'état de celui-ci, pour `OriginDate`
+    // (Story 53-6a, D2).
+    type OriginHead = (i64, i64, String, NaiveDate, NaiveDate, i64, String);
+    let origin: Option<OriginHead> = sqlx::query_as(
+        "SELECT je.id, je.entry_number, fy.name, fy.end_date, je.entry_date, \
+                je.fiscal_year_id, fy.status \
          FROM journal_entries je \
          JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
          WHERE je.id = ? AND je.company_id = ? FOR UPDATE",
@@ -3376,7 +3554,8 @@ async fn reverse_in_tx_inner(
     .fetch_optional(&mut **tx)
     .await
     .map_err(map_db_error)?;
-    let (_, entry_number, origin_fy_name, origin_fy_end) = origin.ok_or(DbError::NotFound)?;
+    let (_, entry_number, origin_fy_name, origin_fy_end, origin_date, origin_fy_id, origin_fy_status) =
+        origin.ok_or(DbError::NotFound)?;
 
     // (1-bis) ⛔ Une autorité fournisseur ne vaut que pour l'écriture de SON
     // rôle — règlement (25-3-a-2) ou achat (25-3-c) — de la facture nommée :
@@ -3544,6 +3723,46 @@ async fn reverse_in_tx_inner(
             }
             (next.start_date, fy)
         }
+        // Story 53-6a (#1674, D2) — la date de l'ORIGINE, dans SON exercice,
+        // CONFIRMÉ ouvert par la lecture verrouillante. La règle de datation
+        // (`reversal_date_verdict`) dit la date ; la borne du verrou de période
+        // n'y est pas passée : `create_in_tx_inner` l'oppose ensuite, avec ses
+        // deux dates (une seule garde par motif).
+        ReversalDating::OriginDate => {
+            let entry_date = match reversal_date_verdict(
+                dating,
+                origin_date,
+                origin_fy_status == "Closed",
+                None,
+            ) {
+                ReversalDateVerdict::Dated(date) => date,
+                // Filet : la queue commune refuse l'exercice clos avant (rang 2).
+                ReversalDateVerdict::FiscalYearClosed => return Err(DbError::FiscalYearClosed),
+                other => {
+                    return Err(DbError::Invariant(format!(
+                        "contre-passation à la date de l'origine : verdict {other:?}"
+                    )));
+                }
+            };
+            // ⚠️ Angle mort assumé (D2, M7) : sur le chemin du dé-rapprochement,
+            // l'exercice de l'origine est déjà tenu (étape 3 du geste) ; une
+            // lecture ordinaire verrait ici le même état. La confirmation reste,
+            // défense d'un appelant futur qui n'aurait pas verrouillé avant.
+            let fy = super::fiscal_years::find_open_covering_date(tx, company_id, entry_date)
+                .await?
+                .ok_or(DbError::FiscalYearClosed)?;
+            // Les exercices ne se chevauchent pas : l'exercice ouvert qui couvre
+            // la date de l'origine EST le sien. Autre chose serait un défaut
+            // structurel (patron de `NextFiscalYearStart`).
+            if fy.id != origin_fy_id {
+                return Err(DbError::Invariant(format!(
+                    "contre-passation : l'exercice {} couvre la date de l'origine, \
+                     qui est dans l'exercice {origin_fy_id}",
+                    fy.id
+                )));
+            }
+            (entry_date, fy)
+        }
     };
 
     // Le nom de l'exercice DE L'ORIGINE lève l'ambiguïté du numéro, qui
@@ -3593,6 +3812,11 @@ async fn reverse_in_tx_inner(
         ReversalDating::NextFiscalYearStart => serde_json::json!({
             "reversalJournalEntryId": created.entry.id,
             "dating": "nextFiscalYearStart",
+        }),
+        // Story 53-6a (#1674, D2).
+        ReversalDating::OriginDate => serde_json::json!({
+            "reversalJournalEntryId": created.entry.id,
+            "dating": "originDate",
         }),
     };
     audit_log::insert_in_tx(
@@ -3690,7 +3914,15 @@ pub async fn reverse(
     aujourd_hui: NaiveDate,
 ) -> Result<JournalEntryWithLines, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    match reverse_in_tx(&mut tx, company_id, id, acteur, aujourd_hui).await {
+    match reverse_in_tx(
+        &mut tx,
+        company_id,
+        id,
+        acteur,
+        CancellationDating::Today(aujourd_hui),
+    )
+    .await
+    {
         Ok(created) => {
             tx.commit().await.map_err(map_db_error)?;
             Ok(created)
@@ -4617,7 +4849,7 @@ mod tests {
                 company_id,
                 origine.entry.id,
                 Acteur::utilisateur(admin),
-                jour,
+                CancellationDating::Today(jour),
             )
             .await
             .unwrap();
@@ -6559,7 +6791,7 @@ mod tests {
                 company_id,
                 origine.entry.id,
                 Acteur::utilisateur(admin_user_id),
-                today,
+                CancellationDating::Today(today),
             )
             .await
             .expect("la contre-passation doit réussir dans la transaction");

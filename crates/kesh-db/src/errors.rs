@@ -682,10 +682,16 @@ pub enum DuplicateGesture {
 /// **réel** de `reverse_in_tx`, qui contrôle les comptes archivés (étape 3)
 /// avant l'exercice du jour (étape 4) : la lecture se règle sur l'écriture.
 ///
-/// ⚠️ **Qui refuse, à l'écriture** : le geste ne refuse lui-même que les rangs
-/// 1, 1 bis, 2 et 2 bis ([`DbError::SettlementNotCancellable`]) ; les rangs 3 à 5 sont
-/// refusés par le socle, avec son erreur canonique — c'est ce qui garde le 400
-/// qui **nomme** les comptes archivés.
+/// ⚠️ **Qui refuse, à l'écriture** : les gestes **unitaires** (règlement client
+/// ou fournisseur, écriture rapprochée seule) ne refusent eux-mêmes que les
+/// rangs 1, 1 bis, 2 et 2 bis ([`DbError::SettlementNotCancellable`],
+/// [`DbError::ReconciliationNotCancellable`]) ; les rangs 3, 4, `PeriodLocked`
+/// et 5 sont refusés par le socle, avec son erreur canonique — c'est ce qui
+/// garde le 400 qui **nomme** les comptes archivés, et celui qui dit la borne.
+/// ⚠️ Les **dé-rapprochements groupés** (`grouped_settlements::cancel_in_tx`,
+/// Story 43-1a ; `supplier_cancel_in_tx`, 43-1b) refusent eux-mêmes **tous**
+/// les rangs, en [`DbError::ReconciliationNotCancellable`] (409, sans
+/// `details`) : rangs 4, `PeriodLocked` et 5 compris (Story 53-6a, D5).
 ///
 /// ⚠️ **L'annulation d'une FACTURE fournisseur** (Story 25-3-c, #454) emprunte
 /// cet enum sans en suivre l'ordre de déclaration : sa précédence est
@@ -779,8 +785,21 @@ pub enum SettlementCancelBlocker {
     MatchedBankTransaction,
     /// Un compte de l'écriture de règlement a été archivé depuis.
     AccountArchived,
+    /// Story 53-6a (#1674, D5) — **sous la datation `OriginDate` seulement**
+    /// (le dé-rapprochement) : l'écriture examinée est datée **au plus tard**
+    /// de la borne du verrou de période (`companies.books_locked_through`,
+    /// seuil inclusif), et sa contre-passation, datée d'elle, serait refusée
+    /// par le socle. La borne voyage en étiquette
+    /// ([`SettlementCancelHit`](crate::repositories::settlement_cancellation::SettlementCancelHit)).
+    ///
+    /// **Place** : l'ordre réel du socle — après les comptes archivés (étape
+    /// 3), à la place du rang 5, inatteignable sous `OriginDate`. **Code
+    /// réemployé** : `PERIOD_LOCKED`, celui de [`DbError::PeriodLocked`] —
+    /// même état du monde.
+    PeriodLocked,
     /// Aucun exercice **ouvert** ne couvre le jour, où la contre-passation
-    /// serait datée.
+    /// serait datée — sous la datation `Today` (gestes depuis la fiche) ;
+    /// inatteignable sous `OriginDate`.
     NoOpenFiscalYearToday,
     /// Annulation d'une facture fournisseur (Story 25-3-c), **dernier** rang :
     /// la facture est engagée dans un lot de paiement `generated`. Dernier
@@ -796,7 +815,8 @@ impl SettlementCancelBlocker {
     /// (`INVOICE_CREDITED` de [`UnvalidationBlocker`], `FISCAL_YEAR_CLOSED`,
     /// `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` de
     /// [`DbError::LetteringAllLinesInClosedPeriods`], `MATCHED_BANK_TRANSACTION`,
-    /// `ACCOUNT_ARCHIVED`, `FISCAL_YEAR_INVALID`) :
+    /// `ACCOUNT_ARCHIVED`, `PERIOD_LOCKED` de [`DbError::PeriodLocked`],
+    /// `FISCAL_YEAR_INVALID`) :
     /// un même fait ne reçoit pas un second nom.
     pub fn code(self) -> &'static str {
         match self {
@@ -810,6 +830,7 @@ impl SettlementCancelBlocker {
             Self::DocumentLetteringInClosedPeriods => "LETTERING_ALL_LINES_IN_CLOSED_PERIODS",
             Self::MatchedBankTransaction => "MATCHED_BANK_TRANSACTION",
             Self::AccountArchived => "ACCOUNT_ARCHIVED",
+            Self::PeriodLocked => "PERIOD_LOCKED",
             Self::NoOpenFiscalYearToday => "FISCAL_YEAR_INVALID",
             Self::SupplierInvoiceInPaymentBatch => "SUPPLIER_INVOICE_IN_PAYMENT_BATCH",
         }
