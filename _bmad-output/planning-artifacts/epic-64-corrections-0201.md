@@ -23,7 +23,9 @@ de dette propre (toute dette découverte s'ouvre en issue, § *On trace toujours
 
 ## Dépendances
 
-- Dépend de : aucune. Bloque : aucune.
+- Dépend de : aucune. Bloque : aucune. Suite : **#1763** (changement de taux de TVA atomique côté serveur, P2, release du
+  vendredi 2026-12-04) reprend ce que #1178 ne traite plus (décision du Project Lead du 2026-11-27).
+- Base : `main` a reçu l'Epic 55 (PR #1696) après le kickoff ; numéro et base de la release à trancher (fiche 64-1, Q3).
 - Recoupe (relevé par la validation P1 de la fiche, 2026-11-27) : `epic/50-corrections` touche aussi les catalogues i18n des
   quatre locales, `i18n-keys.test.ts` (`sitesTotal`), `docs/api-external.md`, `docs/manual/fr/admin-manual.tex` et
   `user-manual.tex` ; la PR #1696 (Epic 55) touche `crates/kesh-api/src/lib.rs` (une route hors du bloc `admin_routes`),
