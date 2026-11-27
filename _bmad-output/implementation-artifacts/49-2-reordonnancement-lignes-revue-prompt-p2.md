@@ -26,6 +26,18 @@ Kesh est en production : Guy émet de vraies factures avec lui. **Passe complèt
 - **LOW** L1 à L11 : voir le rapport ; ceux qui ont été corrigés se relisent, ceux renvoyés en issue se vérifient tracés
   (lecture seule : `gh issue list --search …`).
 
+## Commits de la reprise et de la remédiation (après `190f70eaf` et la P1 `f4faf30ec`)
+
+- `a5205bf0f` — fusion de `origin/main` (Epic 55, `b41d045aa`) : `sitesTotal` 3958 + 5 + 7 = 3970 (garde verte,
+  `$GATE_LOGS/e492/remediation/garde-sites-1.log`). Relire le **diff combiné** de cette fusion.
+- `46b3c2ed9` — M1 (manuel), M2 (v0.20.1 au guide, au README, à la fiche), L5 (guide), L11 (README).
+- `2f795d0a7` — code : L4 (DE), L7, L8 (`ignorerRepetition`), L10 (`reloading` au verrou), poubelle verrouillée et libellé
+  `invoice-line-remove` (`sitesTotal` 3971), L9 et L1 (E2E : `pdftotext`, touche Espace, `expect.poll`, `animations:
+  'disabled'`), sélecteurs de l'E2E par `data-move` (garde KF-043 venue de `main`).
+- Les commits suivants (captures, fiche) : `git log 190f70eaf..HEAD`.
+- Preuves : `$GATE_LOGS/e492/remediation/` (`rouge-L7-L8-L10-poubelle.log`, `retrait-mutations.log`,
+  `manuel-grep-2.log`, `front-2.log`).
+
 ## Axes obligatoires — chacun déclaré exercé ou non exercé
 
 1. Chaque AC (AC1 à AC14) contre le code et les tests.

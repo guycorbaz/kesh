@@ -463,6 +463,28 @@ Journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e492/` : `vert-T1.log`, `rouge
   même ordre. Remarque sur C2 : le ↑ de la 2e ligne y paraît grisé, très probablement un fondu de couleur du bouton au moment de la
   capture (le test T2 vérifie l'état `disabled`, et C3 le montre actif) ; non traité.
 - **Gates du passage en `review`** : voir la section « Gates » ci-dessous.
+- **Remédiation de la revue P1** (Opus 5.5, 2026-11-27, `f4faf30ec` → `a5205bf0f`, `46b3c2ed9`, `2f795d0a7` et suivants ; journaux `$GATE_LOGS/e492/remediation/`) :
+  - **Reprise de `main`** (L6, `a5205bf0f`) : un seul conflit de texte, `sitesTotal` ; 3958 + 5 + 7 = **3970**, la garde le confirme (`garde-sites-1.log`).
+    La reprise a fait rougir un test venu de `main`, `e2e-selecteurs-traduits.test.ts` (KF-043) : l'E2E visait « Monter la ligne N » par nom
+    traduit ; corrigé par des sélecteurs `data-move` (aides `monter(page, n)` et `descendre(page, n)` de la spec).
+  - **M1** : paragraphe « Réordonner les lignes » replacé **après** la description du commentaire (« Le commentaire s'imprime… ») ; la contradiction
+    de la facture validée est levée (« n'offre pas ces boutons, et le serveur refuse… », renvoi à l'avoir). Vérifié au PDF régénéré dans une copie
+    (`make user`, `manuel-grep-2.log`) : les trois phrases périmées comptent 0 occurrence. **M2** : v0.20.1 (milestone de #1756) au guide, au README
+    et à la fiche. Les fiches d'epic et `sprint-status.yaml` nomment encore v0.21.0 pour l'Epic 52 : **laissés à l'orchestrateur** (numérotation des
+    releases), de même que les prompts des passes passées (historique).
+  - **L1** : captures C1 à C6 reprises le 2026-11-27 à 20:45 avec `animations: 'disabled'` (E2E, base `kesh_e2e_e492`, backend lancé par `( cd … && exec env … ) &`,
+    port 3492 contrôlé libre, arrêté par son PID) ; C2 montre désormais le ↑ de la 2e ligne foncé. **L2** : `manuel-grep-2.log`. **L3** : mutations de la
+    remédiation (`rouge-L7-L8-L10-poubelle.log`, fichier restauré, `cmp` et SHA identiques) ; absence de mutation résiduelle des T1 à T5 :
+    `retrait-mutations.log` (seuls hunks de production : aucun, ceux de `invoices.rs` sont aux lignes 6010 et 6029, après `mod tests` en 3180).
+  - **L4** : DE « … nach oben verschieben » / « … nach unten verschieben ». **L5** : « à chaque `PUT` qui modifie la facture ». **L7** : test qui observe la zone
+    `aria-live` (`MutationObserver`, valeurs successives `[texte, '']`), rouge sans le vidage. **L8** : `ignorerRepetition` (`keydown` répété annulé) sur ↑ et ↓,
+    testé, rouge sans lui. **L9** : E2E, texte du PDF extrait par `pdftotext` et ordre vérifié, touche *Espace*, `expect.poll` pour l'ordre. **L10** : `reloading`
+    au verrou (↑, ↓, poubelle, et garde de `moveLine`/`removeLine`), test « Annuler » pendant un rechargement, rouge sans lui. **L11** : README, v0.20.0 « ✅ Publiée ».
+  - **Constats antérieurs** : poubelle verrouillée pendant l'envoi, la modale et le rechargement ; libellé `invoice-line-remove` (« Supprimer la ligne { $n } ») dans les quatre
+    catalogues, `sitesTotal` **3971** (3970 + 1, l'`aria-label` de la poubelle) ; l'effacement des messages sans rapport avec les lignes reste la **décision D7**, inchangée.
+  - **Gates** : `cargo fmt --check` vert ; frontend `check`, `lint-i18n-ownership`, vitest complet **5786 tests**, `build` verts (`front-2.log`) ; build de `kesh-api` et nextest
+    ciblé (`kesh-i18n`, `textes_coherents`, `invoice_line_types_e2e`) : **87 tests verts** (`build-api.log`, `nextest-cible.log`) ; E2E `invoice-line-reorder.spec.ts` seule : 1 test vert
+    (`e2e-spec-1.log`). Gates de la station sur `190f70eaf` (`gates-station/`) : `test-fast` 0 et `gate-ci` 0 (ils ont lu un arbre déjà fusionné avec `main` en cours de route).
 
 ### Gates
 
@@ -502,3 +524,4 @@ Journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e492/` : `vert-T1.log`, `rouge
   E2E T6, manuel, guide de l'API, README ; captures C1 à C6. Écarts à la fiche : label du manuel déjà présent (`sec:suppression-facture`) ;
   deux mutations Rust remplacées par des équivalents (T3, T4). Statut laissé `in-progress` : les gates d'idefix (`test-fast`, `gate-ci`, `front`)
   n'étaient pas terminés ; le passage en `review` attend leurs journaux.
+- 2026-11-27 — **Revue de code P1** (Opus 5.5, `bmad-code-review`, `kesh-gate-logs/e492/49-2-revue-p1.md`) : **0/0/2/11**, plus trois constats antérieurs à la story. **Remédiée** (Opus 5.5) : M1, M2, L1 à L5, L7 à L11 corrigés (L6 : reprise de `main`) ; poubelle verrouillée et libellé en i18n ; l'effacement des messages sans rapport (D7) laissé tel quel. Détail et journaux au Dev Agent Record. Passe P2 (Sonnet) à lancer, prompt `49-2-reordonnancement-lignes-revue-prompt-p2.md`.
