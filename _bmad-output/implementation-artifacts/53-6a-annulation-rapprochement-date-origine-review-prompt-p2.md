@@ -21,6 +21,16 @@ Kesh est un logiciel de comptabilité suisse ; Guy y tient ses livres réels en 
 - **M2** — AC-5 à AC-7 (« AC-1 à AC-4 pour chacun ») : R5 n'a ni AC-2, ni AC-3, ni AC-4 ; R6 n'a pas de test dédié ; AC-3 n'est joué que pour R1 ; AC-5 ne vérifie ni la facture redevenue à régler ni le lettrage `reversal` dans N. Le Dev Agent Record affirmait une couverture « R2 à R5 » (AC-4) et citait R3 et R4 pour AC-1.
 - **LOW L1 à L13** : borne affichée après « avant sa date. » ; phrase TVA du dialogue plus courte que le manuel ; « exercice Exercice 2026 » ; repli vide de `reversalDate` ; angle mort #568 non réécrit pour `OriginDate` ; motif de M7 (mutant équivalent) ; portée de la sonde d'AC-12 c ; AC-10 nul non testé ; attendus d'AC-9 pour R2 ; repli SQL de R3 ; recette visuelle ; AC-11 pour R8 ; course sur la pose du verrou.
 
+## La remédiation de la P1 (commits à relire)
+
+Diff de la remédiation : `d20ec0120..HEAD`. Commits (tous `refs #1674`) :
+
+- `f28faee8f` — **M2** et les LOW de tests et de doc-comments (L5 à L9, L12, L13) : tests neufs par bras (R5 ×3, R6, AC-3 pour R1 à R4, AC-4 pour R2, AC-1 même exercice pour R1, AC-5 facture à régler et lettrage `reversal`), attendus d'AC-9 pour R1 et R2, `reversalDate` nul pour un retrait seul ; doc-comments de l'angle mort #568 sous `OriginDate`, du mutant équivalent M7, de la portée de la sonde d'AC-12 c, de la tolérance du verrou lu sans verrou.
+- `9a12c5b0f` — **M1** (E2E d'AC-15 (1) : exercice antérieur ouvert, date d'écriture ≠ date de transaction, l'inverse ouverte par clics, son exercice vérifié) et L1 à L4, L11 (la borne en phrase à part, clé neuve aux quatre locales ; phrase TVA complète ; nom de l'exercice entre guillemets ; tiret si la vue est sans date ; captures neuves).
+- les commits suivants : fiche (Dev Agent Record, Change Log) et ce prompt. Relis les tableaux « Tests par critère » et « Mutations » **nom par nom**.
+
+**À contrôler en particulier** : (a) chaque test cité par le Dev Agent Record existe-t-il et vérifie-t-il ce qu'on lui attribue ? (b) la preuve du rouge des tests neufs (campagne `remediation/mutations/` sous `$GATE_LOGS/e53/s536a/` : une mutation de la datation par bras, `OriginDate` → `Today(chrono::Utc::now().date_naive())`, restauration par copie puis `touch`, `git diff` vide) et celle de l'E2E (binaire muté `remediation/kesh-api-mutant-R1`) ; (c) le recomptage `sitesTotal` 3976 et les quatre catalogues (`reconciliation-cancel-blocked-period-locked-through`, les cinq confirmations aux guillemets) ; (d) **le manuel** : la puce de la période verrouillée du § *Annuler un rapprochement* dit-elle la même chose que l'écran ? ; (e) le L10 (montage de repli de R3 pour AC-9) reste **non corrigé, avec sa raison** : la fiche admet le repli, et le chemin réel est joué pour R5.
+
 Pour chaque remède, déclare-le **tenu**, **partiel** ou **absent**, en citant la ligne lue.
 
 ## Axes — déclare chacun exercé ou non exercé
