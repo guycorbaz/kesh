@@ -43,6 +43,7 @@
 	import ContactPicker from './ContactPicker.svelte';
 	import ProductPicker from './ProductPicker.svelte';
 	import { getVatRates } from '$lib/features/vat-rates';
+	import { distinctVatRates } from '$lib/features/vat-rates/vat-rates.distinct';
 	import AccountAutocomplete from '$lib/features/journal-entries/AccountAutocomplete.svelte';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
@@ -82,7 +83,7 @@
 					// Revue 64-1 (R1-1) : une valeur n'est proposée qu'une fois — deux taux actifs de même
 					// valeur (autre date de début, autre catégorie) feraient lever `each_key_duplicate`
 					// et vider la liste. La valeur seule est ce que porte `line.vatRate`.
-					vatOptions = [...new Set(rates.map((r) => r.rate))];
+					vatOptions = distinctVatRates(rates).map((r) => r.rate);
 				}
 			} catch {
 				// Échec réseau : on garde la liste vide → `<select>` disabled,

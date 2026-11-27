@@ -496,4 +496,24 @@ describe('fiche produit — taux de TVA de même valeur (revue 64-1, R1-1)', () 
 		const select = document.querySelector<HTMLSelectElement>('#form-vat-rate')!;
 		expect([...select.options].map((o) => o.value)).toEqual(['8.10', '2.60']);
 	});
+	it('le libellé d’une valeur partagée ne dépend pas de l’ordre : le taux libellé l’emporte (L2-1)', async () => {
+		const libelle = { id: 1, category: 'normal', rate: '8.10', label: 'product-vat-normal' };
+		const sans = { id: 2, category: 'custom', rate: '8.10', label: '' };
+		for (const rates of [
+			[sans, libelle],
+			[libelle, sans],
+		]) {
+			getVatRatesMock.mockResolvedValue(rates);
+			render(Page);
+			await settle();
+			const bouton = [...document.querySelectorAll('button')].find((b) =>
+				/Nouveau produit/.test(b.textContent ?? '')
+			)!;
+			await fireEvent.click(bouton);
+			await settle();
+			const select = document.querySelector<HTMLSelectElement>('#form-vat-rate')!;
+			expect([...select.options].map((o) => o.textContent?.trim())).toEqual(['8.10 % — normal']);
+			cleanup();
+		}
+	});
 });

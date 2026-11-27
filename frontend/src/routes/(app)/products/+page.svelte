@@ -35,6 +35,7 @@
 	import Big from 'big.js';
 
 	import { getVatRates } from '$lib/features/vat-rates';
+	import { distinctVatRates } from '$lib/features/vat-rates/vat-rates.distinct';
 
 	type VatOption = { value: string; labelKey: string; fallback: string };
 
@@ -58,11 +59,9 @@
 			try {
 				const rates = await getVatRates();
 				if (!cancelled) {
-					// Revue 64-1 (R1-1) : une valeur n'est proposée qu'une fois (clé du `{#each}`
-					// unique), la première rencontrée donne le libellé.
-					vatOptions = rates
-						.filter((r, i, all) => all.findIndex((x) => x.rate === r.rate) === i)
-						.map((r) => ({
+					// Revue 64-1 (R1-1, L2-1) : une valeur n'est proposée qu'une fois (clé du
+					// `{#each}` unique) ; le taux libellé donne le libellé, quel que soit l'ordre.
+					vatOptions = distinctVatRates(rates).map((r) => ({
 							value: r.rate,
 							labelKey: r.label,
 							fallback: `${r.rate} % — ${r.label.replace('product-vat-', '')}`,

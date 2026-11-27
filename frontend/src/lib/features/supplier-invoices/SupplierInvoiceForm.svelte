@@ -98,6 +98,7 @@
 	import { amountEntryMessage } from '$lib/features/journal-entries/amount-entry-message';
 	import { addDaysIso, hasSubCentime } from '$lib/features/invoices/invoice-helpers';
 	import { todayLocal } from '$lib/features/open-items/open-items';
+	import { distinctVatRates } from '$lib/features/vat-rates/vat-rates.distinct';
 	import SupplierCreatePanel from './SupplierCreatePanel.svelte';
 
 	/**
@@ -1101,7 +1102,7 @@
 						     la valeur inchangée. -->
 						<option value={r}>{readableAmount(r, 2)}%</option>
 					{/each}
-					{#each vatRates as r (r.id)}
+					{#each distinctVatRates(vatRates) as r (r.rate)}
 						<option value={r.rate}>{r.rate}%</option>
 					{/each}
 				</select>
