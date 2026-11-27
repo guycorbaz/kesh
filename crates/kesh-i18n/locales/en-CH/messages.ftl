@@ -4606,3 +4606,8 @@ bank-accounts-help-wise-account = The same label for the accounts of each curren
 bank-accounts-help-wise-ledger = Required: the chart account of the Wise balance, in its currency (a foreign-currency account requires multi-currency).
 nav-wise = Wise
 fiscal-years-checks-k2-link-wise = Open the Wise page
+
+# Epic 52 — Story 49-2 : réordonner les lignes d'une facture (↑ / ↓)
+invoice-line-move-up = Move line { $n } up
+invoice-line-move-down = Move line { $n } down
+invoice-lines-moved-status = Line moved to position { $position } of { $total }

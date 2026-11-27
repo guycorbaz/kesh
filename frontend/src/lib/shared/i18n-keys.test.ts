@@ -1277,7 +1277,10 @@ const ATTENDU = {
 	// `kesh-gate-logs/s46-pr2/compteurs-1.log`) ; il égale 3856 (pr/39) + 18 (Epic 46) + 82 (46-5).
 	// Garde de la 46-5 (compte désigné par un compte bancaire, 2026-11-26) : **3958** (« expected 3958 to be 3956 »,
 	// `kesh-gate-logs/s46-pr2/garde-vitest-1.log`) — `numberBankLinked` et `parentBankLinked` (`accounts/groups/messages.ts`).
-	sitesTotal: 3958,
+	// Story 49-2 (#1756, réordonner les lignes d'une facture) : **3963** (« expected 3963 to be 3958 »,
+	// `kesh-gate-logs/e492/rouge-T7.log`) — `invoice-line-move-up` et `invoice-line-move-down` (chacune lue deux fois, `aria-label`
+	// et `title`, dans le snippet `actionsDeLigne`) et `invoice-lines-moved-status` : 3958 + 5.
+	sitesTotal: 3963,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

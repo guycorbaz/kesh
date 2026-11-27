@@ -4600,3 +4600,8 @@ bank-accounts-help-wise-account = Dieselbe Bezeichnung für die Konten jeder Wä
 bank-accounts-help-wise-ledger = Pflicht: das Konto des Kontenplans des Wise-Saldos, in seiner Währung (ein Fremdwährungskonto erfordert die Mehrwährung).
 nav-wise = Wise
 fiscal-years-checks-k2-link-wise = Wise-Seite öffnen
+
+# Epic 52 — Story 49-2 : réordonner les lignes d'une facture (↑ / ↓)
+invoice-line-move-up = Zeile { $n } nach oben
+invoice-line-move-down = Zeile { $n } nach unten
+invoice-lines-moved-status = Zeile an Position { $position } von { $total } verschoben
