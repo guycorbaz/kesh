@@ -58,7 +58,7 @@ faisant foi.
   sans action nouvelle (D12).
 - Route : `PUT /api/v1/invoices/{id}` (`crates/kesh-api/src/lib.rs:736`), handler `update_invoice`
   (`routes/invoices.rs:879`), enveloppé dans `kesh_db::retry::retry_on_deadlock("invoices::update", …)`. Une facture non
-  brouillon rend `409 ILLEGAL_STATE_TRANSITION` (`crates/kesh-api/src/errors.rs:2779`), comme le teste déjà
+  brouillon rend `409 ILLEGAL_STATE_TRANSITION` (`crates/kesh-api/src/errors.rs:6537-6543`, bras `DbError::IllegalStateTransition` ; `:2779` est celui d'`AppError::IllegalState`, autre chemin), comme le teste déjà
   `invoices.rs:3866` `test_update_rejects_non_draft` (dépôt) — mais aucun test HTTP ne le joue avec un corps réordonné
   (T5).
 
@@ -165,6 +165,7 @@ Les sites ensemble clos **qui ne résolvent pas l'ordre** et leur sort :
 | `invoices.rs:575` (relecture d'une ligne par `id`) | sans objet (une ligne) | — |
 | `open_items.rs:682`, `:691` | sans objet (`EXISTS`) | — |
 | `generate_invoice_journal_lines` (`invoices.rs:1949`) | ignore l'ordre par construction | AC9 le prouve (T4) |
+| lecteurs de `find_by_id_with_lines` (`invoice_email.rs:272`, `:431`, `:778`, `:1263`, `dunning_reminders.rs:405`, `invoice_pdf.rs:90`, `invoice_pdf_service.rs:289`, MCP `services/factures.rs:311`, `:575`) | oui, par le dépôt (`ORDER BY position`, `invoices.rs:953`) | rien (V1-4 : S2 filtrait `SELECT` sur la même ligne ; sans filtre, restent des agrégats `SUM`/`GROUP BY` — `invoices.rs:250`, `:263` —, l'`UPDATE` du compte de produit à la validation — `:2426` — et les exports `list_all_lines_by_company`, ordonnés par `position`) |
 | frontend : écrans qui lisent `invoice.lines` ou `creditNote.lines` | prennent l'ordre de la réponse (`git grep -n -E "lines\.(sort|reverse|toSorted)" -- frontend/src` : vide à `0e99cd2db`) | à rejouer à l'étape 0 : tout tri trouvé est un finding à traiter |
 
 Angle mort assumé : un client de l'API qui enverrait les lignes dans un ordre arbitraire obtient cet ordre ; c'est le
@@ -204,7 +205,7 @@ contrat (D1), écrit au guide de l'API.
   **le même bouton de la ligne déplacée**, retrouvé par sa clé (`data-line-key={line._uiKey}`, `data-move="up|down"`) ; si
   ce bouton est devenu désactivé (la ligne est arrivée en tête ou en fin), le focus va à **l'autre** bouton de la même
   ligne. Une zone `aria-live="polite"`, toujours présente dans le DOM (`data-testid="invoice-lines-move-status"`), annonce
-  « Ligne déplacée en position { $position } sur { $total } ». Les boutons sont des `<Button type="button">` natifs (Tab,
+  « Ligne déplacée en position { $position } sur { $total } » ; elle est **hors du `<table>`** (classe `sr-only`), et son texte est **vidé puis reposé** (`tick()` entre les deux) pour qu'un second déplacement vers la même position soit ré-annoncé (V1-7). Les boutons sont des `<Button type="button">` natifs (Tab,
   Entrée, Espace), avec `aria-label` « Monter la ligne { $n } » / « Descendre la ligne { $n } » et le même texte en
   `title`. *Écarté* : des raccourcis Alt+↑ / Alt+↓ — non découvrables, et en conflit avec des gestes de lecteurs d'écran.
 - **D6 — Quand les boutons sont désactivés.** ↑ de la première ligne, ↓ de la dernière ; les deux quand la facture n'a
@@ -218,7 +219,10 @@ contrat (D1), écrit au guide de l'API.
   qu'à un brouillon (fiche, `:1068`) ; le `PUT` d'une facture validée — corps réordonné compris — rend `409
   ILLEGAL_STATE_TRANSITION` sans rien écrire (T5). Pour réordonner une facture validée, il faut la **dévalider** quand Kesh
   le permet (ni réglée, ni créditée, ni rappelée, ni envoyée par e-mail…), ce qui détache son PDF figé ; la revalidation en
-  fige un nouveau. Ce chemin existe déjà ; la story ne l'élargit pas et le manuel le rappelle.
+  fige un nouveau. Ce chemin existe déjà ; la story ne l'élargit pas. **Il ne se recommande pas pour autant** : le manuel
+  réserve la dévalidation aux erreurs de saisie, et une facture que le client détient (Kesh ne voit que ce qu'il a envoyé
+  lui-même : un PDF ou un papier remis à la main ne bloque rien) se corrige par un avoir. Le texte du manuel (AC12) le dit
+  et renvoie à l'encadré « Avoir ou dévalidation ? » (V1-1).
 - **D9 — Les avoirs ne sont pas concernés.** Ils sont émis sans brouillon et copient l'ordre de leur facture ; T4 vérifie
   qu'un avoir tiré d'une facture réordonnée suit le nouvel ordre.
 - **D10 — Aucune migration.** La contrainte `uq_invoice_lines_position` ne gêne pas : le `DELETE` de toutes les lignes
@@ -262,8 +266,13 @@ contrat (D1), écrit au guide de l'API.
 10. **AC10 — Trace d'audit.** Le réordonnancement d'un brouillon écrit une action `invoice.updated` dont `before` et `after`
     portent l'ancien et le nouvel ordre (positions). *Constat* : T4.
 11. **AC11 — Aucune facture ni aucun avoir existants ne change.** Le diff de la story ne touche **aucun code de production
-    sous `crates/`** (`git diff --stat origin/epic/52-lignes-de-facture-suite...HEAD -- 'crates/*/src/*'` ne montre que le
-    module de tests de `kesh-db/src/repositories/invoices.rs`, et `crates/kesh-i18n/locales/`) ; ouvrir un brouillon et
+    sous `crates/`** : `git diff --stat origin/epic/52-lignes-de-facture-suite...HEAD -- 'crates/*/src/*'` ne nomme que
+    `kesh-db/src/repositories/invoices.rs` (un fichier de production **qui porte son module de tests** : le nom du fichier ne
+    prouve rien), et **chaque** hunk de celui-ci commence après la ligne `mod tests {` du fichier (constat : `git diff -U0
+    origin/epic/52-lignes-de-facture-suite...HEAD -- crates/kesh-db/src/repositories/invoices.rs | grep '^@@'` — tous les
+    numéros de ligne d'ancre supérieurs à celui de `mod tests {`, relevé par `grep -n '^mod tests' …` ; `3180` à
+    `0e99cd2db`) ; les catalogues se contrôlent à part (`git diff --stat … -- crates/kesh-i18n/locales/`, hors du chemin
+    `src` : le premier motif ne les voit pas, V1-2) ; ouvrir un brouillon et
     l'enregistrer sans geste envoie le même corps qu'en v0.20.0 (test existant `InvoiceForm.test.ts:1607` « AC9 a », vert
     **sans modification**) ; les tests de rendu et de PDF existants restent verts sans modification (T8). *Constat* : T8 et
     la commande ci-dessus, sortie copiée au Dev Agent Record.
@@ -273,8 +282,11 @@ contrat (D1), écrit au guide de l'API.
     qu'après dévalidation. `docs/api-external.md` (§ des lignes d'une facture client) dit : la position d'une ligne est son
     rang dans `lines` (à partir de 0) ; réordonner un brouillon, c'est renvoyer le `PUT` avec les lignes dans le nouvel
     ordre (`version` exigée, `version + 1`) ; `409 ILLEGAL_STATE_TRANSITION` sur une facture validée ; l'écriture de vente
-    ne dépend pas de l'ordre ; l'avoir le reprend. *Constat* : PDF du manuel régénéré **pour relecture** (non commité),
-    aplati, et grep des phrases neuves (sortie au Dev Agent Record).
+    ne dépend pas de l'ordre ; l'avoir le reprend. **Le texte du manuel ne présente pas la dévalidation comme un moyen
+    ordinaire de réordonner** : il renvoie à l'encadré « Avoir ou dévalidation ? » (`user-manual.tex:2166-2170`, § *Supprimer
+    ou dévalider une facture*) — une facture **envoyée au client** ou **déjà remise** (papier compris), réglée, créditée ou
+    d'un exercice déclaré ne se dévalide pas pour une question d'ordre, on émet un avoir (V1-1). *Constat* : PDF du manuel
+    régénéré **pour relecture** (non commité), aplati, et grep des phrases neuves et du renvoi (sortie au Dev Agent Record).
 13. **AC13 — Textes en quatre langues.** Les trois textes neufs (« Monter la ligne { $n } », « Descendre la ligne { $n } »,
     « Ligne déplacée en position { $position } sur { $total } ») sont des clés `i18nMsg` dans les quatre catalogues
     (`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`), dans un bloc « Epic 52 — Story 49-2 » ;
@@ -296,9 +308,9 @@ copié au journal. Une mutation de code de production (T3, T4, T5) n'existe **qu
 | # | Test | Ce qu'il prouve | Preuve du rouge |
 |---|---|---|---|
 | T1 | `frontend/src/lib/features/invoices/invoice-lines.test.ts` (cas neufs `deplacerLigne`) | AC2, D4 : ↑ et ↓ au milieu, aux deux bornes (copie inchangée), index hors bornes, tableau d'une ligne ; le tableau rendu est neuf (`not.toBe`) et contient **les mêmes objets** (`toBe` élément par élément) ; le tableau d'entrée n'est pas modifié | mutation : l'échange recopie la ligne au lieu de la déplacer (`[a, a]`) → **ROUGE** ; mutation : la borne haute accepte `index + 1 === length` → **ROUGE** ; mutation : `splice` sur le tableau d'entrée → **ROUGE** (`rouge-T1.log`) |
-| T2 | `frontend/src/lib/components/invoices/InvoiceForm.test.ts` (nouveau `describe` « Story 49-2 ») | AC1 : états désactivés aux bornes et à une ligne ; AC2-AC3 : brouillon `[A chiffrée, compte X ; C commentaire ; B chiffrée, compte Y]`, ↓ sur A deux fois → corps de `updateInvoice` = `[C, B, A]` avec les comptes et types de chacun, total inchangé ; AC4 : `aria-label` renuméroté, `document.activeElement` après le déplacement (même bouton, puis l'autre à la borne), texte de la zone `aria-live` ; AC5 : boutons désactivés pendant l'envoi (promesse de `updateInvoice` tenue en suspens) et après `OPTIMISTIC_LOCK_CONFLICT` ; `errorMsg` effacé ; AC6 : après « Recharger », l'ordre est celui du serveur | mutation : `moveLine` appelle `deplacerLigne` avec `sens` inversé → **ROUGE** ; mutation : le rappel du focus retiré → **ROUGE** ; mutation : `disabled` de ↑ réduit à `lines.length <= 1` → **ROUGE** ; mutation : `errorMsg = ''` retiré → **ROUGE** (`rouge-T2.log`) |
+| T2 | `frontend/src/lib/components/invoices/InvoiceForm.test.ts` (nouveau `describe` « Story 49-2 ») | AC1 : états désactivés aux bornes et à une ligne ; AC2-AC3 : brouillon `[A chiffrée, compte X ; C commentaire ; B chiffrée, compte Y]`, ↓ sur A deux fois → corps de `updateInvoice` = `[C, B, A]` avec les comptes et types de chacun, total inchangé ; AC4 : `aria-label` renuméroté, `document.activeElement` après le déplacement (même bouton, puis l'autre à la borne), texte de la zone `aria-live` ; AC5 : boutons désactivés pendant l'envoi (promesse de `updateInvoice` tenue en suspens) et après `OPTIMISTIC_LOCK_CONFLICT` ; `errorMsg` effacé ; AC6 : après « Recharger », l'ordre est celui du serveur | mutation : `moveLine` appelle `deplacerLigne` avec `sens` inversé → **ROUGE** ; mutation : le rappel du focus retiré → **ROUGE** — **sur le cas de la borne** (↑ activé sur la 2e ligne, la ligne arrive en tête, ↑ devient désactivé : sans rappel, `document.activeElement` reste le bouton désactivé) ; le cas « même bouton » ne discrimine pas forcément sous jsdom, qui peut garder le focus d'un nœud déplacé (V1-6) ; mutation : `disabled` de ↑ réduit à `lines.length <= 1` → **ROUGE** ; mutation : `errorMsg = ''` retiré → **ROUGE** (`rouge-T2.log`) |
 | T3 | `crates/kesh-db/src/repositories/invoices.rs::tests::update_line_reorder_bumps_version` (complété, non dupliqué) | AC3 au dépôt : la réponse de `update` **et** `find_by_id_with_lines` rendent `[B, A]` (descriptions) aux positions `[0, 1]` | mutation : `ORDER BY position ASC` → `DESC` à `invoices.rs:953` → **ROUGE** ; mutation : `is_no_op_change` compare les lignes triées par description (ensemble, non suite) → **ROUGE** (`rouge-T3.log`) |
-| T4 | `crates/kesh-api/tests/invoice_line_types_e2e.rs::reordering_a_draft_moves_the_pdf_not_the_entry` (neuf ; réutilise `monter`, `chiffree`, `commentaire`, `positions`, `pdf_200`, `ecriture`) | AC3, AC8, AC9, AC10 par le HTTP : facture 1 `[A (8.1 %, compte X), C commentaire, B (2.6 %, compte Y)]` ; `PUT` en `[B, C, A]` → `200`, `version + 1`, `positions` = `[0, 1, 2]` dans cet ordre, `GET` idem ; audit `invoice.updated` (`before` : A, C, B ; `after` : B, C, A) ; facture 2 créée d'emblée en `[A, C, B]` ; les deux validées : `ecriture()` égales, totaux et TVA égaux ; PDF de la facture 1 : `kesh_qrbill::empreinte::textes` place B au-dessus de C au-dessus de A (ordonnées décroissantes) ; avoir de la facture 1 (`POST /api/v1/credit-notes`) : lignes `[B, C, A]` et PDF de l'avoir dans cet ordre | mutation : `insert_lines` lie `(lines.len() - 1 - idx) as i32` → **ROUGE** sur les positions et le PDF ; mutation : `generate_invoice_journal_lines` agrège dans un `Vec` dans l'ordre d'arrivée au lieu du `BTreeMap` → **ROUGE** sur l'égalité des écritures (`ecriture()`, `invoice_line_types_e2e.rs:815`, lit `journal_entry_lines` `ORDER BY line_order` : l'ordre des lignes d'écriture compte) (`rouge-T4.log`) |
+| T4 | `crates/kesh-api/tests/invoice_line_types_e2e.rs::reordering_a_draft_moves_the_pdf_not_the_entry` (neuf ; réutilise `monter`, `chiffree`, `commentaire`, `positions`, `pdf_200`, `ecriture` ; **deux aides à ajouter** (V1-3) : `monter` n'expose que `caisse` et la fixture ne porte qu'un compte de produit (`3000`) — créer un second compte `Revenue` par SQL, imputable, de la société, et passer un `revenueAccountId` facultatif à une variante de `chiffree` ; sans cela « compte X / compte Y » est inatteignable et l'écriture ne différerait que par ses lignes de TVA) | AC3, AC8, AC9, AC10 par le HTTP : facture 1 `[A (8.1 %, compte X), C commentaire, B (2.6 %, compte Y)]` ; `PUT` en `[B, C, A]` → `200`, `version + 1`, `positions` = `[0, 1, 2]` dans cet ordre, `GET` idem ; audit `invoice.updated` (`before` : A, C, B ; `after` : B, C, A) ; facture 2 créée d'emblée en `[A, C, B]` ; les deux validées : `ecriture()` égales, totaux et TVA égaux ; PDF de la facture 1 : `kesh_qrbill::empreinte::textes` place B au-dessus de C au-dessus de A (ordonnées décroissantes) ; avoir de la facture 1 (`POST /api/v1/credit-notes`) : lignes `[B, C, A]` et PDF de l'avoir dans cet ordre | mutation : `insert_lines` lie `(lines.len() - 1 - idx) as i32` → **ROUGE** sur les positions et le PDF ; mutation : `generate_invoice_journal_lines` agrège dans un `Vec` dans l'ordre d'arrivée au lieu du `BTreeMap` → **ROUGE** sur l'égalité des écritures (`ecriture()`, `invoice_line_types_e2e.rs:815`, lit `journal_entry_lines` `ORDER BY line_order` : l'ordre des lignes d'écriture compte) (`rouge-T4.log`) |
 | T5 | `invoice_line_types_e2e.rs::reordering_a_validated_invoice_is_refused_without_writing` (neuf) | AC7 : facture validée, PDF figé par un `GET …/pdf` ; `PUT` réordonné → `409 ILLEGAL_STATE_TRANSITION` ; `GET` : mêmes lignes, mêmes positions, même `version` ; empreinte du PDF servi inchangée ; aucune action `invoice.updated` neuve | mutation : la garde `Some(inv) if inv.status != "draft"` de `update` (`invoices.rs:1267`) rendue inopérante, **et** la condition `AND status = 'draft'` de l'`UPDATE` retirée → **ROUGE** (`rouge-T5.log`) |
 | T6 | `frontend/tests/e2e/invoice-line-reorder.spec.ts` (neuf ; mêmes aides que `invoice-comment-lines.spec.ts`) | AC1 à AC4, AC8, AC14 dans le navigateur : nouvelle facture ; « Ligne libre » A ; « Commentaire » C ; « Depuis catalogue » B ; **au clavier** (`focus()` puis `Enter`) : ↑ de C, puis ↓ de A ; ordre attendu `[C, B, A]` ; `toBeFocused()` sur le bouton attendu ; texte de la zone d'annonce ; enregistrer ; rouvrir (édition) : même ordre ; valider ; la fiche montre l'ordre ; `GET …/pdf` `200` ; captures C1 à C6 si `KESH_E2E_CAPTURES_DIR` est posé | mutation : le snippet d'actions rendu sans les boutons de déplacement pour la rangée de commentaire → **ROUGE** ; mutation : `onSubmit` envoie `[...lines].reverse()` → **ROUGE** à la réouverture (`rouge-T6.log`, un seul spec lancé : `npx playwright test invoice-line-reorder`) |
 | T7 | `frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal` recompté) | AC13 | la borne rougit **d'elle-même** avant le recompte (journal de ce rouge copié) |
@@ -336,6 +348,7 @@ copié au journal. Une mutation de code de production (T3, T4, T5) n'existe **qu
   `KESH_TEST_MODE=true` des deux côtés, `LANG=fr_CH.UTF-8` installée) ; « vert » = les seuls échecs attendus, jugés
   fichier par fichier (`docs/testing.md` § *Les échecs attendus*). Tout sous `scripts/mem-guard.sh` et
   `flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock` ; une commande lourde à la fois.
+- [ ] **Étapes de coordination** (V1-8, V1-9) : la ligne de la v0.21.0 de la « Feuille de route » de `README.md` (E52, réordonnancement) se pose au commit qui la change ; **#1242** (milestone `v0.22.0`) est portée par trois releases (v0.20.0, v0.21.0, v0.22.0) : le Project Lead décide, avant le développement, de l'issue propre au réordonnancement (Q2 du rapport) — sans elle, la story cite `refs #1242` seulement et ne ferme rien.
 - [ ] **Contrôle des mots-clés** : `git log origin/epic/52-lignes-de-facture-suite..HEAD --format=%B | grep -niE
   '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'` **vide**.
 
@@ -399,3 +412,4 @@ copié au journal. Une mutation de code de production (T3, T4, T5) n'existe **qu
 - 2026-11-27 — Fiche créée (Opus 5.5, `bmad-create-story`) sur `0e99cd2db` : D1 à D12, AC1 à AC14, T1 à T8 ; aucune
   migration ; deux modules de production (frontend `invoices`, `kesh-i18n`), pas de découpage ; glisser-déposer écarté
   (D3). Validation P1 à lancer (Sonnet), prompt `49-2-reordonnancement-lignes-validation-prompt-p1.md`.
+- 2026-11-27 — **Validation P1** (Sonnet 5.5, passe complète, contexte frais ; `kesh-gate-logs/e492/validation-49-2-p1.md`) : **0/0/2/7** — V1-1 (MEDIUM, manuel : la dévalidation n'est pas un moyen de réordonner une facture remise), V1-2 (MEDIUM, AC11 : la commande ne prouve pas « aucun code de production »), V1-3 à V1-9 (LOW : aides de T4, S2 non clos, citation d'erreur, focus jsdom, zone `aria-live`, README, issue #1242). Les neuf sont portés à la fiche ; passe P2 (Opus) à lancer, prompt `49-2-reordonnancement-lignes-validation-prompt-p2.md`.
