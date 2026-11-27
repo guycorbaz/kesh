@@ -24,42 +24,53 @@ import type { ModificationBlocker, ReversalBlocker } from './journal-entries.typ
 const LOCALES = ['fr-CH', 'de-CH', 'it-CH', 'en-CH'] as const;
 const RACINE_FTL = '../crates/kesh-i18n/locales';
 
-/** Les treize codes de modification et la clé de chacun (table littérale). */
-const CLES_MODIFICATION: ReadonlyArray<[ModificationBlocker, string]> = [
-	['FISCAL_YEAR_CLOSED', 'journal-entries-modify-blocked-fiscal-year-closed'],
-	['LATER_FISCAL_YEAR_CLOSED', 'journal-entries-modify-blocked-later-fiscal-year-closed'],
-	['PERIOD_LOCKED', 'journal-entries-modify-blocked-period-locked'],
-	['DETACHED_SUPPLIER_SETTLEMENT', 'journal-entries-modify-blocked-detached-settlement'],
-	['ENTRY_IS_FX_REVALUATION', 'journal-entries-modify-blocked-fx-revaluation'],
-	['ENTRY_LETTERED', 'journal-entries-modify-blocked-lettered'],
-	['IS_A_REVERSAL', 'journal-entries-reverse-blocked-is-a-reversal'],
-	['ALREADY_REVERSED', 'journal-entries-reverse-blocked-already-reversed'],
-	['OWNED_BY_INVOICE', 'journal-entries-reverse-blocked-invoice'],
-	['OWNED_BY_CREDIT_NOTE', 'journal-entries-reverse-blocked-credit-note'],
-	['OWNED_BY_SUPPLIER_INVOICE', 'journal-entries-reverse-blocked-supplier-invoice'],
-	['OWNED_BY_SETTLEMENT', 'journal-entries-reverse-blocked-settlement'],
-	['MATCHED_BANK_TRANSACTION', 'journal-entries-reverse-blocked-bank-match']
-];
+/**
+ * Les treize codes de modification et la clé de chacun (table littérale).
+ *
+ * ⚠️ `Record<ModificationBlocker, string>` : le type est une union de chaînes, donc
+ * sans existence à l'exécution — la seule liaison possible sans toucher la
+ * production est celle du **type-check**. Un code ajouté à l'union sans ligne ici
+ * (ou une ligne d'un code retiré) fait rougir `npm run check`, non vitest : angle
+ * mort assumé, vitest seul ne voit pas un code neuf.
+ */
+const CLES_MODIFICATION_PAR_CODE: Record<ModificationBlocker, string> = {
+	FISCAL_YEAR_CLOSED: 'journal-entries-modify-blocked-fiscal-year-closed',
+	LATER_FISCAL_YEAR_CLOSED: 'journal-entries-modify-blocked-later-fiscal-year-closed',
+	PERIOD_LOCKED: 'journal-entries-modify-blocked-period-locked',
+	DETACHED_SUPPLIER_SETTLEMENT: 'journal-entries-modify-blocked-detached-settlement',
+	ENTRY_IS_FX_REVALUATION: 'journal-entries-modify-blocked-fx-revaluation',
+	ENTRY_LETTERED: 'journal-entries-modify-blocked-lettered',
+	IS_A_REVERSAL: 'journal-entries-reverse-blocked-is-a-reversal',
+	ALREADY_REVERSED: 'journal-entries-reverse-blocked-already-reversed',
+	OWNED_BY_INVOICE: 'journal-entries-reverse-blocked-invoice',
+	OWNED_BY_CREDIT_NOTE: 'journal-entries-reverse-blocked-credit-note',
+	OWNED_BY_SUPPLIER_INVOICE: 'journal-entries-reverse-blocked-supplier-invoice',
+	OWNED_BY_SETTLEMENT: 'journal-entries-reverse-blocked-settlement',
+	MATCHED_BANK_TRANSACTION: 'journal-entries-reverse-blocked-bank-match'
+};
 
-/** Les huit codes de contre-passation et la clé de chacun (table littérale). */
-const CLES_CONTREPASSATION: ReadonlyArray<[ReversalBlocker, string]> = [
-	['IS_A_REVERSAL', 'journal-entries-reverse-blocked-is-a-reversal'],
-	['ALREADY_REVERSED', 'journal-entries-reverse-blocked-already-reversed'],
-	['OWNED_BY_INVOICE', 'journal-entries-reverse-blocked-invoice'],
-	['OWNED_BY_CREDIT_NOTE', 'journal-entries-reverse-blocked-credit-note'],
-	['OWNED_BY_SUPPLIER_INVOICE', 'journal-entries-reverse-blocked-supplier-invoice'],
-	['OWNED_BY_SETTLEMENT', 'journal-entries-reverse-blocked-settlement'],
-	['MATCHED_BANK_TRANSACTION', 'journal-entries-reverse-blocked-bank-match'],
-	['ACCOUNT_ARCHIVED', 'journal-entries-reverse-blocked-account-archived']
-];
+/** Les huit codes de contre-passation et la clé de chacun (même liaison par le type). */
+const CLES_CONTREPASSATION_PAR_CODE: Record<ReversalBlocker, string> = {
+	IS_A_REVERSAL: 'journal-entries-reverse-blocked-is-a-reversal',
+	ALREADY_REVERSED: 'journal-entries-reverse-blocked-already-reversed',
+	OWNED_BY_INVOICE: 'journal-entries-reverse-blocked-invoice',
+	OWNED_BY_CREDIT_NOTE: 'journal-entries-reverse-blocked-credit-note',
+	OWNED_BY_SUPPLIER_INVOICE: 'journal-entries-reverse-blocked-supplier-invoice',
+	OWNED_BY_SETTLEMENT: 'journal-entries-reverse-blocked-settlement',
+	MATCHED_BANK_TRANSACTION: 'journal-entries-reverse-blocked-bank-match',
+	ACCOUNT_ARCHIVED: 'journal-entries-reverse-blocked-account-archived'
+};
+
+const CLES_MODIFICATION = Object.entries(CLES_MODIFICATION_PAR_CODE) as Array<
+	[ModificationBlocker, string]
+>;
+const CLES_CONTREPASSATION = Object.entries(CLES_CONTREPASSATION_PAR_CODE) as Array<
+	[ReversalBlocker, string]
+>;
 
 describe('modificationBlockerLabel — la clé de chaque bras', () => {
 	it.each(CLES_MODIFICATION)('%s → %s', (code, cle) => {
 		expect(modificationBlockerLabel(code, 'X')).toBe(cle);
-	});
-
-	it('la table couvre 13 codes', () => {
-		expect(CLES_MODIFICATION).toHaveLength(13);
 	});
 });
 
@@ -67,20 +78,12 @@ describe('reversalBlockerLabel — la clé de chaque bras', () => {
 	it.each(CLES_CONTREPASSATION)('%s → %s', (code, cle) => {
 		expect(reversalBlockerLabel(code)).toBe(cle);
 	});
-
-	it('la table couvre 8 codes', () => {
-		expect(CLES_CONTREPASSATION).toHaveLength(8);
-	});
 });
 
 describe('chaque clé existe aux quatre catalogues', () => {
 	const cles = [
 		...new Set([...CLES_MODIFICATION, ...CLES_CONTREPASSATION].map(([, cle]) => cle))
 	];
-
-	it('14 clés distinctes (6 propres à la modification, 8 de la contre-passation)', () => {
-		expect(cles).toHaveLength(14);
-	});
 
 	it.each([...LOCALES])('%s', (locale) => {
 		const texte = readFileSync(join(RACINE_FTL, locale, 'messages.ftl'), 'utf-8');

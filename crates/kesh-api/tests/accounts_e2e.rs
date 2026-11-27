@@ -1272,6 +1272,17 @@ async fn put_version_perimee_precede_la_garde_du_parent(pool: MySqlPool) {
     let caisse = mk_account(&pool, company_id, admin_id, "1000", None).await;
     mk_entry(&pool, company_id, fy, admin_id, banque, caisse, jour).await;
 
+    // Assertion de montage : à version FRAÎCHE, `caisse` est bien refusé comme parent
+    // par la garde (sans quoi le test passerait à vide, le conflit de version rendant
+    // alors seul `OPTIMISTIC_LOCK_CONFLICT`). Un `PUT` refusé ne change pas la version.
+    let (status, body) =
+        put_parent(&app, &token, &pool, banque, json!({ "parentId": caisse })).await;
+    assert_eq!(status, 409, "{body}");
+    assert_eq!(
+        body["error"]["code"], "ACCOUNT_PARENT_HAS_ENTRIES",
+        "montage : la garde doit refuser `caisse` comme parent : {body}"
+    );
+
     // Un premier `PUT` fait passer la version de 1 à 2 : la version 1 est périmée.
     let (status, body) = put_parent(&app, &token, &pool, banque, json!({ "name": "Banque" })).await;
     assert_eq!(status, 200, "{body}");
