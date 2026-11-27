@@ -1051,8 +1051,8 @@ async fn s536a_ac7_un_paiement_wise_groupe_se_contre_passe_dans_son_exercice(poo
         .await
         .unwrap();
     let suivant: i64 = sqlx::query_scalar(
-        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
-         VALUES (?, 'Exercice suivant', '2021-01-01', '2030-12-31', 'Open') RETURNING id",
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status, multi_currency) \
+         VALUES (?, 'Exercice suivant', '2021-01-01', '2030-12-31', 'Open', TRUE) RETURNING id",
     )
     .bind(ctx.seeded.company_id)
     .fetch_one(&pool)
@@ -1110,6 +1110,47 @@ async fn s536a_ac7_un_paiement_wise_groupe_se_contre_passe_dans_son_exercice(poo
         .await,
         0,
         "rien dans l'exercice du jour"
+    );
+    for id in ids {
+        assert_eq!(ctx.etat(id).await, ("pending".into(), None), "{id}");
+    }
+}
+
+/// Story 53-6a (#1674, AC-1, R6) — **le même exercice** : le paiement Wise
+/// groupé du 10 mars 2020 s'annule dans l'exercice du montage (2020-2030), sans
+/// exercice suivant ; l'inverse est datée de l'écriture (10 mars 2020), non du
+/// jour. Tue M-R1 pour le groupe Wise sur la date (le jour tombe dans le même
+/// exercice multidevise : l'inverse datée du jour y serait acceptée).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s536a_ac1_un_paiement_wise_groupe_du_meme_exercice_se_contre_passe_a_sa_date(
+    pool: MySqlPool,
+) {
+    let (ctx, regle, ids) = monter_partielle(&pool).await;
+    let (s, b) = ctx.accepter(vec![groupe(&ids, regle, ctx.charge)]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    let ecriture = b["accepted"][0]["journalEntryIds"][0].as_i64().unwrap();
+    let frais = ctx.tx("FEE-CARD-90000020", ctx.usd).await;
+    let (s, b) = ctx
+        .post(
+            &format!("/api/v1/reconciliation/transactions/{frais}/cancel"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let inverses: Vec<(chrono::NaiveDate, i64)> = sqlx::query_as(
+        "SELECT entry_date, fiscal_year_id FROM journal_entries WHERE reverses_entry_id = ?",
+    )
+    .bind(ecriture)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        inverses,
+        vec![(
+            chrono::NaiveDate::from_ymd_opt(2020, 3, 10).unwrap(),
+            ctx.seeded.fiscal_year_id
+        )],
+        "une seule inverse, datée de l'écriture, dans son exercice"
     );
     for id in ids {
         assert_eq!(ctx.etat(id).await, ("pending".into(), None), "{id}");

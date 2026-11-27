@@ -1787,6 +1787,34 @@ async fn s536a_ac3_un_reglement_client_d_un_exercice_rouvert_se_contre_passe_dan
     );
 }
 
+/// AC-1, AC-5 (R2, D1) — **le même exercice** : un règlement client du
+/// 20 décembre 2025 rattaché à une transaction du même jour, annulé le
+/// 22 décembre 2025 (le jour dans le même exercice, donc différent de la date
+/// du règlement) : l'inverse du règlement est datée du 20 décembre, dans 2025,
+/// non du jour. Tue M2 sur la date (l'exercice 2026 est ouvert : l'inverse datée
+/// du jour y serait acceptée).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s536a_ac1_un_reglement_client_du_meme_exercice_se_contre_passe_a_sa_date(pool: MySqlPool) {
+    let ctx = monter(&pool, "2025-12-22T10:00:00Z", Some("Open")).await;
+    let (t, facture, _, reglement) = ctx.reglement_client_rattache(true).await;
+    let (s, b) = ctx
+        .app
+        .post_vide(&format!("/api/v1/reconciliation/transactions/{t}/cancel"))
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let inverse = ctx.inverse_de(reglement).await.expect("contre-passée");
+    assert_eq!(
+        ctx.date_et_exercice(inverse).await,
+        (jour(2025, 12, 20), ctx.fy_2025),
+        "datée du règlement (ni le jour du 22)"
+    );
+    assert_eq!(
+        ctx.reglements_de(facture).await,
+        0,
+        "le règlement est retiré"
+    );
+}
+
 /// AC-4, AC-5 (R2) — **le règlement client d'un exercice clos** : la vue
 /// l'annonce, le clic est refusé `409 FISCAL_YEAR_CLOSED`, rien n'est écrit, le
 /// lien et le règlement restent.
