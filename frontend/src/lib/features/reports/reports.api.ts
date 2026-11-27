@@ -18,6 +18,7 @@ import type {
 	ReportQuery,
 	ReportType,
 	GeneralLedgerDto,
+	GroupingParams,
 	LedgerQuery,
 	TrialBalanceDto,
 	VatReportDto,
@@ -33,29 +34,78 @@ function buildQuery(params: Record<string, string | number | undefined>): string
 	return sp.toString();
 }
 
-export async function getBalanceSheet(query: ReportQuery): Promise<BalanceSheetDto> {
+/**
+ * La valeur de `detailLevel` qui demande un export **à plat** (sans colonnes
+ * `Niveau;TypeLigne`) : sans paramètre, l'export de l'API rend la présentation
+ * par groupes de l'écran.
+ */
+export const FLAT_DETAIL_LEVEL = 'flat';
+
+/**
+ * Story 46-2 — les paramètres de groupement d'une demande (46-1 § *Le contrat*) :
+ * `detailLevel`, `subtotalPosition`, et `open` / `closed` en identifiants séparés
+ * par des virgules, **omis quand la liste est vide** (une liste vide serait
+ * refusée en `400` : « » n'est pas un identifiant). Sans `grouping`, aucun
+ * paramètre : la réponse JSON est celle d'avant l'Epic 46, à plat. L'export,
+ * lui, est groupé sans paramètre : {@link getReportExportUrl} demande le rendu
+ * à plat par `detailLevel=flat`.
+ */
+export function groupingQueryParams(
+	grouping: GroupingParams | undefined,
+): Record<string, string | undefined> {
+	if (!grouping) return {};
+	return {
+		detailLevel: String(grouping.detailLevel),
+		subtotalPosition: grouping.subtotalPosition,
+		open: grouping.open.length ? grouping.open.join(',') : undefined,
+		closed: grouping.closed.length ? grouping.closed.join(',') : undefined,
+	};
+}
+
+/**
+ * Bilan. Story 46-2 — avec `grouping`, la réponse porte aussi `grouping` et
+ * `groupedRows` (46-1) ; sans, elle est celle d'aujourd'hui.
+ */
+export async function getBalanceSheet(
+	query: ReportQuery,
+	grouping?: GroupingParams,
+): Promise<BalanceSheetDto> {
 	const qs = buildQuery({
 		fiscalYearId: query.fiscalYearId,
 		periodStart: query.periodStart,
 		periodEnd: query.periodEnd,
+		...groupingQueryParams(grouping),
 	});
 	return apiClient.get<BalanceSheetDto>(`/api/v1/reports/balance-sheet?${qs}`);
 }
 
-export async function getIncomeStatement(query: ReportQuery): Promise<IncomeStatementDto> {
+/** Compte de résultat ; `grouping` comme pour {@link getBalanceSheet}. */
+export async function getIncomeStatement(
+	query: ReportQuery,
+	grouping?: GroupingParams,
+): Promise<IncomeStatementDto> {
 	const qs = buildQuery({
 		fiscalYearId: query.fiscalYearId,
 		periodStart: query.periodStart,
 		periodEnd: query.periodEnd,
+		...groupingQueryParams(grouping),
 	});
 	return apiClient.get<IncomeStatementDto>(`/api/v1/reports/income-statement?${qs}`);
 }
 
-export async function getTrialBalance(query: ReportQuery): Promise<TrialBalanceDto> {
+/**
+ * Balance des comptes ; `grouping` comme pour {@link getBalanceSheet} (Story
+ * 46-6b : la réponse porte alors `grouping` et `groupedRows`, un tableau).
+ */
+export async function getTrialBalance(
+	query: ReportQuery,
+	grouping?: GroupingParams,
+): Promise<TrialBalanceDto> {
 	const qs = buildQuery({
 		fiscalYearId: query.fiscalYearId,
 		periodStart: query.periodStart,
 		periodEnd: query.periodEnd,
+		...groupingQueryParams(grouping),
 	});
 	return apiClient.get<TrialBalanceDto>(`/api/v1/reports/trial-balance?${qs}`);
 }
@@ -373,11 +423,19 @@ export function formatCurrencyFigure(v: string | undefined): string {
 /**
  * Construit l'URL d'un endpoint d'export `/api/v1/reports/{type}/export?format=...`.
  * Pour le rapport `journals`, le paramètre optionnel `journal` est inclus si fourni.
+ *
+ * Story 46-2 (AC-6) — `grouping` : les paramètres de groupement de la dernière
+ * requête affichée du bilan, du compte de résultat ou de la balance (46-6b), que
+ * l'export reprend tels quels pour rendre ce que montre l'écran (rendu groupé :
+ * 46-3, 46-6b). Sans `grouping` (hiérarchie masquée à l'écran), `detailLevel=flat` :
+ * l'export de l'API est groupé par défaut, l'écran à plat demande donc le rendu à
+ * plat explicitement. Ignoré pour les autres rapports.
  */
 export function getReportExportUrl(
 	type: ReportType,
 	query: ReportQuery | JournalReportQuery,
 	format: 'pdf' | 'csv',
+	grouping?: GroupingParams,
 ): string {
 	const params: Record<string, string | number | undefined> = {
 		fiscalYearId: query.fiscalYearId,
@@ -387,6 +445,12 @@ export function getReportExportUrl(
 	};
 	if (type === 'journals') {
 		params.journal = (query as JournalReportQuery).journal;
+	}
+	if (type === 'balance-sheet' || type === 'income-statement' || type === 'trial-balance') {
+		Object.assign(
+			params,
+			grouping ? groupingQueryParams(grouping) : { detailLevel: FLAT_DETAIL_LEVEL },
+		);
 	}
 	const qs = buildQuery(params);
 	return `/api/v1/reports/${type}/export?${qs}`;
@@ -463,6 +527,8 @@ export function slugify(input: string, fallback: string): string {
  * @param query — Query params (`fiscalYearId`, période, journal optionnel).
  * @param format — `'pdf'` ou `'csv'`.
  * @param filename — Filename suggéré au browser (construit via `buildExportFilename`).
+ * @param grouping — Story 46-2 : paramètres de groupement du bilan, du compte de
+ *   résultat ou de la balance (46-6b) affiché (voir `getReportExportUrl`).
  */
 // --- Story 21-7 : Balance âgée débiteurs ---
 
@@ -491,8 +557,9 @@ export async function downloadReport(
 	query: ReportQuery | JournalReportQuery,
 	format: 'pdf' | 'csv',
 	filename: string,
+	grouping?: GroupingParams,
 ): Promise<void> {
-	const url = getReportExportUrl(type, query, format);
+	const url = getReportExportUrl(type, query, format, grouping);
 	// On utilise `apiClient.getBlob` pour bénéficier de la gestion 401 + ApiError centralisée.
 	const response = await apiClient.getBlob(url);
 	const blob = await response.blob();

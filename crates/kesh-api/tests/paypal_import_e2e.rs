@@ -488,6 +488,26 @@ async fn import_ventile_par_devise_puis_doublons(pool: MySqlPool) {
     assert_eq!(details["provider_account"], PAYPAL);
     assert_eq!(details["filename"], "Download.CSV");
     assert_eq!(details["skipped"]["neutralPairs"], 1);
+    // Story 39-14 (validation P2, M1) : le raccord de Wise au cœur commun
+    // n'ajoute aucune clé au compte rendu d'une devise PayPal — ni à la
+    // réponse, ni à la trace (`warnings` est réservé aux relevés).
+    for compte_rendu in [&b, &details] {
+        for r in compte_rendu["currencies"].as_array().unwrap() {
+            let mut cles: Vec<&String> = r.as_object().unwrap().keys().collect();
+            cles.sort();
+            assert_eq!(
+                cles,
+                [
+                    "bankAccountId",
+                    "currency",
+                    "duplicates",
+                    "importId",
+                    "inserted"
+                ],
+                "{r}"
+            );
+        }
+    }
 
     // Relu tel quel : refusé, rien d'écrit.
     let (s, b) = ctx.importer(FIXTURE).await;

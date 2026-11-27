@@ -490,3 +490,152 @@ where
     .await
     .map_err(DbError::Sqlx)
 }
+
+/// Les transactions **pending** des comptes bancaires `bank_account_ids` dont
+/// l'identifiant chez le prestataire (`transaction_id`) est l'un de
+/// `transaction_ids`, triées par identifiant — le rejugement d'un paiement par
+/// carte groupé (Story 39-11c, amendement A-1) : l'ensemble des lignes en
+/// attente du paiement, relu sous les verrous. Lecture ordinaire.
+pub async fn pending_by_transaction_ids<'e, E>(
+    executor: E,
+    company_id: i64,
+    bank_account_ids: &[i64],
+    transaction_ids: &[String],
+) -> Result<Vec<BankTransaction>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    select_by_transaction_ids(
+        executor,
+        company_id,
+        bank_account_ids,
+        transaction_ids,
+        "AND status = 'pending'",
+    )
+    .await
+}
+
+/// Les transactions **déjà rapprochées** des comptes bancaires
+/// `bank_account_ids` dont l'identifiant chez le prestataire est l'un de
+/// `transaction_ids`, triées par identifiant — la garde du paiement par carte
+/// groupé (Story 39-11c, revue de code P2, M1) : une ligne du même paiement
+/// déjà rapprochée seule. Lecture ordinaire.
+pub async fn reconciled_by_transaction_ids<'e, E>(
+    executor: E,
+    company_id: i64,
+    bank_account_ids: &[i64],
+    transaction_ids: &[String],
+) -> Result<Vec<BankTransaction>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    select_by_transaction_ids(
+        executor,
+        company_id,
+        bank_account_ids,
+        transaction_ids,
+        "AND status <> 'pending'",
+    )
+    .await
+}
+
+/// La lecture commune de [`pending_by_transaction_ids`] et de
+/// [`reconciled_by_transaction_ids`] ; `status_clause` est un fragment SQL
+/// constant (jamais une entrée).
+async fn select_by_transaction_ids<'e, E>(
+    executor: E,
+    company_id: i64,
+    bank_account_ids: &[i64],
+    transaction_ids: &[String],
+    status_clause: &'static str,
+) -> Result<Vec<BankTransaction>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    if bank_account_ids.is_empty() || transaction_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let sql = format!(
+        "SELECT {BANK_TX_COLUMNS} FROM bank_transactions \
+         WHERE company_id = ? {status_clause} AND bank_account_id IN ({}) \
+           AND transaction_id IN ({}) ORDER BY id",
+        placeholders(bank_account_ids.len()),
+        placeholders(transaction_ids.len())
+    );
+    let mut q = sqlx::query_as::<_, BankTransaction>(&sql).bind(company_id);
+    for id in bank_account_ids {
+        q = q.bind(*id);
+    }
+    for id in transaction_ids {
+        q = q.bind(id);
+    }
+    q.fetch_all(executor).await.map_err(map_db_error)
+}
+
+/// Un relevé à solde d'ouverture (Story 39-11c, AC-6, écart `balance_gap`).
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct OpeningStatement {
+    /// Identifiant de l'import.
+    pub id: i64,
+    /// Compte bancaire.
+    pub bank_account_id: i64,
+    /// Premier jour du relevé.
+    pub period_from: NaiveDate,
+    /// Solde d'ouverture.
+    pub opening_balance: Decimal,
+}
+
+/// Les relevés **à solde d'ouverture** des comptes bancaires
+/// `bank_account_ids` dont le premier jour tombe dans `[from, to]`, triés par
+/// premier jour puis identifiant — ceux dont la revue relit la continuité
+/// (`bank_imports::continuity_gap`, la règle de la Story 39-11b).
+pub async fn opening_statements_in_period<'e, E>(
+    executor: E,
+    company_id: i64,
+    bank_account_ids: &[i64],
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<Vec<OpeningStatement>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    if bank_account_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let sql = format!(
+        "SELECT id, bank_account_id, period_from, opening_balance FROM bank_imports \
+         WHERE company_id = ? AND bank_account_id IN ({}) AND opening_balance IS NOT NULL \
+           AND period_from BETWEEN ? AND ? \
+         ORDER BY period_from, id",
+        placeholders(bank_account_ids.len())
+    );
+    let mut q = sqlx::query_as::<_, OpeningStatement>(&sql).bind(company_id);
+    for id in bank_account_ids {
+        q = q.bind(*id);
+    }
+    q.bind(from)
+        .bind(to)
+        .fetch_all(executor)
+        .await
+        .map_err(map_db_error)
+}
+
+/// Les comptes de **gain** et de **perte de change** de la société
+/// (`companies.fx_gain_account_id`, `fx_loss_account_id`), chacun `None` s'il
+/// n'est pas réglé — la ligne de différence d'un paiement par carte groupé
+/// (Story 39-11c, amendement A-1). Lecture ordinaire.
+pub async fn fx_difference_accounts<'e, E>(
+    executor: E,
+    company_id: i64,
+) -> Result<(Option<i64>, Option<i64>), DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    let row: Option<(Option<i64>, Option<i64>)> =
+        sqlx::query_as("SELECT fx_gain_account_id, fx_loss_account_id FROM companies WHERE id = ?")
+            .bind(company_id)
+            .fetch_optional(executor)
+            .await
+            .map_err(map_db_error)?;
+    Ok(row.unwrap_or((None, None)))
+}

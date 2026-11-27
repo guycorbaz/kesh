@@ -1,7 +1,7 @@
 /**
  * Story 38-11d (AC-1) — règles d'écran des comptes de **prestataire** (PayPal
  * en phase 1 ; Stripe depuis la 40-7d, qui y ajoute son compte de versement ;
- * Wise, Epic 39, n'y ajoute rien), tenues hors
+ * Wise depuis la 39-11d, de même forme que PayPal), tenues hors
  * des composants pour être testées seules, à côté de `credit-card.ts`. Le
  * serveur reste l'autorité : chaque règle ici a son refus côté serveur
  * (`routes/bank_accounts.rs`, 38-11b).
@@ -15,12 +15,16 @@ import type {
 	StripeSettings,
 } from './bank-accounts.api';
 
-/** Story 40-7d — les prestataires dont l'écran règle les paramètres (Wise n'en a pas en phase 1). */
-export type ConfigurableProvider = 'paypal' | 'stripe';
+/** Story 40-7d — les prestataires dont l'écran règle les paramètres (Wise depuis la 39-11d). */
+export type ConfigurableProvider = 'paypal' | 'wise' | 'stripe';
+
+/** Les prestataires, dans l'ordre de l'écran (cases du formulaire, ligne de la liste). */
+export const CONFIGURABLE_PROVIDERS: readonly ConfigurableProvider[] = ['paypal', 'wise', 'stripe'];
 
 /** Story 40-7d — le nom affiché d'un prestataire (nom propre, non traduit). */
 export const PROVIDER_NAMES: Record<ConfigurableProvider, string> = {
 	paypal: 'PayPal',
+	wise: 'Wise',
 	stripe: 'Stripe',
 };
 import type { ProviderApiStatus } from '$lib/features/provider-download/provider-download.api';
@@ -40,6 +44,11 @@ export const PAYPAL_ACCOUNT_MAX_CHARS = PROVIDER_ACCOUNT_MAX_CHARS;
 /** Le compte bancaire est-il le solde d'un compte PayPal ? (page PayPal) */
 export function isPaypal(a: ProviderSource): boolean {
 	return a.provider === 'paypal';
+}
+
+/** Story 39-11d — le compte bancaire est-il le solde d'un compte Wise ? (page Wise) */
+export function isWise(a: ProviderSource): boolean {
+	return a.provider === 'wise';
 }
 
 /** Story 40-7d — le compte bancaire est-il le solde d'un compte Stripe ? (page Stripe) */
@@ -74,6 +83,7 @@ export function accountLabelKey(label: string): string {
 export interface ProviderSettingsSource {
 	provider?: string | null;
 	paypal?: PaypalSettings | null;
+	wise?: PaypalSettings | null;
 	stripe?: StripeSettings | null;
 }
 
@@ -86,7 +96,7 @@ export function providerSettingsOf(
 	provider: ConfigurableProvider,
 ): PaypalSettings | null {
 	if (a.provider !== provider) return null;
-	return (provider === 'paypal' ? a.paypal : a.stripe) ?? null;
+	return a[provider] ?? null;
 }
 
 /**
@@ -113,6 +123,11 @@ export function providerAccountLabels(
 /** Les libellés de compte PayPal distincts (voir {@link providerAccountLabels}). */
 export function paypalAccountLabels(accounts: readonly ProviderSettingsSource[]): string[] {
 	return providerAccountLabels(accounts, 'paypal');
+}
+
+/** Story 39-11d — les libellés de compte Wise distincts (voir {@link providerAccountLabels}). */
+export function wiseAccountLabels(accounts: readonly ProviderSettingsSource[]): string[] {
+	return providerAccountLabels(accounts, 'wise');
 }
 
 /** Story 40-7d — les libellés de compte Stripe distincts (voir {@link providerAccountLabels}). */
@@ -150,15 +165,16 @@ function ledgerCurrencyOf(
 
 /**
  * La ligne qui suit le nom d'un compte de prestataire dans la liste des comptes
- * bancaires : « PayPal · <compte> · <devise> » ou « Stripe · … », la devise lue
- * au compte du plan lié (CHF s'il n'en porte pas). `null` hors d'un compte
- * PayPal ou Stripe. Story 40-7d : généralisé de PayPal à Stripe.
+ * bancaires : « PayPal · <compte> · <devise> », « Wise · … » ou « Stripe · … »,
+ * la devise lue au compte du plan lié (CHF s'il n'en porte pas). `null` hors
+ * d'un compte de prestataire. Story 40-7d : généralisé de PayPal à Stripe ;
+ * Story 39-11d : Wise.
  */
 export function providerSummaryLine(
 	a: ProviderSettingsSource & { journalAccountId: number | null },
 	accounts: readonly AccountResponse[],
 ): string | null {
-	for (const provider of ['paypal', 'stripe'] as const) {
+	for (const provider of CONFIGURABLE_PROVIDERS) {
 		const settings = providerSettingsOf(a, provider);
 		if (settings) {
 			const currency = ledgerCurrencyOf(a.journalAccountId, accounts) ?? 'CHF';
@@ -218,18 +234,25 @@ export function paypalPayload(account: string, feeAccountId: number | null): Pay
 
 /**
  * Story 40-7d (AC-1) — la charge du prestataire `provider` du formulaire, sous
- * sa clé (`{ paypal }` ou `{ stripe }`, avec le compte de versement pour
- * Stripe). `null` si le libellé est vide.
+ * sa clé (`{ paypal }`, `{ wise }` — Story 39-11d, même forme — ou `{ stripe }`,
+ * avec le compte de versement pour Stripe). `null` si le libellé est vide.
  */
 export function providerPayload(
 	provider: ConfigurableProvider,
 	account: string,
 	feeAccountId: number | null,
 	payoutBankAccountId: number | null,
-): { paypal: PaypalSettings } | { stripe: StripeSettings } | null {
+): { paypal: PaypalSettings } | { wise: PaypalSettings } | { stripe: StripeSettings } | null {
 	const base = paypalPayload(account, feeAccountId);
 	if (base === null) return null;
-	return provider === 'paypal' ? { paypal: base } : { stripe: { ...base, payoutBankAccountId } };
+	switch (provider) {
+		case 'paypal':
+			return { paypal: base };
+		case 'wise':
+			return { wise: base };
+		case 'stripe':
+			return { stripe: { ...base, payoutBankAccountId } };
+	}
 }
 
 /** Ce qu'il faut d'un compte bancaire pour lire l'état de son téléchargement par l'API. */

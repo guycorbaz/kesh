@@ -761,11 +761,6 @@ fn les_replis_rust_suivent_le_catalogue() {
     const LIGNES: &[(&str, &str)] = &[("{ $count }", "{n}")];
     // Story 49-4a (#1364) — les lignes demandées et offertes du refus à la validation.
     const BESOIN_PLACE: &[(&str, &str)] = &[("{ $besoin }", "{besoin}"), ("{ $place }", "{place}")];
-    // Story 35-1 (#948) — le format de numérotation et le nom de l'exercice.
-    const FORMAT_EXERCICE: &[(&str, &str)] = &[
-        ("{ $format }", "{format}"),
-        ("{ $fiscalYear }", "{fiscal_year_name}"),
-    ];
     type Cles = &'static [(&'static str, usize, &'static [(&'static str, &'static str)])];
     const TABLE: [(&str, Cles); 9] = [
         // Story 31-5 (#469, C-31-5-15) — les six refus du journal d'audit.
@@ -907,7 +902,11 @@ fn les_replis_rust_suivent_le_catalogue() {
                 (
                     "error-number-format-unrenderable-too-long",
                     1,
-                    FORMAT_EXERCICE,
+                    &[
+                        ("{ $format }", "{format}"),
+                        ("{ $fiscalYear }", "{fiscal_year_name}"),
+                        ("{\"{\"}FY{\"}\"}", "{{FY}}"),
+                    ],
                 ),
                 (
                     "error-number-format-unrenderable-brace",

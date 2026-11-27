@@ -1,7 +1,8 @@
 /**
  * Story 38-11d (AC-2) — les trois filtres facultatifs d'une règle de
  * rapprochement (38-11c1, AC-2 et AC-3), tenus hors du composant pour être
- * testés seuls : « Type PayPal » (exact), « E-mail exact » et le sens. Ils se
+ * testés seuls : « Type chez le prestataire » (exact ; PayPal, Wise depuis la
+ * 39-11d), « E-mail exact » et le sens. Ils se
  * combinent au critère existant (`matchType` / `matchValue`, toujours
  * obligatoire) ; le serveur reste l'autorité de leur forme.
  */

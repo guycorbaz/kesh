@@ -116,26 +116,45 @@ where
     .map_err(map_db_error)
 }
 
-/// Story 38-11b (AC-6) — les identifiants de transaction, parmi
-/// `transaction_ids`, que le compte bancaire porte déjà (recherche de doublon
-/// de l'import PayPal, par l'index `idx_bank_transactions_account_txid`).
+/// Une transaction déjà sur le compte, vue par son identifiant de prestataire
+/// ([`existing_transactions_by_ids`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExistingTransaction {
+    /// Identifiant de transaction, tel que stocké.
+    pub transaction_id: String,
+    /// Montant signé.
+    pub amount: rust_decimal::Decimal,
+    /// Date de comptabilisation.
+    pub booking_date: NaiveDate,
+}
+
+/// Les transactions du compte bancaire dont l'identifiant est parmi
+/// `transaction_ids`, avec leur montant et leur date (Story 39-11a2).
 ///
-/// Lecture **dans la transaction de l'import**, sous les verrous nommés des
-/// comptes visés : deux imports du même compte se sérialisent, et la lecture
-/// voit le relevé concurrent commité ou absent. La comparaison est celle de la
-/// collation de la colonne (sans casse) : un identifiant PayPal est fait de
-/// `[0-9A-Z]` (38-11a), si bien qu'elle vaut l'égalité exacte. Rend les valeurs
-/// **telles que stockées**. Par paquets de 500 identifiants.
-pub async fn existing_transaction_ids(
+/// Lue par le cœur commun des imports de prestataire
+/// (`kesh-api`, `routes/provider_imports.rs`, Story 39-14) pour **tous** les
+/// prestataires : il juge un doublon par (identifiant, sens) quand la ligne
+/// importée porte un sens — un même identifiant Wise peut porter un débit
+/// **et** un crédit (réserve de carte expirée, vérification de carte), le
+/// sens se lisant au signe du montant —, par identifiant seul sinon.
+///
+/// Contrat : lecture **dans la transaction de l'import**, sous les verrous
+/// nommés des comptes visés (deux imports du même compte se sérialisent, et la
+/// lecture voit le relevé concurrent commité ou absent) ; par l'index
+/// `idx_bank_transactions_account_txid` ; comparaison selon la collation de
+/// la colonne (sans casse) ; valeurs **telles que stockées** ; par paquets de
+/// 500 identifiants ; une ligne rendue par transaction (un identifiant peut
+/// donc revenir plusieurs fois). Ordre non garanti.
+pub async fn existing_transactions_by_ids(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     bank_account_id: i64,
     transaction_ids: &[String],
-) -> Result<std::collections::HashSet<String>, DbError> {
-    let mut found = std::collections::HashSet::new();
+) -> Result<Vec<ExistingTransaction>, DbError> {
+    let mut found = Vec::new();
     for chunk in transaction_ids.chunks(500) {
         let mut qb: sqlx::QueryBuilder<MySql> = sqlx::QueryBuilder::new(
-            "SELECT transaction_id FROM bank_transactions WHERE company_id = ",
+            "SELECT transaction_id, amount, booking_date FROM bank_transactions WHERE company_id = ",
         );
         qb.push_bind(company_id)
             .push(" AND bank_account_id = ")
@@ -146,12 +165,41 @@ pub async fn existing_transaction_ids(
             separated.push_bind(id);
         }
         separated.push_unseparated(")");
-        let rows: Vec<(Option<String>,)> = qb
+        let rows: Vec<(Option<String>, rust_decimal::Decimal, NaiveDate)> = qb
             .build_query_as()
             .fetch_all(&mut *conn)
             .await
             .map_err(map_db_error)?;
-        found.extend(rows.into_iter().filter_map(|(id,)| id));
+        found.extend(rows.into_iter().filter_map(|(id, amount, booking_date)| {
+            id.map(|transaction_id| ExistingTransaction {
+                transaction_id,
+                amount,
+                booking_date,
+            })
+        }));
     }
     Ok(found)
+}
+
+/// Les identifiants de transaction, parmi `transaction_ids`, que le compte
+/// bancaire porte déjà, chacun une fois (Story 38-11b, AC-6) : lecture par
+/// identifiant seul, sans sens ni montant.
+///
+/// Même contrat qu'[`existing_transactions_by_ids`], sur laquelle elle est
+/// écrite (Story 39-13). Elle n'a plus d'appelant dans `kesh-api` depuis la
+/// Story 39-14 (le cœur commun lit `existing_transactions_by_ids`) ; elle
+/// reste publique parce qu'une branche d'epic non encore fusionnée l'appelle.
+pub async fn existing_transaction_ids(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    bank_account_id: i64,
+    transaction_ids: &[String],
+) -> Result<std::collections::HashSet<String>, DbError> {
+    Ok(
+        existing_transactions_by_ids(conn, company_id, bank_account_id, transaction_ids)
+            .await?
+            .into_iter()
+            .map(|t| t.transaction_id)
+            .collect(),
+    )
 }

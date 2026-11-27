@@ -107,7 +107,7 @@
 	 * compte de prestataire (Wise) ? La réconciliation bancaire n'offre pas ces comptes : sa
 	 * réception se rattache à l'import du relevé du prestataire. Les comptes archivés et clos sont
 	 * relus (revue P2, P2-3) : seul un compte supprimé, ou une lecture des comptes en échec, donne le
-	 * renvoi ordinaire. La page Wise viendra avec l'Epic 39 (lien à poser alors).
+	 * renvoi ordinaire. Story 39-11d : le texte mène à la page Wise, où ce relevé s'importe.
 	 */
 	function payoutGoesToProvider(g: ProviderFinding): boolean {
 		const id = g.details?.payoutBankAccountId;
@@ -164,12 +164,12 @@
 			</a>
 			·
 			{#if payoutGoesToProvider(g)}
-				<span data-testid="stripe-gap-receipt-import">
+				<a class="text-primary underline" href="/reconciliation/wise" data-testid="stripe-gap-receipt-import">
 					{i18nMsg(
 						'stripe-gap-receipt-import',
 						'Importez le relevé du compte de destination (Wise).',
 					)}
-				</span>
+				</a>
 			{:else}
 				<a class="text-primary underline" href="/reconciliation">
 					{i18nMsg('stripe-gap-receipt-link', 'Rattacher la réception à la réconciliation')}
