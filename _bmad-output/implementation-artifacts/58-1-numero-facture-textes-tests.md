@@ -1,6 +1,6 @@
 # Story 58-1 : Format de numéro de facture — textes, tests et miroir (#1115, #1117, #1118, #1119, #1120, #1122, #1123, #1124)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-26 (Sonnet 5.5, en autonomie), workflow `bmad-create-story`. Worktree `/home/gcorbaz/devel/kesh-58-1`, branche `story/58-1-numero-facture-textes-tests`, partie de `epic/58-nettoyage` = `ee684a69f`. Première story du premier epic de nettoyage (fichier d'epic : `_bmad-output/planning-artifacts/epic-58-nettoyage.md`). Release visée : vendredi 2026-12-04. **Aucune migration, aucune règle métier changée, aucun changement d'API** : le Project Lead a dit le 2026-11-26 que changer des phrases de refus, sans changer ni le code d'erreur ni les champs, n'est pas un changement d'API. La story touche l'usage réel du Project Lead : il émet ses factures client sous le format par défaut `F-{YEAR}-{SEQ:04}`.*
 
@@ -162,22 +162,66 @@ Fichiers touchés : `crates/kesh-core/src/invoice_format.rs` ; `crates/kesh-api/
 
 ### Agent Model Used
 
-(à remplir)
+Claude Opus 5.5 (workflow `bmad-dev-story`, en autonomie, 2026-11-26 → 2026-11-27).
 
 ### Debug Log References
 
-(à remplir)
+- Journaux de la station (`/home/gcorbaz/devel/kesh-gate-logs/e58/`) : `s581-red-api.log` (rouge d'AC1/AC7), `s581-green-cible.log` (gate ciblé vert), `s581-clippy.log`, `s581-mut-*.log` (mutations), `s581-make-user.log` (compilation du manuel).
+- Journaux d'idefix (`/home/gcorbaz/devel/kesh-gate-logs/idefix/<id>/`) : `20261127-000443-story_58-1-numero-facture-textes-tests-test-fast/`, `20261127-004237-story_58-1-numero-facture-textes-tests-gate-ci/`, `20261127-013648-story_58-1-numero-facture-textes-tests-front/`.
 
 ### Completion Notes List
 
-(à remplir)
+**Étape 0.** `epic/58-nettoyage` n'ayant pas servi de base, la branche a repris `origin/main` (`56d47b2cc`) sans conflit (merge `578c5378f`). Les huit issues sont ouvertes (`gh issue view N --json state`, 2026-11-26). Lignes recontrôlées au nouveau `main` : les numéros de ligne de la fiche ont glissé (`errors.rs` 2365-2385 → 2492-2509 ; catalogues 364/366 → 377/379 ; manuel 1598/1602 → 1680/1684 ; `api-external.md` 527/1417 → 605/1589) ; le texte, lui, était inchangé. Les LOW de la P2 (V2-1 à V2-10) ne se sont recontrôlés qu'aux sites que la story touche (lignes lues ci-dessus : `:` et tabulation au manuel, `\s` du doc de module, doc-comments de `kesh-db` laissés au Journal des sorties) ; les autres (citation de la 0.17.7, voisinage de la 58-3) n'ont pas été relus un à un.
+
+**Fait, critère par critère.**
+- **AC1 (#1115)** : refus `too_long` (« et le nom de l’exercice s’il reprend {FY} ») et `duplicate` (« dans cet exercice, dans un autre, ou sous un format précédent »), repli Rust et quatre catalogues dans le même commit, G9 étendue à `{FY}` pour `too-long` (la constante `FORMAT_EXERCICE`, devenue inutile, est retirée). Tests : `ac3_too_long_without_fiscal_year_token_conditions_the_fiscal_year_advice`, assertion « format précédent » dans `ac4_invoice_duplicate_number_is_a_typed_refusal`, `ac4_duplicate_from_a_previous_format`.
+- **AC2 (#1117)** : `ac4_default_format_collides_on_two_fiscal_years_starting_the_same_year` (montage écrit à la fiche).
+- **AC3 (#1118)** : `Display` de `RenderedTooLong` en « octets » ; commentaire de `MAX_RENDERED_LEN` ; doc de module corrigé (`\s` → liste explicite, « ≤ 64 octets »).
+- **AC4 (#1119)** : commentaires de `ALLOWED_CHAR_RE`, de `:246` (devenu le commentaire du `/^\d+$/`) et de `NUMBERING_SHAPE_RE` ; test Rust `validates_template_signed_padding_is_accepted_by_the_server` ; test vitest « refuse {SEQ:+4} par « caractères non autorisés » ». Les trois angles morts du miroir (U+FEFF, ordre, caractère dans une accolade) sont écrits au commentaire de `ALLOWED_CHAR_RE`.
+- **AC5 (#1120)** : `ALLOWED_CHAR_RE = /^[A-Za-z0-9\-_/.#: \t{}]+$/`, longueur en octets (`TextEncoder`) pour le refus et pour « actuel : n » ; texte « octets » aux quatre catalogues (`invoices-format-error-too-long`) et au repli TS ; tests vitest (NBSP, U+2003, `\n`, numéro interne, tabulation, 33 « é » = 71 octets) et test Rust des blancs.
+- **AC6 (#1122)** : sites 1 et 2 corrigés (doc-comment de `render`, doc-comment du test `ac3_multibyte…`) ; rectificatifs datés aux sites 3 (registre `e35-choix-autonomes-e351.md`) et 4 (fiche de la 35-1). Contrôle : `grep -rnF "borne sa charge en octets" crates frontend/src docs` ne rend rien ; `grep -rn "C-e351-7" crates` ne rend que trois renvois au registre (`invoice_format.rs` ×2, `number_format_unrenderable_e2e.rs` ×1).
+- **AC7 (#1123)** : huit textes (repli Rust, quatre catalogues, `api-external.md` ×2, manuel fr) ; test `ac3_three_byte_fiscal_year_name_counts_bytes` (22 « – », 66 octets).
+- **AC8 (#1124)** : compteur asserté dans `ac3_multibyte_fiscal_year_name_counts_bytes`, `ac3_three_byte_…` et `ac3_unreadable_stored_format_is_a_typed_refusal`.
+- **AC9** : aucune migration, aucun code d'erreur ni champ d'API, aucune clé i18n ajoutée (les quatre `invoices-format-error-too-long` changent de texte seulement).
+
+**Rouge d'abord** (`s581-red-api.log`, commit `914ea273b`) : trois tests API rouges (`too_long` sans `{FY}`, trois octets, « format précédent » du doublon) plus, côté Rust, `rendered_too_long_display_speaks_of_bytes` et, côté vitest, cinq tests (NBSP, U+2003, `\n`, numéro interne, octets). Verts au départ, donc prouvés par mutation : AC2, doublon sous format précédent, compteurs, `{SEQ:+4}` des deux côtés, tabulation.
+
+**Mutations** (restaurées chaque fois par `git checkout -- <fichier>` puis `touch`, arbre vérifié propre ; journaux `s581-mut-*.log`) :
+
+| Mutation | Résultat |
+|---|---|
+| M3 (« caractères » remis au `Display`) | `rendered_too_long_display_speaks_of_bytes` rouge |
+| M4 (`+` refusé côté Rust) | `validates_template_signed_padding_is_accepted_by_the_server` rouge |
+| M1 et M7 ensemble (anciennes phrases dans `errors.rs` et `fr-CH`) | rouges : `ac3_invoice_number_too_long…`, `ac3_credit_note_number_too_long…`, `ac3_three_byte…`, `ac3_too_long_without_fiscal_year_token…`, `ac4_invoice_duplicate…`, et G9 (`les_replis_rust_suivent_le_catalogue`, par l'écart de substitution) |
+| M1b (un caractère changé au seul catalogue fr-CH) | G9 rouge, seul |
+| M2 (`names_key` toujours faux) | rouges : les quatre tests de doublon, dont AC2 et le format précédent (409 au lieu de 400) |
+| M2b (`year` pris sur `end_date`) | rouges : AC2 et `ac4_invoice_duplicate_number_is_a_typed_refusal` (deux rouges, journal `s581-mut-M2b.log`) |
+| M2c (transaction validée avant le refus de doublon) et M8 (avant le refus de rendu), joués ensemble : `COMMIT` explicite sur la connexion, `tx.commit()` n'étant pas utilisable dans ce bloc (`use of moved value`) | huit rouges : AC2, doublon sous format précédent, `ac4_invoice_duplicate…` (M2c) ; `ac3_unreadable…`, `ac3_multibyte…`, `ac3_three_byte…`, `ac3_brace…`, `ac3_invoice_number_too_long…` (M8) |
+| M5 (`\s` remis), M5b (`template.length` remis), M4b (`+` ajouté à la classe) | vitest : 4, 1 et 1 rouges, chacun sur le test attendu |
+
+Écart à la fiche : M2c est jouée en forme `COMMIT` explicite et non en `tx.commit()` (voir ci-dessus) ; M1 et M7 sont jouées ensemble (même changement de texte).
+
+**Manuel.** `make user` (xelatex, `docs/manual/`) compile en 3 passes ; le « € » s'imprime (`pdftotext` : « trois pour « – » ou « € » »). Le PDF régénéré n'est pas commité (`git checkout -- docs/manual/fr/user-manual.pdf`).
+
+**Recette visuelle : non faite.** Les captures de `kesh-gate-logs/s581/captures/` (refus `too_long`, refus `duplicate`, page *Facturation* aux trois états) n'ont pas été prises : aucun backend ni navigateur n'a été lancé dans cette session ; la revue de code ne les a donc pas. À prendre avant la clôture.
+
+**Gates.** Ciblé (station, base `kesh_e581`) : `s581-green-cible.log`, 120 tests passés (`number_format_unrenderable_e2e`, `textes_coherents`, `invoice_format` de `kesh-core`, `kesh-i18n`) ; fmt et clippy `-D warnings` verts (`s581-clippy.log`) ; vitest `invoice-number-format` : 55 passés. Complets sur idefix, au commit `407440f0b` : `test-fast` 6984 passés, 0 échoué, 19 ignorés (`idefix/20261127-000443-…-test-fast/test-fast.log`, code 0, 1153,8 s) ; `gate-ci` 7003 passés, 0 échoué, 23 ignorés (`idefix/20261127-004237-…-gate-ci/gate-ci.log`, code 0 du gate, 3251 s de bout en bout dont l'attente du verrou) ; `front` sur idefix : **lancé à 01:36 (heure locale), toujours en attente du verrou d'idefix à la fin de ce développement** (d'autres gates « tout » le tenaient ; journal à venir dans `idefix/20261127-013648-story_58-1-numero-facture-textes-tests-front/`). **À la place, le frontend a tourné sur la station** (voie frontend, sous `mem-guard`, au commit `407440f0b`) : `npm run check` 0 erreur, 32 avertissements (`s581-front-check.log`) ; `lint-i18n-ownership` PASS ; `test:unit` 321 fichiers, 5524 tests passés ; `npm run build` OK (journaux `s581-front-*.log`). **Non lancé : E2E Playwright** (consignes E35 : à la clôture).
 
 ### File List
 
-(à remplir)
+- `crates/kesh-core/src/invoice_format.rs` (Display en octets, commentaires, doc de module, tests)
+- `crates/kesh-api/src/errors.rs` (repli des causes `too_long` et `duplicate`)
+- `crates/kesh-api/tests/number_format_unrenderable_e2e.rs` (tests AC1, AC2, AC7, AC8)
+- `crates/kesh-api/tests/textes_coherents.rs` (G9 : substitution `{FY}` pour `too-long`, constante `FORMAT_EXERCICE` retirée)
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` (`error-number-format-unrenderable-too-long` et `-duplicate`, `invoices-format-error-too-long`)
+- `frontend/src/lib/features/invoices/invoice-number-format.ts` et `invoice-number-format.test.ts`
+- `docs/api-external.md`, `docs/manual/fr/user-manual.tex` (PDF non commité)
+- `_bmad-output/implementation-artifacts/e35-choix-autonomes-e351.md`, `35-1-numerotation-sans-seq.md` (rectificatifs datés)
+- `_bmad-output/implementation-artifacts/58-1-numero-facture-textes-tests.md`, `sprint-status.yaml`
 
 ## Change Log
 
+- 2026-11-27 — **Développement terminé, statut `review`** (Opus 5.5, `bmad-dev-story`) : trois commits de code (`914ea273b` tests rouges, `5d629dbbb` textes, `407440f0b` miroir et documentation) après la reprise de `main` (`578c5378f`) ; mutations M1 à M8 jouées et restaurées ; gates complets sur idefix (`test-fast`, `gate-ci`) verts, frontend vert sur la station ; **recette visuelle et E2E non faits** (voir Completion Notes).
 - 2026-11-26 — **Validation P2 remédiée et fiche `ready-for-dev`.** Tendance des findings par passe : **P1 (Opus) 0/2/5/13 → P2 (Sonnet) 0/0/0/10** ; boucle close sur une passe sans finding au-dessus de LOW (aucun recyclage de sévérité ; quatre modules). Les dix LOW de la P2 (V2-1 à V2-10 : lignes recalées, `:` et tabulation au manuel, `\s` du doc de module, doc-comments de `kesh-db` au Journal des sorties, citation de la 0.17.7, sort des issues, voisinage 58-3, rectificatif étendu, contrôle `make fr` et « € », assertion sur le message) sont appliqués **après la dernière passe** : ils **se recontrôlent à l'étape 0 du développement**, ligne lue citée (décision de Guy du 2026-10-24). Le développement attend la fin de la release de la 0.20.0.
 - 2026-11-26 — **Validation P1 remédiée** (Opus 5.5, **0/2/5/13** : V1-1 et V1-2 HIGH ; V1-3 à V1-7 MEDIUM ; V1-8 à V1-20 LOW ; `kesh-gate-logs/s581/validation-p1.md`) en un commit, chaque prémisse relue au code avant d'être écrite : V1-1 (cause = `ALLOWED_CHAR_RE`, `:14`/`:203`) ; V1-2 (`varchar(64)`, `test-schema:409`, fixture `'x'×55 + {SEQ:10}`) ; V1-3 (`invoices-format-error-too-long` ×4 + repli TS) ; V1-4 (montage de l'AC2) ; V1-5 (G9, échappement) ; V1-6/V1-7 (poids des caractères, sujet réécrit au manuel et à `api-external.md`) ; V1-8 à V1-20 selon le rapport ; #1117 : question ouverte au Project Lead. Aucun finding réfuté. Validation P2 (Sonnet, contexte frais) à lancer : prompt `58-1-numero-facture-textes-tests-validation-prompt-p2.md`.
 - 2026-11-26 — Fiche rédigée (`bmad-create-story`, Sonnet 5.5) ; statut `drafted` ; validation P1 (Opus, contexte frais) à lancer : prompt `58-1-numero-facture-textes-tests-validation-prompt-p1.md`.
