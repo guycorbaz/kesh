@@ -234,7 +234,7 @@ Le reste de ce qui accompagnait ces questions dans la fiche d'origine (variantes
     règlement **antérieur** d'une facture soldée par un règlement ultérieur postérieur à la borne ; facture datée **après** le paiement (ci-dessous) ; état hérité.
   - **R3** (paiement fournisseur unitaire) : **jamais partiel** — une facture fournisseur n'a qu'une écriture de règlement (`discover_supplier_invoice_document`,
     `("paid", Some(reglement))`) ; facture datée après le paiement ; état hérité.
-  - **R4, R5** (groupes) : **jamais partiels** — le groupe solde chaque facture (`grouped_settlements.rs`, étape (9) : `Invariant` « la facture … garde un reste dû ») ;
+  - **R4, R5** (groupes) : **jamais partiels** — le groupe solde chaque facture (R4 : `grouped_settlements.rs`, étape (9), `:820`, `Invariant` « la facture … garde un reste dû » ; R5 : le contrôle `payable_amount != invoice.total_amount`, `:2438`, et la mise à `paid` d'un seul tenant, `:2574`, à `0e99cd2db` — correction du LOW L1 de la P4 ciblée, au développement) ;
     facture datée après le paiement ; état hérité.
   - **L'état de production commun aux quatre** : la facture datée **après** le paiement, dans la tolérance de la fenêtre — un jour pour le client
     (`PAYMENT_BEFORE_INVOICE_TOLERANCE_DAYS = 1`, `kesh-db/src/repositories/reconciliation.rs:288`, contrôlé au groupe `grouped_settlements.rs:653`), sept pour le
