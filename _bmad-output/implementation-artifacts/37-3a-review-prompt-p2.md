@@ -2,8 +2,8 @@
 
 Deuxième passe complète (Sonnet, modèle différent de la P1 Opus) de `bmad-code-review` (lis `.claude/skills/bmad-code-review/SKILL.md` et suis-le : couches
 Blind Hunter, Edge Case Hunter, Acceptance Auditor, triage), contexte frais, sur la story 37-3a, worktree
-`/home/beat/claude/kesh/.claude/worktrees/kesh-s37-3a` (branche `story/37-3a-ecritures-en-devise-modele`). N'écris
-nulle part ailleurs, sauf journaux dans `/home/beat/claude/kesh-gate-logs/s37-3a/review-p2/`.
+`<worktree>/kesh-s37-3a` (branche `story/37-3a-ecritures-en-devise-modele`). N'écris
+nulle part ailleurs, sauf journaux dans `$GATE_LOGS/s37-3a/review-p2/`.
 
 ## Périmètre
 
@@ -24,7 +24,7 @@ clé d'API) ; audit ; MCP (tailles) ; i18n 4 locales ; **manuels** (`.tex` contr
 
 Applique les patches des findings (CRITICAL à LOW selon le skill), avec leurs tests ; gate ciblé (fmt, clippy workspace,
 nextest des binaires touchés — **gate complet si un patch touche `kesh-db`** : migrations, repository, `post_restore`),
-sous ``/home/beat/claude/kesh-gate-logs/heavy.sh scripts/mem-guard.sh <commande>` (au plus deux exécutions lourdes sur la station ; backend lancé avec `7>&- 8>&- 9>&-`), base `kesh_s37_3a` (cf. `docs/agents-orchestration.md`) ; commit local
+sous ``$GATE_LOGS/heavy.sh scripts/mem-guard.sh <commande>` (au plus deux exécutions lourdes sur la station ; backend lancé avec `7>&- 8>&- 9>&-`), base `kesh_s37_3a` (cf. `docs/agents-orchestration.md`) ; commit local
 « fix(37-3a) : revue de code P2 — … » (aucun mot-clé de fermeture, aucune mention d'IA). Change Log de la fiche :
 « 2026-11-16 — revue de code P2 (<modèle>) : <décompte> ». N'affirme que ce qui a tourné.
 

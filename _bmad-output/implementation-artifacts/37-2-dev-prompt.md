@@ -2,9 +2,9 @@
 
 Tu développes la story **37-2** (`_bmad-output/implementation-artifacts/37-2-cours-mensuels-afc.md`) selon le
 skill `bmad-dev-story` (lis `.claude/skills/bmad-dev-story/SKILL.md` et suis-le), dans le worktree
-`/home/beat/claude/kesh/.claude/worktrees/kesh-s37-2` (branche `story/37-2-cours-mensuels-afc`, partie de
+`<worktree>/kesh-s37-2` (branche `story/37-2-cours-mensuels-afc`, partie de
 `epic/37-multi-devises`). **N'écris jamais hors de ce worktree**, sauf les journaux dans
-`/home/beat/claude/kesh-gate-logs/s37-2/`. Chemins absolus.
+`$GATE_LOGS/s37-2/`. Chemins absolus.
 
 ## À lire d'abord
 
@@ -45,5 +45,5 @@ questions.
 - Source BAZG : **aucun appel réseau dans les tests** (source factice et route `_test/exchange-rates/source` de la fiche) ;
   le client HTTP borné et le filtrage XML hostile (R5) sont exigés. Un seul GET réel de contrôle vers
   `backend-rates.bazg.admin.ch` est permis pendant le développement, pour vérifier la forme de la réponse.
-- Les défauts trouvés hors périmètre vont à `/home/beat/claude/kesh-gate-logs/issues-a-ouvrir-epic-37.md` (ajoute une
+- Les défauts trouvés hors périmètre vont à `$GATE_LOGS/issues-a-ouvrir-epic-37.md` (ajoute une
   entrée numérotée), jamais en issue GitHub.

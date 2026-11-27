@@ -3222,3 +3222,54 @@ fn le_refus_de_capacite_a_ses_deux_nombres_en_quatre_langues() {
         }
     }
 }
+
+/// Motif d'un chemin de station de développement d'un contributeur.
+///
+/// Assemblé à l'exécution, pour que ce fichier ne porte pas lui-même le motif
+/// qu'il interdit (un `git grep` du motif sur le dépôt doit rendre zéro ligne).
+fn motif_chemin_de_station() -> String {
+    ["/ho", "me/b"].concat()
+}
+
+/// Fichiers versionnés (`git ls-files`) dont le contenu porte `motif`.
+fn fichiers_versionnes_portant(motif: &str) -> (usize, Vec<String>) {
+    let sortie = std::process::Command::new("git")
+        .args(["ls-files", "-z"])
+        .current_dir(racine())
+        .output()
+        .expect("git ls-files doit tourner pour cette garde");
+    assert!(sortie.status.success(), "git ls-files a échoué");
+    let liste = String::from_utf8(sortie.stdout).expect("chemins UTF-8");
+    let motif = motif.as_bytes();
+    let mut vus = 0;
+    let mut fautifs = Vec::new();
+    for chemin in liste.split('\0').filter(|c| !c.is_empty()) {
+        let Ok(octets) = std::fs::read(racine().join(chemin)) else {
+            continue; // fichier supprimé du worktree, non encore commité
+        };
+        vus += 1;
+        if octets.windows(motif.len()).any(|w| w == motif) {
+            fautifs.push(chemin.to_string());
+        }
+    }
+    (vus, fautifs)
+}
+
+/// Aucun fichier versionné ne cite un chemin de la station d'un contributeur :
+/// un tel chemin ne dit rien à un autre lecteur et expose une installation
+/// personnelle. Contrôle sur les octets, binaires et PDF compris.
+#[test]
+fn aucun_chemin_de_station_dans_les_fichiers_versionnes() {
+    let motif = motif_chemin_de_station();
+    // Sonde : le motif assemblé est bien celui qu'on croit.
+    assert_eq!(motif.len(), 7, "motif mal assemblé : {motif}");
+    let (vus, fautifs) = fichiers_versionnes_portant(&motif);
+    // Sonde contre la garde muette : le parcours a bien lu le dépôt.
+    assert!(vus > 1000, "seulement {vus} fichiers lus : parcours vide ?");
+    assert!(
+        fautifs.is_empty(),
+        "{} fichier(s) versionné(s) citent un chemin de station ({motif}…) :\n  - {}",
+        fautifs.len(),
+        fautifs.join("\n  - ")
+    );
+}

@@ -1,7 +1,7 @@
 # Prompt de validation CR-6 P4 ciblée — fiches de l'Epic 37
 
 Passe **ciblée** (`CLAUDE.md` § *La passe ciblée*) : **une seule lentille**, braquée sur **la dernière remédiation**.
-Dépôt `/home/beat/limu/compta/kesh`. Fiche indiquée dans ta mission, dans `_bmad-output/implementation-artifacts/`.
+Dépôt `~/limu/compta/kesh`. Fiche indiquée dans ta mission, dans `_bmad-output/implementation-artifacts/`.
 
 ## Périmètre
 
