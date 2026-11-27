@@ -1,6 +1,6 @@
 # Story 58-2 : Comptes désignés et tests Rust de revue — neuf trous de couverture (#592, #732, #736, #1060, #1062, #1063, #1064, #1066, #1433)
 
-Status: review (développement terminé ; validation P1 remédiée : 0/0/6/7 ; P2 remédiée : 0/0/1/3 ; P3 ciblée : 0/0/1/2, remédiée par la sortie de #1127 ; P4 ciblée (Sonnet) : 0/0/0/5, remédiée)
+Status: in-progress (développement terminé, gate-ci et front d'idefix en attente de la file ; validation P1 remédiée : 0/0/6/7 ; P2 remédiée : 0/0/1/3 ; P3 ciblée : 0/0/1/2, remédiée par la sortie de #1127 ; P4 ciblée (Sonnet) : 0/0/0/5, remédiée)
 
 *Fiche rédigée le 2026-11-27 (Sonnet 5.5, en autonomie), workflow `bmad-create-story`. Worktree `/home/gcorbaz/devel/kesh-58-2`, branche
 `story/58-2-comptes-designes-tests-revue` partie de `epic/58-nettoyage` à `90192c7b3` (qui contient la v0.20.0, la 58-1 et la 58-3). Fichier d'epic :
@@ -327,7 +327,7 @@ Aucun défaut de production révélé : aucune issue à ouvrir. Les survivantes 
 - Gate ciblé local, six binaires (`textes_coherents`, `i18n_e2e`, `designated_account_type_e2e`, `accounts_e2e`, `company_invoice_settings_repository`, `supplier_invoices_repository`) : `$GATE_LOGS/e58/s582-cible1.log`, commit `051ba0183`, **188 tests, 188 réussis**.
 - Vitest ciblé (`blocker-messages-keys`, `blocker-messages`, `JournalEntryForm.edit`, `fiscal-years-page`) : 4 fichiers, 97 tests verts (avant `051ba0183`, mêmes contenus).
 - `npm run check` : `$GATE_LOGS/e58/s582-front-check.log`, 0 erreur, 32 avertissements (préexistants, aucun dans les fichiers de la story). `npm run lint-i18n-ownership` : PASS (`s582-front-lint.log`).
-- Gates idefix (`test-fast`, `gate-ci`, `front`) : voir la ligne finale ci-dessous.
+- `test-fast` sur idefix : commit `051ba0183`, **6990 tests, 6990 réussis**, code 0 (`$GATE_LOGS/idefix/20261127-155237-story_58-2-comptes-designes-tests-revue-test-fast/`). `gate-ci` et `front` : lancés au commit `2dc446d0e`, **non terminés** à la rédaction (file d'attente d'idefix).
 
 ### File List
 - `crates/kesh-api/tests/accounts_e2e.rs`, `designated_account_type_e2e.rs`, `i18n_e2e.rs`, `textes_coherents.rs`
@@ -358,4 +358,4 @@ Aucun défaut de production révélé : aucune issue à ouvrir. Les survivantes 
   la story garde **neuf** issues (#592, #732, #736, #1060, #1062, #1063, #1064, #1066, #1433) et ne touche toujours que des tests (`jour_suisse_nuit_e2e.rs` sort du périmètre). F3-1 (décompte 25/41/54, 19 sites non classés) : repris au point de départ de la future story ;
   F3-2 (Epic 53 : trois hunks, +24 lignes, dans `errors.rs` ; `accounts.rs` dès la l. 461) et F3-3 (`sprint-status.yaml`) : corrigés. Les entrées ci-dessus gardent la numérotation d'AC d'alors (AC12 vacante). Passe P4 (ciblée, Sonnet ; une première P4 Haiku, non conforme à la règle d'alternance, est écartée, `$GATE_LOGS/e58/58-2-validation-p4-ciblee.md`) :
   `58-2-comptes-designes-tests-revue-validation-prompt-p4.md`.
-- 2026-11-27 — **Développement** (Opus 5.5, `bmad-dev-story`) : neuf issues couvertes par des tests (31 mutations Rust et 30 frontend jouées au journal `$GATE_LOGS/e58/s582-mutations.md`) ; trois survivantes attendues et écrites (AC3 champs permutés, AC8 `.then(setting)`, AC9 `rollback`) ; aucun code de production, aucune issue à ouvrir. Statut `review`.
+- 2026-11-27 — **Développement** (Opus 5.5, `bmad-dev-story`) : neuf issues couvertes par des tests (31 mutations Rust et 30 frontend jouées au journal `$GATE_LOGS/e58/s582-mutations.md`) ; trois survivantes attendues et écrites (AC3 champs permutés, AC8 `.then(setting)`, AC9 `rollback`) ; aucun code de production, aucune issue à ouvrir. Statut laissé à `in-progress` : `test-fast` idefix vert (6990 tests, commit `051ba0183`, journal `$GATE_LOGS/idefix/20261127-155237-story_58-2-comptes-designes-tests-revue-test-fast/`), `gate-ci` et `front` lancés au commit `2dc446d0e` mais pas encore pris par la file d'idefix (journal `$GATE_LOGS/idefix/20261127-172852-story_58-2-comptes-designes-tests-revue-gate-ci/`) ; le passage en `review` attend leur résultat.
