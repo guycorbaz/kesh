@@ -194,7 +194,7 @@ Rapport hors dépôt : `$GATE_LOGS/e64/64-1-revue-p2.md`. **Tendance : P1 0/0/2/
 - **Périmètre (point 3 du prompt).** Le Change Log de la P1 déclare bien les quatre fichiers ajoutés et le motif ; deux écarts de texte corrigés ici : « Fichiers (rappel) » ne les listait pas, et `epic-64-corrections-0201.md` écrivait « cinq modules … la règle de splitting préventif ne s'applique pas » (corrigé : sept modules). Le dépassement naît d'un correctif de revue de deux lignes, non d'une story qui recycle ses défauts ; le dire au Project Lead reste à l'orchestrateur.
 - **LOW laissés à l'orchestrateur** (code ou test, non corrigés ici) : L2-1 le libellé retenu au catalogue pour deux taux de même valeur dépend de l'ordre non garanti de `ORDER BY rate DESC` ; L2-2 le test de R1-9 force `validity` à la main (jsdom ne pose jamais `badInput`) : il prouve le câblage, non le navigateur ; L2-3 la capture 10 montre la liste fermée ; L2-4 `SupplierInvoiceForm.svelte` propose deux `<option>` identiques pour deux taux de même valeur (clé par `id`, sans plantage).
 
-### Revue de code P2 — lot des LOW de code (Opus 5.5), 2026-11-27 — passe P3 ciblée à lancer
+### Revue de code P2 — lot des LOW de code (Opus 5.5), 2026-11-27 — passe P3 ciblée faite (entrée finale ci-dessous)
 
 Commit `db9f5c37c`, tête de départ `e2c287b3e`. Règle des LOW du 2026-11-27 : corrigés dans la story, puis une passe ciblée (P3, Haiku, une lentille, ce seul commit ; prompt `64-1-corrections-0201-review-prompt-p3.md`).
 
@@ -203,3 +203,11 @@ Commit `db9f5c37c`, tête de départ `e2c287b3e`. Règle des LOW du 2026-11-27 :
 - **L2-2** : laissé, tracé tel quel (jsdom ne pose pas `badInput` ; le test prouve le câblage, le Change Log de la P1 le dit).
 - **Gates** : vitest des fichiers touchés (taux, catalogue, `SupplierInvoiceForm`, `InvoiceForm` : 5 fichiers, 248 tests verts) ; `npm run check` 0 erreur, `lint-i18n-ownership` et `build` verts (`$GATE_LOGS/e64/rem/p2-lot-low-gates.log`) ; gate complet au push final.
 - **Périmètre** : huit modules (epic recompté) ; aucune migration, aucun mot-clé de fermeture.
+
+### Revue de code P3 ciblée (Haiku, contexte frais, une lentille, commit `db9f5c37c`) — 2026-11-27
+
+- **Tendance : P1 Opus 0/0/2/8 → P2 Sonnet 0/0/0/5 → P3 Haiku ciblée 0/0/0/3 ; boucle de revue close** (aucun finding au-dessus de LOW). Rapport hors dépôt : `$GATE_LOGS/e64/64-1-revue-p3.md`.
+- **Mutation jouée** (retrait de `distinctVatRates` au catalogue et au formulaire fournisseur, copies restaurées, `git status --porcelain` vide) : 3 tests rouges sur 133 (`products-page.test.ts`, deux cas ; `SupplierInvoiceForm.test.ts`, un cas).
+- **LOW de code, laissés à l'orchestrateur** : P3-L1, `prefer` (`vat-rates.distinct.ts`) ne tranche qu'à l'`id` près, donc n'est indépendant de l'ordre que si les `id` diffèrent (clé primaire en base ; le commentaire de tête ne le dit pas) ; P3-L2, indentation du `.map` de `products/+page.svelte` (lignes 64 à 69, cosmétique) ; P3-L3, `VatPurchaseAssistant.svelte:345` (`{#each rates as r (r.id)}`) garde deux `Select.Item` de même valeur quand deux taux actifs partagent une valeur ; hors du lot, option affichée avec sa catégorie, angle mort déjà retenu par la P2.
+- **Captures 10 et 11** relues : quatre options au catalogue, « 8,10 % — Taux normal » une fois ; liste fournisseur, « 8.10% » une fois. Conforme à la légende du journal.
+- **Gates** : vitest des quatre fichiers touchés, 214 tests verts avant la mutation (`flock .gate-front.lock`).
