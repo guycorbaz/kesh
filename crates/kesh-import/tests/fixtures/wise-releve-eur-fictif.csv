@@ -1,0 +1,6 @@
+TransferWise ID,Date,Date Time,Amount,Currency,Description,Payment Reference,Running Balance,Exchange From,Exchange To,Exchange Rate,Payer Name,Payee Name,Payee Account Number,Merchant,Card Last Four Digits,Card Holder Full Name,Attachment,Note,Total fees,Exchange To Amount,Transaction Type,Transaction Details Type
+CONVERSION_ORDER-90000011,20-03-2020,20-03-2020 10:00:00.000,-100.00,EUR,Converti 100.00 EUR en 109.00 USD,,160.00,EUR,USD,1.09,,,,,,,,,0.80,109.00,DEBIT,CONVERSION
+FEE-CONVERSION_ORDER-90000011,20-03-2020,20-03-2020 09:59:59.999,-0.80,EUR,Frais de conversion,,260.00,,,,,,,,,,,,,,DEBIT,CONVERSION
+BALANCE-90000010,10-02-2020,10-02-2020 09:00:00.000,-200.00,EUR,Converti 200.00 EUR en 218.00 USD,,260.80,EUR,USD,1.09,,,,,,,,,1.50,218.00,DEBIT,CONVERSION
+FEE-BALANCE-90000010,10-02-2020,10-02-2020 08:59:59.999,-1.50,EUR,Frais de conversion,,460.80,,,,,,,,,,,,,,DEBIT,CONVERSION
+BALANCE-90000003,05-02-2020,05-02-2020 10:30:00.000,462.30,EUR,Converti 500.00 CHF en 462.30 EUR,,462.30,CHF,EUR,0.9246,,,,,,,,,,462.30,CREDIT,CONVERSION

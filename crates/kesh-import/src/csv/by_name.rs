@@ -30,6 +30,56 @@ pub enum HeaderByNameError {
     Duplicate(String),
 }
 
+/// Les enregistrements d'un CSV lu par noms, avant tout contrôle de colonnes.
+#[derive(Debug, Default)]
+pub(crate) struct RawRecords {
+    /// L'en-tête : le premier enregistrement non vide.
+    pub header: Option<csv::StringRecord>,
+    /// Les enregistrements de données `(numéro de ligne du fichier, cellules)`,
+    /// de même largeur que l'en-tête ; 1 = l'en-tête.
+    pub records: Vec<(usize, csv::StringRecord)>,
+    /// Les lignes de largeur différente de l'en-tête ou illisibles
+    /// `(numéro de ligne, valeur à citer)`, dans l'ordre du fichier.
+    pub malformed: Vec<(usize, String)>,
+}
+
+/// Découpe un texte CSV (virgule, guillemets doubles) en en-tête et
+/// enregistrements : lignes entièrement vides sautées, numéro de ligne celui
+/// du fichier (⚠️ un enregistrement qui suit une ligne vide au milieu du
+/// fichier reçoit le numéro de cette ligne vide : le crate `csv` date un
+/// enregistrement avant de sauter les lignes vides qui le précèdent).
+/// `flexible(true)` : la largeur se contrôle ici, ce qui permet de sauter une
+/// ligne vide (fin de fichier) avant de la compter fausse.
+pub(crate) fn read_records(text: &str) -> RawRecords {
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(true)
+        .from_reader(text.as_bytes());
+    let mut raw = RawRecords::default();
+    for result in reader.records() {
+        match result {
+            Ok(record) => {
+                if record.iter().all(|c| c.trim().is_empty()) {
+                    continue;
+                }
+                let line = record.position().map_or(0, |p| p.line() as usize);
+                match &raw.header {
+                    None => raw.header = Some(record),
+                    Some(h) if record.len() != h.len() => {
+                        raw.malformed.push((line, record.len().to_string()));
+                    }
+                    Some(_) => raw.records.push((line, record)),
+                }
+            }
+            Err(e) => {
+                let line = e.position().map_or(0, |p| p.line() as usize);
+                raw.malformed.push((line, e.to_string()));
+            }
+        }
+    }
+    raw
+}
+
 /// Forme comparable d'un nom de colonne : `trim`, puis minuscules.
 pub(crate) fn normalize(name: &str) -> String {
     name.trim().to_lowercase()
@@ -121,6 +171,25 @@ impl ColumnsByName {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_records_numbers_lines_skips_blanks_and_flags_bad_widths() {
+        let raw = read_records("a,b\n1,2\n3\n4,5\n,\n\n");
+        assert_eq!(raw.header.unwrap().iter().collect::<Vec<_>>(), ["a", "b"]);
+        let lines: Vec<usize> = raw.records.iter().map(|(l, _)| *l).collect();
+        assert_eq!(lines, [2, 4]);
+        assert_eq!(raw.malformed, [(3, "1".to_string())]);
+    }
+
+    #[test]
+    fn read_records_keeps_a_multiline_quoted_cell_in_one_record() {
+        let raw = read_records("a,b\n\"x\ny\",2\nz,3\n");
+        assert_eq!(raw.records.len(), 2);
+        assert_eq!(raw.records[0].1.get(0), Some("x\ny"));
+        assert_eq!(raw.records[1].0, 4);
+        assert!(raw.malformed.is_empty());
+        assert!(read_records("").header.is_none());
+    }
 
     fn rec(cells: &[&str]) -> csv::StringRecord {
         csv::StringRecord::from(cells.to_vec())

@@ -6,9 +6,9 @@
 //! soldes (CHF, EUR, USD) d'un compte « Stripe boutique » ; écritures de vente
 //! posées par `POST /journal-entries` (comme le script des boutiques) ; cours
 //! mensuels posés en base ; comptes de versement : la banque principale (CHF)
-//! et un compte Wise EUR fictif écrit en base (la route n'admet pas encore de
-//! compte Wise ; la réception s'y insère par le dépôt). Fixtures fictives
-//! seulement.
+//! et un compte Wise EUR fictif écrit en base (posé par le dépôt, écrit avant
+//! que la route des comptes bancaires n'admette un compte Wise ; la réception
+//! s'y insère par le dépôt). Fixtures fictives seulement.
 //!
 //! ⚠️ Harnais recopié (`test_config`, `spawn_app`, `forge_jwt`), comme dans
 //! chacun des fichiers E2E de ce répertoire (choix C70).

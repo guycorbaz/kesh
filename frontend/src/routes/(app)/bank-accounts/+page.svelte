@@ -148,12 +148,13 @@
 	// Story 38-11d (AC-1) — compte PayPal (sous le type *Compte bancaire*
 	// seulement) : libellé du compte PayPal et compte de frais. Story 40-7d
 	// (AC-1) — généralisé au compte Stripe (une case par prestataire, l'une
-	// exclut l'autre), qui porte en plus son compte bancaire de versement.
+	// exclut l'autre), qui porte en plus son compte bancaire de versement ;
+	// Story 39-11d (AC-1) — le compte Wise, de même forme que PayPal.
 	let formProvider = $state<ConfigurableProvider | null>(null);
 	let formProviderAccount = $state('');
 	let formFeeAccountId = $state<number | null>(null);
 	let formPayoutBankAccountId = $state<number | null>(null);
-	// En édition : le prestataire du compte à l'ouverture (décocher envoie `paypal: null` ou `stripe: null`).
+	// En édition : le prestataire du compte à l'ouverture (décocher envoie `paypal: null`, `wise: null` ou `stripe: null`).
 	let formWasProvider = $state<ConfigurableProvider | null>(null);
 	let isProviderForm = $derived(!isCard && formProvider !== null);
 	let isStripeForm = $derived(isProviderForm && formProvider === 'stripe');
@@ -515,7 +516,7 @@
 
 	/**
 	 * Story 38-11d (AC-1) — cocher ou décocher « Compte PayPal » ; Story 40-7d, de
-	 * même « Compte Stripe » (l'une exclut l'autre). Cochée : le QR-IBAN et
+	 * même « Compte Stripe », et Story 39-11d « Compte Wise » (chacune exclut les autres). Cochée : le QR-IBAN et
 	 * « principal » tombent (refusés par le serveur), et le compte de versement,
 	 * propre à Stripe, se vide en passant à PayPal. Décochée : un compte du plan en
 	 * devise, que seul un compte de prestataire admet, est retiré.
@@ -550,7 +551,12 @@
 							'bank-accounts-error-stripe-account',
 							'Saisissez le libellé du compte Stripe (1 à 120 caractères), par exemple « Stripe boutique ».',
 						)
-					: i18nMsg(
+					: formProvider === 'wise'
+						? i18nMsg(
+								'bank-accounts-error-wise-account',
+								'Saisissez le libellé du compte Wise (1 à 120 caractères), par exemple « Wise Pro ».',
+							)
+						: i18nMsg(
 							'bank-accounts-error-paypal-account',
 							'Saisissez le libellé du compte PayPal (1 à 120 caractères), par exemple « PayPal www ».',
 						);
@@ -563,7 +569,12 @@
 							'bank-accounts-error-stripe-ledger-required',
 							'Choisissez le compte du plan lié : sa devise est celle du solde Stripe.',
 						)
-					: i18nMsg(
+					: formProvider === 'wise'
+						? i18nMsg(
+								'bank-accounts-error-wise-ledger-required',
+								'Choisissez le compte du plan lié : sa devise est celle du solde Wise.',
+							)
+						: i18nMsg(
 							'bank-accounts-error-paypal-ledger-required',
 							'Choisissez le compte du plan lié : sa devise est celle du solde PayPal.',
 						);
@@ -572,7 +583,7 @@
 		return true;
 	}
 
-	/** Story 40-7d — la charge du prestataire du formulaire (`{ paypal }` ou `{ stripe }`), `null` hors prestataire. */
+	/** Story 40-7d — la charge du prestataire du formulaire (`{ paypal }`, `{ wise }` ou `{ stripe }`), `null` hors prestataire. */
 	function formProviderPayload() {
 		return isProviderForm && formProvider !== null
 			? providerPayload(formProvider, formProviderAccount, formFeeAccountId, isStripeForm ? formPayoutBankAccountId : null)
@@ -608,7 +619,7 @@
 		formError = null;
 		formKind = ba.accountKind;
 		formCardLast4 = ba.cardLast4 ?? '';
-		formProvider = ba.provider === 'paypal' || ba.provider === 'stripe' ? ba.provider : null;
+		formProvider = ba.provider === 'paypal' || ba.provider === 'wise' || ba.provider === 'stripe' ? ba.provider : null;
 		formWasProvider = formProvider;
 		const settings = formProvider ? providerSettingsOf(ba, formProvider) : null;
 		formProviderAccount = settings?.account ?? '';
@@ -832,9 +843,11 @@
 							// Décochée sur un compte qui en portait : retirés ; sinon absents (inchangés).
 							...(formWasProvider === 'paypal'
 								? { paypal: null }
-								: formWasProvider === 'stripe'
-									? { stripe: null }
-									: {}),
+								: formWasProvider === 'wise'
+									? { wise: null }
+									: formWasProvider === 'stripe'
+										? { stripe: null }
+										: {}),
 						};
 			await updateBankAccount(id, payload);
 			toast.success(i18nMsg('bank-accounts-toast-update-success', 'Compte bancaire modifié.'));
@@ -1034,8 +1047,8 @@
 {/snippet}
 
 {#snippet providerCheckbox(prefix: string, provider: ConfigurableProvider, primaryLocked: boolean)}
-	<!-- Story 40-7d (AC-1) — la case d'un prestataire (« Compte PayPal », « Compte Stripe ») ;
-	     cocher l'une décoche l'autre. -->
+	<!-- Story 40-7d (AC-1) — la case d'un prestataire (« Compte PayPal », « Compte Wise »,
+	     « Compte Stripe ») ; cocher l'une décoche les autres. -->
 	<div class="flex items-center gap-2">
 		<input
 			id="{prefix}-is-{provider}"
@@ -1048,7 +1061,9 @@
 		<label for="{prefix}-is-{provider}" class="block text-sm font-medium text-text">
 			{provider === 'stripe'
 				? i18nMsg('bank-accounts-labels-is-stripe', 'Compte Stripe')
-				: i18nMsg('bank-accounts-labels-is-paypal', 'Compte PayPal')}
+				: provider === 'wise'
+					? i18nMsg('bank-accounts-labels-is-wise', 'Compte Wise')
+					: i18nMsg('bank-accounts-labels-is-paypal', 'Compte PayPal')}
 		</label>
 	</div>
 {/snippet}
@@ -1060,13 +1075,14 @@
 	<div class="col-span-2">
 		<div class="flex flex-wrap items-center gap-6">
 			{@render providerCheckbox(prefix, 'paypal', primaryLocked)}
+			{@render providerCheckbox(prefix, 'wise', primaryLocked)}
 			{@render providerCheckbox(prefix, 'stripe', primaryLocked)}
 		</div>
 		{#if primaryLocked}
 			<p class="mt-1 text-xs text-text-muted" data-testid="{prefix}-is-paypal-locked">
 				{i18nMsg(
 					'bank-accounts-help-provider-primary',
-					"Le compte principal ne peut pas être un compte PayPal ni Stripe : désignez d'abord un autre compte principal.",
+					"Le compte principal ne peut pas être un compte PayPal, Wise ni Stripe : désignez d'abord un autre compte principal.",
 				)}
 			</p>
 		{:else if formProvider === 'stripe'}
@@ -1074,6 +1090,13 @@
 				{i18nMsg(
 					'bank-accounts-help-stripe',
 					'Un compte bancaire par compte Stripe et par devise : son rapport Stripe s’importe et se rapproche par la page Stripe, non par l’import bancaire.',
+				)}
+			</p>
+		{:else if formProvider === 'wise'}
+			<p class="mt-1 text-xs text-text-muted" data-testid="{prefix}-is-wise-help">
+				{i18nMsg(
+					'bank-accounts-help-wise',
+					'Un compte bancaire par compte Wise et par devise (un par solde) : ses relevés s’importent par la page Wise, non par l’import bancaire.',
 				)}
 			</p>
 		{:else}
@@ -1090,14 +1113,16 @@
 			<label for="{prefix}-{formProvider}-account" class="block text-sm font-medium text-text mb-1">
 				{formProvider === 'stripe'
 					? i18nMsg('bank-accounts-labels-stripe-account', 'Compte Stripe')
-					: i18nMsg('bank-accounts-labels-paypal-account', 'Compte PayPal')}
+					: formProvider === 'wise'
+						? i18nMsg('bank-accounts-labels-wise-account', 'Compte Wise')
+						: i18nMsg('bank-accounts-labels-paypal-account', 'Compte PayPal')}
 			</label>
 			<Input
 				id="{prefix}-{formProvider}-account"
 				bind:value={formProviderAccount}
 				maxlength={PROVIDER_ACCOUNT_MAX_CHARS}
 				list="{prefix}-{formProvider}-labels"
-				placeholder={formProvider === 'stripe' ? 'Stripe boutique' : 'PayPal www'}
+				placeholder={formProvider === 'stripe' ? 'Stripe boutique' : formProvider === 'wise' ? 'Wise Pro' : 'PayPal www'}
 				data-testid="{prefix}-{formProvider}-account"
 			/>
 			<datalist id="{prefix}-{formProvider}-labels" data-testid="{prefix}-{formProvider}-labels">
@@ -1111,7 +1136,12 @@
 							'bank-accounts-help-stripe-account',
 							'Le même libellé pour les comptes de chaque devise d’un même compte Stripe.',
 						)
-					: i18nMsg(
+					: formProvider === 'wise'
+						? i18nMsg(
+								'bank-accounts-help-wise-account',
+								'Le même libellé pour les comptes de chaque devise (chaque solde) d’un même compte Wise.',
+							)
+						: i18nMsg(
 							'bank-accounts-help-paypal-account',
 							'Le même libellé pour les comptes de chaque devise d’un même compte PayPal.',
 						)}
@@ -1315,6 +1345,11 @@
 								{i18nMsg(
 									'bank-accounts-help-stripe-ledger',
 									'Obligatoire : le compte du plan du solde Stripe, dans sa devise (un compte en devise exige le multi-devises).',
+								)}
+							{:else if isProviderForm && formProvider === 'wise'}
+								{i18nMsg(
+									'bank-accounts-help-wise-ledger',
+									'Obligatoire : le compte du plan du solde Wise, dans sa devise (un compte en devise exige le multi-devises).',
 								)}
 							{:else if isProviderForm}
 								{i18nMsg(

@@ -108,6 +108,7 @@ const bankAccount: BankAccountSummary = {
 	cardLast4: null,
 	provider: null,
 	paypal: null,
+	wise: null,
 	stripe: null,
 	isPrimary: true,
 	journalAccountId: LINKED_NON_POSTABLE.id,

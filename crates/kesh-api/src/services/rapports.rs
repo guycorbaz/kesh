@@ -24,6 +24,11 @@ use kesh_db::entities::AUDIT_ENTITY_ID_NONE;
 use kesh_db::entities::Role;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::journal_entry::Journal;
+use kesh_db::repositories::accounts;
+use kesh_report::groupes::{
+    ArbreComptes, AvecGroupes, LigneBalanceGroupee, NIVEAU_MAX, NiveauDetail, OptionsGroupes,
+    PositionSousTotal, SectionsBilan, SectionsResultat,
+};
 use kesh_report::project_report::{ProjectPeriodMode, resolve_scope};
 use kesh_report::{
     AgedReceivables, BalanceSheet, GeneralLedger, HomepageSummary, IncomeStatement, JournalReport,
@@ -203,6 +208,167 @@ pub struct DemandePeriode {
     pub period_start: Option<NaiveDate>,
     /// Fin de période ; défaut : fin de l'exercice.
     pub period_end: Option<NaiveDate>,
+}
+
+/// Plus grand nombre d'identifiants dans `open` ou dans `closed` (C-46-1-3).
+pub const MAX_GROUPES_MANUELS: usize = 500;
+
+/// Le niveau de détail d'une demande, **avant** validation de sa plage : un
+/// entier quelconque, `all` ou `flat`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NiveauDemande {
+    /// Un entier, valide de 1 à [`NIVEAU_MAX`].
+    Niveau(i64),
+    /// Tous les groupes ouverts.
+    Tous,
+    /// La présentation **à plat**, sans groupes (`detailLevel=flat`) : le
+    /// moyen d'obtenir d'un export l'ancien rendu, que l'export ne rend plus
+    /// sans paramètre (la présentation de l'écran y est le défaut). Sans
+    /// effet ailleurs : une route JSON sans `detailLevel` rend déjà le rapport
+    /// à plat.
+    APlat,
+}
+
+/// Demande de présentation par groupes de comptes (Story 46-1) du bilan ou du
+/// compte de résultat — choix de présentation, sans effet sur la trace d'audit
+/// (AC-11).
+///
+/// **Un seul endroit de validation, deux entrées** :
+/// [`DemandeGroupes::depuis_valeurs`] reçoit des valeurs typées (le MCP, Story
+/// 46-4 : tableaux d'entiers) et porte les refus du contrat ;
+/// [`DemandeGroupes::depuis_requete`] analyse les chaînes de la route REST
+/// (`detailLevel=2`, `open=1,2`), refuse ce qui n'a pas la syntaxe attendue,
+/// puis passe par la première.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DemandeGroupes {
+    /// Les options validées.
+    pub options: OptionsGroupes,
+}
+
+impl DemandeGroupes {
+    /// Entrée typée. `Ok(None)` sans `detail_level` ni rien d'autre, ou avec
+    /// [`NiveauDemande::APlat`] seul ; refus `400 VALIDATION_ERROR` qui nomme
+    /// le paramètre : niveau hors de 1 à 20, `subtotalPosition`, `open` ou
+    /// `closed` sans `detailLevel` ou avec `detailLevel=flat`, plus de 500
+    /// identifiants dans une liste, un même identifiant ouvert et fermé.
+    pub fn depuis_valeurs(
+        detail_level: Option<NiveauDemande>,
+        subtotal_position: Option<PositionSousTotal>,
+        open: Option<Vec<i64>>,
+        closed: Option<Vec<i64>>,
+    ) -> Result<Option<Self>, AppError> {
+        let niveau = match detail_level {
+            Some(NiveauDemande::Tous) => NiveauDetail::Tous,
+            Some(NiveauDemande::Niveau(n)) => match u8::try_from(n) {
+                Ok(n) if (1..=NIVEAU_MAX).contains(&n) => NiveauDetail::Niveau(n),
+                _ => {
+                    return Err(AppError::Validation(format!(
+                        "detailLevel : attendu un entier de 1 à {NIVEAU_MAX} ou « all » (reçu {n})"
+                    )));
+                }
+            },
+            // Sans niveau, ou à plat : aucune présentation par groupes, et
+            // aucun autre paramètre de groupes n'a de sens.
+            None | Some(NiveauDemande::APlat) => {
+                let motif = if detail_level.is_none() {
+                    "exige detailLevel (présentation par groupes)"
+                } else {
+                    "sans objet avec detailLevel=flat (présentation à plat)"
+                };
+                for (nom, donne) in [
+                    ("subtotalPosition", subtotal_position.is_some()),
+                    ("open", open.is_some()),
+                    ("closed", closed.is_some()),
+                ] {
+                    if donne {
+                        return Err(AppError::Validation(format!("{nom} : {motif}")));
+                    }
+                }
+                return Ok(None);
+            }
+        };
+        let liste = |nom: &str,
+                     ids: Option<Vec<i64>>|
+         -> Result<std::collections::BTreeSet<i64>, AppError> {
+            let ids = ids.unwrap_or_default();
+            if ids.len() > MAX_GROUPES_MANUELS {
+                return Err(AppError::Validation(format!(
+                    "{nom} : au plus {MAX_GROUPES_MANUELS} identifiants (reçu {})",
+                    ids.len()
+                )));
+            }
+            Ok(ids.into_iter().collect())
+        };
+        let ouverts = liste("open", open)?;
+        let fermes = liste("closed", closed)?;
+        if let Some(id) = ouverts.intersection(&fermes).next() {
+            return Err(AppError::Validation(format!(
+                "open, closed : le groupe {id} ne peut être à la fois ouvert et fermé"
+            )));
+        }
+        Ok(Some(Self {
+            options: OptionsGroupes {
+                niveau,
+                position: subtotal_position.unwrap_or(PositionSousTotal::Titre),
+                ouverts,
+                fermes,
+            },
+        }))
+    }
+
+    /// Entrée REST : les chaînes de la requête. Refuse à l'analyse ce qui n'a
+    /// pas la syntaxe attendue (`detailLevel` qui n'est ni un entier, ni `all`,
+    /// ni `flat` — `2.5`, `ALL`, `FLAT`, vide —, `subtotalPosition` autre que `header` ou
+    /// `footer`, un élément de liste qui n'est pas un entier, vide compris),
+    /// puis valide par [`DemandeGroupes::depuis_valeurs`].
+    pub fn depuis_requete(
+        detail_level: Option<&str>,
+        subtotal_position: Option<&str>,
+        open: Option<&str>,
+        closed: Option<&str>,
+    ) -> Result<Option<Self>, AppError> {
+        let niveau = detail_level
+            .map(|v| match v {
+                "all" => Ok(NiveauDemande::Tous),
+                "flat" => Ok(NiveauDemande::APlat),
+                _ => v.parse::<i64>().map(NiveauDemande::Niveau).map_err(|_| {
+                    AppError::Validation(format!(
+                        "detailLevel : attendu un entier de 1 à {NIVEAU_MAX}, « all » ou « flat » (reçu « {v} »)"
+                    ))
+                }),
+            })
+            .transpose()?;
+        let position = subtotal_position
+            .map(|v| match v {
+                "header" => Ok(PositionSousTotal::Titre),
+                "footer" => Ok(PositionSousTotal::Pied),
+                _ => Err(AppError::Validation(format!(
+                    "subtotalPosition : attendu « header » ou « footer » (reçu « {v} »)"
+                ))),
+            })
+            .transpose()?;
+        let liste = |nom: &str, v: Option<&str>| -> Result<Option<Vec<i64>>, AppError> {
+            v.map(|v| {
+                v.split(',')
+                    .map(|e| {
+                        e.trim().parse::<i64>().map_err(|_| {
+                            AppError::Validation(format!(
+                                "{nom} : « {} » n'est pas un identifiant entier",
+                                e.trim()
+                            ))
+                        })
+                    })
+                    .collect()
+            })
+            .transpose()
+        };
+        Self::depuis_valeurs(
+            niveau,
+            position,
+            liste("open", open)?,
+            liste("closed", closed)?,
+        )
+    }
 }
 
 /// Demande du rapport des journaux.
@@ -606,47 +772,125 @@ fn details_periode(
     }
 }
 
-/// Le bilan.
+/// Lit l'arbre des comptes de la société — **une seule** requête, archivés
+/// compris (un groupe archivé dont un enfant porte un solde reste un groupe),
+/// et seulement quand des groupes sont demandés (AC-10).
+async fn arbre_des_comptes(
+    acces: &ContexteAcces,
+    lecture: &Lecture,
+) -> Result<ArbreComptes, AppError> {
+    let comptes = accounts::list_by_company(lecture.pool(), acces.company_id(), true).await?;
+    Ok(ArbreComptes::depuis(&comptes))
+}
+
+/// Le bilan, sans groupes : [`bilan_par_groupes`] sans demande de groupes.
 pub async fn bilan<U: Usage>(
     acces: &ContexteAcces,
     lecture: &Lecture,
     demande: DemandePeriode,
     usage: U,
-) -> Result<Rapport<BalanceSheet, U>, AppError> {
+) -> Result<Rapport<AvecGroupes<BalanceSheet, SectionsBilan>, U>, AppError> {
+    bilan_par_groupes(acces, lecture, demande, None, usage).await
+}
+
+/// Le bilan, et, si `groupes` est donné, ses sections par groupes de comptes
+/// (Story 46-1). Sans `groupes`, le contenu est le bilan seul — sérialisé à
+/// l'octet comme avant (NFR-46-1) — et aucune requête n'est ajoutée.
+pub async fn bilan_par_groupes<U: Usage>(
+    acces: &ContexteAcces,
+    lecture: &Lecture,
+    demande: DemandePeriode,
+    groupes: Option<DemandeGroupes>,
+    usage: U,
+) -> Result<Rapport<AvecGroupes<BalanceSheet, SectionsBilan>, U>, AppError> {
     acces.exiger(EXIGENCES_BILAN.pour(&usage))?;
     validate_fiscal_year_id(demande.fiscal_year_id)?;
     let period = resoudre_periode(acces, lecture, &demande).await?;
-    let contenu = generate_balance_sheet(lecture.pool(), acces.company_id(), &period).await?;
+    let bilan = generate_balance_sheet(lecture.pool(), acces.company_id(), &period).await?;
+    // Point d'insertion prévu de la présentation miroir de l'Epic 47 (Story
+    // 47-3, pas encore dans cette base) : elle s'appliquera ici, au bilan brut,
+    // **avant** le regroupement (AC-9, décision de Guy « miroir puis groupes ») ;
+    // les groupes se calculeront alors sur les sections présentées.
+    let contenu = match groupes {
+        None => AvecGroupes::sans_groupes(bilan),
+        Some(g) => AvecGroupes::bilan(bilan, &arbre_des_comptes(acces, lecture).await?, &g.options),
+    };
     let details = details_periode("balance-sheet", &demande, &period, None);
     Ok(Rapport::nouveau(contenu, details, acces, usage))
 }
 
-/// Le compte de résultat.
+/// Le compte de résultat, sans groupes : [`compte_de_resultat_par_groupes`]
+/// sans demande de groupes.
 pub async fn compte_de_resultat<U: Usage>(
     acces: &ContexteAcces,
     lecture: &Lecture,
     demande: DemandePeriode,
     usage: U,
-) -> Result<Rapport<IncomeStatement, U>, AppError> {
+) -> Result<Rapport<AvecGroupes<IncomeStatement, SectionsResultat>, U>, AppError> {
+    compte_de_resultat_par_groupes(acces, lecture, demande, None, usage).await
+}
+
+/// Le compte de résultat, et, si `groupes` est donné, ses sections par groupes
+/// de comptes (Story 46-1) ; même régime que [`bilan_par_groupes`].
+pub async fn compte_de_resultat_par_groupes<U: Usage>(
+    acces: &ContexteAcces,
+    lecture: &Lecture,
+    demande: DemandePeriode,
+    groupes: Option<DemandeGroupes>,
+    usage: U,
+) -> Result<Rapport<AvecGroupes<IncomeStatement, SectionsResultat>, U>, AppError> {
     acces.exiger(EXIGENCES_COMPTE_DE_RESULTAT.pour(&usage))?;
     validate_fiscal_year_id(demande.fiscal_year_id)?;
     let period = resoudre_periode(acces, lecture, &demande).await?;
-    let contenu = generate_income_statement(lecture.pool(), acces.company_id(), &period).await?;
+    let resultat = generate_income_statement(lecture.pool(), acces.company_id(), &period).await?;
+    // Point d'insertion prévu de la présentation miroir de l'Epic 47 (Story
+    // 47-3, pas encore dans cette base), avant le regroupement (AC-9).
+    let contenu = match groupes {
+        None => AvecGroupes::sans_groupes(resultat),
+        Some(g) => AvecGroupes::compte_de_resultat(
+            resultat,
+            &arbre_des_comptes(acces, lecture).await?,
+            &g.options,
+        ),
+    };
     let details = details_periode("income-statement", &demande, &period, None);
     Ok(Rapport::nouveau(contenu, details, acces, usage))
 }
 
-/// La balance des comptes.
+/// La balance des comptes, sans groupes : [`balance_par_groupes`] sans
+/// demande de groupes.
 pub async fn balance<U: Usage>(
     acces: &ContexteAcces,
     lecture: &Lecture,
     demande: DemandePeriode,
     usage: U,
-) -> Result<Rapport<TrialBalance, U>, AppError> {
+) -> Result<Rapport<AvecGroupes<TrialBalance, Vec<LigneBalanceGroupee>>, U>, AppError> {
+    balance_par_groupes(acces, lecture, demande, None, usage).await
+}
+
+/// La balance des comptes, et, si `groupes` est donné, ses lignes par groupes
+/// de comptes (Story 46-6a ; la nature débitrice ou créditrice pour partition) ;
+/// même régime que [`bilan_par_groupes`] : sans `groupes`, la balance seule,
+/// à l'octet, et aucune requête de plus.
+pub async fn balance_par_groupes<U: Usage>(
+    acces: &ContexteAcces,
+    lecture: &Lecture,
+    demande: DemandePeriode,
+    groupes: Option<DemandeGroupes>,
+    usage: U,
+) -> Result<Rapport<AvecGroupes<TrialBalance, Vec<LigneBalanceGroupee>>, U>, AppError> {
     acces.exiger(EXIGENCES_BALANCE.pour(&usage))?;
     validate_fiscal_year_id(demande.fiscal_year_id)?;
     let period = resoudre_periode(acces, lecture, &demande).await?;
-    let contenu = generate_trial_balance(lecture.pool(), acces.company_id(), &period).await?;
+    let balance = generate_trial_balance(lecture.pool(), acces.company_id(), &period).await?;
+    let contenu = match groupes {
+        None => AvecGroupes::sans_groupes(balance),
+        Some(g) => AvecGroupes::balance(
+            balance,
+            &arbre_des_comptes(acces, lecture).await?,
+            &g.options,
+        ),
+    };
     let details = details_periode("trial-balance", &demande, &period, None);
     Ok(Rapport::nouveau(contenu, details, acces, usage))
 }

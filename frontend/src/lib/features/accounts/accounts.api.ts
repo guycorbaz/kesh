@@ -6,6 +6,7 @@ import type {
 	ArchiveAccountRequest,
 	ReactivateAccountRequest,
 } from './accounts.types';
+import type { ApplyGroupsRequest, ApplyGroupsResponse } from './group-proposals';
 
 export async function fetchAccounts(includeArchived = false): Promise<AccountResponse[]> {
 	return apiClient.get<AccountResponse[]>(
@@ -46,4 +47,14 @@ export async function reactivateAccount(
 	req: ReactivateAccountRequest
 ): Promise<AccountResponse> {
 	return apiClient.put<AccountResponse>(`/api/v1/accounts/${id}/reactivate`, req);
+}
+
+/**
+ * Story 46-5b — crée des comptes de groupe et y range des comptes, en une
+ * transaction, tout ou rien (`POST /api/v1/accounts/groups`, Story 46-5a).
+ * Un refus n'a rien écrit ; il porte `details.groupStep` (codes existants) ou
+ * `details.groupIndex` (`ACCOUNT_GROUP_INVALID`). Fermée aux clés d'API.
+ */
+export async function applyGroups(req: ApplyGroupsRequest): Promise<ApplyGroupsResponse> {
+	return apiClient.post<ApplyGroupsResponse>('/api/v1/accounts/groups', req);
 }

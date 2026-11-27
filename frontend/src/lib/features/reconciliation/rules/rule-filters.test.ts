@@ -200,7 +200,7 @@ describe('RulesList — filtres affichés (Story 38-11d, AC-2)', () => {
 			onEdit: () => {},
 			onRefresh: () => {},
 		});
-		expect((await r.findByTestId('rule-filter-1-0')).textContent).toBe('Type PayPal = General Payment');
+		expect((await r.findByTestId('rule-filter-1-0')).textContent).toBe('Type = General Payment');
 		expect((await r.findByTestId('rule-filter-1-1')).textContent).toBe('E-mail = a@b.ch');
 		expect((await r.findByTestId('rule-filter-1-2')).textContent).toBe('Entrées');
 		expect(r.queryByTestId('rule-filter-2-0')).toBeNull();

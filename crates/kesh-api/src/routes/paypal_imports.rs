@@ -54,7 +54,9 @@ use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 pub use crate::routes::provider_imports::CurrencyReport;
 use crate::routes::provider_imports::{
-    ImportRequest, ImportSource, ProviderGroup, ProviderLine, import_lines, load_balances,
+    DETAILS_MAX_CHARS, ImportRequest, ImportSource, NAME_MAX_CHARS, PROVIDER_TYPE_MAX_CHARS,
+    ProviderGroup, ProviderLine, TXID_COLUMN_MAX_CHARS, bounded, import_lines, load_balances,
+    parse_form, truncate_chars,
 };
 
 /// Suffixe de l'identifiant de la transaction des **frais** d'une ligne
@@ -77,16 +79,11 @@ pub const PAYPAL_NEUTRAL_PAIR_TYPES: [&str; 6] = [
 /// Le seul statut importé (comparé sans casse).
 const COMPLETED: &str = "Completed";
 
-/// Bornes des colonnes texte de `bank_transactions`, en caractères (le libellé
-/// suit la borne de la saisie manuelle).
-const DETAILS_MAX_CHARS: usize = 500;
-const NAME_MAX_CHARS: usize = 255;
-const PROVIDER_TYPE_MAX_CHARS: usize = 64;
+/// Borne de l'adresse électronique de la contrepartie, en caractères. Les
+/// autres bornes des colonnes de `bank_transactions` et les coupes de texte sont
+/// celles du cœur commun (`provider_imports`), une seule définition depuis
+/// l'intégration des Epics 39 et 40.
 const EMAIL_MAX_CHARS: usize = 254;
-const FILENAME_MAX_BYTES: usize = 255;
-/// Longueur de la colonne `bank_transactions.transaction_id`, et de
-/// `reference`, en caractères.
-const TXID_COLUMN_MAX_CHARS: usize = 255;
 /// Préfixe de la référence d'une transaction PayPal : `TXN <id>`.
 const REFERENCE_PREFIX: &str = "TXN ";
 /// Longueur maximale d'un identifiant de transaction PayPal admis à l'import —
@@ -217,20 +214,6 @@ fn neutral_pair_indices(rows: &[&PaypalRow]) -> HashSet<usize> {
     paired
 }
 
-/// Coupe `s` à `max` caractères.
-fn truncate_chars(s: &str, max: usize) -> String {
-    s.chars().take(max).collect()
-}
-
-/// Coupe `s` à `max` octets, sur une frontière de caractère.
-fn truncate_bytes(s: &str, max: usize) -> String {
-    let mut end = s.len().min(max);
-    while !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    s[..end].to_string()
-}
-
 /// Refuse les lignes dont l'identifiant de transaction dépasse
 /// [`PAYPAL_TRANSACTION_ID_MAX_CHARS`] — Story 38-11b, revue P1 (L2) : erreurs
 /// de ligne `transaction_id`, au plus [`MAX_CSV_LINE_ERRORS`], valeur tronquée
@@ -280,16 +263,10 @@ pub fn row_transaction_ids(row: &PaypalRow) -> Vec<String> {
 /// positifs sur certains remboursements, identifiant `<id>:FEE`). La somme des
 /// deux est le `Net` de la ligne (contrôlé par 38-11a). Fonction pure.
 pub fn provider_lines_of_row(row: &PaypalRow) -> Vec<ProviderLine> {
-    let opt = |v: &Option<String>, max: usize| {
-        v.as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(|s| truncate_chars(s, max))
-    };
     let email = if row.gross.is_sign_negative() {
-        opt(&row.to_email, EMAIL_MAX_CHARS)
+        bounded(&row.to_email, EMAIL_MAX_CHARS)
     } else {
-        opt(&row.from_email, EMAIL_MAX_CHARS)
+        bounded(&row.from_email, EMAIL_MAX_CHARS)
     };
     let kind = row.kind.trim().to_string();
     let base = |amount, transaction_id: String, details: String| ProviderLine {
@@ -300,12 +277,14 @@ pub fn provider_lines_of_row(row: &PaypalRow) -> Vec<ProviderLine> {
         currency: row.currency.clone(),
         reference: Some(format!("{REFERENCE_PREFIX}{}", row.transaction_id)),
         details: truncate_chars(&details, DETAILS_MAX_CHARS),
-        end_to_end_id: opt(&row.reference_txn_id, NAME_MAX_CHARS),
-        counterparty_name: opt(&row.name, NAME_MAX_CHARS),
+        end_to_end_id: bounded(&row.reference_txn_id, NAME_MAX_CHARS),
+        counterparty_name: bounded(&row.name, NAME_MAX_CHARS),
         counterparty_email: email.clone(),
         provider_type: Some(truncate_chars(&kind, PROVIDER_TYPE_MAX_CHARS)),
         rank: row.line,
         balance_after: row.balance,
+        counterparty_iban: None,
+        direction: None,
         value_date: None,
     };
 
@@ -370,62 +349,9 @@ pub fn provider_lines(ventilation: &Ventilation) -> BTreeMap<String, Vec<Provide
 // Multipart
 // ---------------------------------------------------------------------------
 
-struct PaypalImportForm {
-    file_bytes: axum::body::Bytes,
-    filename: String,
-    account: String,
-}
-
-async fn parse_form(mut multipart: Multipart) -> Result<PaypalImportForm, AppError> {
-    let mut file: Option<(axum::body::Bytes, String)> = None;
-    let mut account: Option<String> = None;
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| AppError::Validation(format!("multipart : {e}")))?
-    {
-        match field.name() {
-            Some("file") => {
-                if file.is_some() {
-                    return Err(AppError::Validation("champ `file` en double".into()));
-                }
-                let name = field.file_name().unwrap_or("paypal.csv").to_string();
-                let bytes = field
-                    .bytes()
-                    .await
-                    .map_err(|e| AppError::Validation(format!("multipart : {e}")))?;
-                file = Some((bytes, name));
-            }
-            Some("account") => {
-                if account.is_some() {
-                    return Err(AppError::Validation("champ `account` en double".into()));
-                }
-                let text = field
-                    .text()
-                    .await
-                    .map_err(|e| AppError::Validation(format!("multipart : {e}")))?;
-                account = Some(text);
-            }
-            _ => {}
-        }
-    }
-    let (file_bytes, filename) =
-        file.ok_or_else(|| AppError::Validation("champ `file` manquant".into()))?;
-    let account = account
-        .map(|a| a.trim().to_string())
-        .filter(|a| !a.is_empty())
-        .ok_or_else(|| AppError::Validation("champ `account` manquant".into()))?;
-    let filename = truncate_bytes(filename.trim(), FILENAME_MAX_BYTES);
-    Ok(PaypalImportForm {
-        file_bytes,
-        filename: if filename.is_empty() {
-            "paypal.csv".into()
-        } else {
-            filename
-        },
-        account,
-    })
-}
+// Le formulaire se lit par `provider_imports::parse_form` (une seule
+// définition depuis l'intégration des Epics 39 et 40 ; nom par défaut
+// `paypal.csv`).
 
 /// Traduit le refus du lecteur (38-11a) en `422 PAYPAL_CSV_INVALID`.
 fn csv_error(e: PaypalCsvError) -> AppError {
@@ -452,7 +378,7 @@ pub async fn create(
     Extension(current_user): Extension<CurrentUser>,
     multipart: Multipart,
 ) -> Result<(StatusCode, Json<PaypalImportResponse>), AppError> {
-    let form = parse_form(multipart).await?;
+    let form = parse_form(multipart, "paypal.csv").await?;
     let balances = load_balances(
         &state.pool,
         current_user.company_id,

@@ -58,6 +58,7 @@ function compte(id: number, description: string | null): BankAccountSummary {
 		cardLast4: null,
 		provider: null,
 		paypal: null,
+		wise: null,
 		stripe: null,
 		isPrimary: id === 1,
 		journalAccountId: 1020,

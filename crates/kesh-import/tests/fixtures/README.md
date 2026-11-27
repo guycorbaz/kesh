@@ -111,6 +111,32 @@ Générée par un script hors dépôt ; les valeurs attendues sont tenues en dur
 par `tests/paypal_csv.rs`. Sert aussi aux stories 38-11b, 38-11c2 et à l'E2E
 de 38-11d.
 
+## Wise (Story 39-11a)
+
+`wise-releve-chf-fictif.csv`, `wise-releve-eur-fictif.csv` et
+`wise-releve-usd-fictif.csv` reproduisent **la structure** du CSV « relevé »
+qu'exporte Wise pour un solde et une période, sans aucune de ses données :
+UTF-8 sans BOM, virgule, fins de ligne LF, **23 colonnes** dans l'ordre de
+Wise, la ligne la plus récente en tête, `Date` et `Date Time` en
+`JJ-MM-AAAA` (millisecondes). Les colonnes de carte et `Attachment` sont
+vides.
+
+Contenu : **toutes les dates en 2020** (exercice du seed `with-company` des
+E2E), solde courant continu, ouverture à zéro. CHF (10 lignes) : deux crédits
+`DEPOSIT` « Argent reçu de Stripe » (payeur `Stripe Payments Europe`), deux
+achats par carte (marchands inventés), conversion CHF vers EUR
+(`BALANCE-90000003`, cours `0.9246`, montant cible `462.30`) avec sa ligne
+`FEE-BALANCE-…` une milliseconde avant, virement vers l'IBAN d'exemple
+`CH93 0076 2011 6238 5295 7` avec sa ligne `FEE-TRANSFER-…`, paiement à un tiers
+(IBAN d'exemple), virement vers un numéro de compte non IBAN, une description à
+espace fine insécable U+202F, et deux jours dont l'ordre en texte est
+l'inverse de l'ordre chronologique. EUR (5 lignes) : la conversion reçue, une
+conversion EUR vers USD avec ses frais, une `CONVERSION_ORDER-…` avec ses frais.
+USD (3 lignes) : les deux conversions reçues et un achat par carte. Noms
+inventés, identifiants `…-9000000N`. Générées par un script hors dépôt ; les
+valeurs attendues sont tenues en dur par `tests/wise_csv.rs`. Servent aussi aux
+stories 39-11b, 39-11c et à l'E2E de 39-11d.
+
 ## Stripe « Itemized payout reconciliation » (Story 40-7a)
 
 | Fichier | Cas couvert |

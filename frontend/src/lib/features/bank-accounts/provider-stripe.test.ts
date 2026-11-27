@@ -28,6 +28,7 @@ function banque(id: number, overrides: Partial<BankAccountSummary> = {}): BankAc
 		cardLast4: null,
 		provider: null,
 		paypal: null,
+		wise: null,
 		stripe: null,
 		isPrimary: false,
 		journalAccountId: id,

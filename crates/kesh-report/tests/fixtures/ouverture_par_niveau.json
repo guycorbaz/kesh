@@ -1,0 +1,95 @@
+{
+ "commentaire": "Table partagee (Story 46-7, LOW-2) : etat d'un groupe de profondeur p aux listes ouverts/fermes vides, selon le niveau. Lue par le test Rust de OptionsGroupes::est_ouvert et par le test Vitest de openByLevel (reports-grouping.ts) : si la regle de la 46-1 change, les deux rougissent ensemble.",
+ "cas": [
+  {
+   "niveau": "all",
+   "profondeur": 1,
+   "ouvert": true
+  },
+  {
+   "niveau": "all",
+   "profondeur": 2,
+   "ouvert": true
+  },
+  {
+   "niveau": "all",
+   "profondeur": 3,
+   "ouvert": true
+  },
+  {
+   "niveau": "all",
+   "profondeur": 4,
+   "ouvert": true
+  },
+  {
+   "niveau": 1,
+   "profondeur": 1,
+   "ouvert": false
+  },
+  {
+   "niveau": 1,
+   "profondeur": 2,
+   "ouvert": false
+  },
+  {
+   "niveau": 1,
+   "profondeur": 3,
+   "ouvert": false
+  },
+  {
+   "niveau": 1,
+   "profondeur": 4,
+   "ouvert": false
+  },
+  {
+   "niveau": 2,
+   "profondeur": 1,
+   "ouvert": true
+  },
+  {
+   "niveau": 2,
+   "profondeur": 2,
+   "ouvert": false
+  },
+  {
+   "niveau": 2,
+   "profondeur": 3,
+   "ouvert": false
+  },
+  {
+   "niveau": 2,
+   "profondeur": 4,
+   "ouvert": false
+  },
+  {
+   "niveau": 3,
+   "profondeur": 1,
+   "ouvert": true
+  },
+  {
+   "niveau": 3,
+   "profondeur": 2,
+   "ouvert": true
+  },
+  {
+   "niveau": 3,
+   "profondeur": 3,
+   "ouvert": false
+  },
+  {
+   "niveau": 3,
+   "profondeur": 4,
+   "ouvert": false
+  },
+  {
+   "niveau": 20,
+   "profondeur": 19,
+   "ouvert": true
+  },
+  {
+   "niveau": 20,
+   "profondeur": 20,
+   "ouvert": false
+  }
+ ]
+}

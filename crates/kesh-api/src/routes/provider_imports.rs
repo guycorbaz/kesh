@@ -1,9 +1,10 @@
 //! Cœur commun de l'import des mouvements d'un prestataire — socle S6 (Story
-//! 38-12a, extrait de la route PayPal de la Story 38-11b).
+//! 38-12a, extrait de la route PayPal de la Story 38-11b ; l'import Wise y
+//! passe depuis la Story 39-14).
 //!
 //! Le cœur reçoit des lignes **neutres** ([`ProviderLine`]), déjà ventilées par
-//! devise : le format d'origine (CSV PayPal, téléchargement par l'API, puis
-//! Wise et Stripe) est l'affaire de l'appelant. Il fait, et lui seul :
+//! devise : le format d'origine (CSV PayPal, téléchargement par l'API, relevés
+//! Wise, puis Stripe) est l'affaire de l'appelant. Il fait, et lui seul :
 //!
 //! 1. la recherche des comptes bancaires par devise et les refus indépendants
 //!    du format, dans l'ordre : `422 PROVIDER_CURRENCY_ACCOUNT_MISSING` → `409
@@ -17,13 +18,24 @@
 //!    téléchargement), les **doublons** par identifiant de transaction, une
 //!    entrée `bank_imports` par devise qui insère au moins une transaction, les
 //!    traces `bank_import.created` (une par entrée) et la trace de la source
-//!    (`paypal_import.created` ou `paypal_download.created`, jamais les deux).
+//!    (`paypal_import.created`, `paypal_download.created` ou
+//!    `wise_import.created`, une seule).
 //!
 //! **Doublons** : l'unité est le **groupe** d'une ligne de la source (le brut
 //! et ses frais, [`ProviderLine::group_id`]). Un groupe dont l'identifiant a
 //! déjà paru plus haut, ou dont une transaction (brut ou frais) existe déjà sur
-//! le compte bancaire, est ignoré entier. La fenêtre date-montant-référence des
-//! imports bancaires ne s'applique pas.
+//! le compte bancaire, est ignoré entier. Une ligne qui porte un **sens**
+//! ([`ProviderLine::direction`], Wise) se juge sur (identifiant, sens)
+//! ([`ExistingKeys`]). La fenêtre date-montant-référence des imports bancaires
+//! ne s'applique pas.
+//!
+//! **Relevés** ([`ImportSource::Statements`], Wise, Story 39-14) : un fichier
+//! par devise, dans l'ordre de l'appelant. Refus et écritures suivent cet
+//! ordre (sinon celui des devises) ; nom, empreinte, période et soldes de
+//! l'entrée sont ceux du relevé entier ; la continuité est jugée
+//! (`bank_imports::continuity_gap`, avertissements au compte rendu) ; la trace
+//! de la source porte `files` (le compte rendu de chaque relevé) au lieu de
+//! `currencies`.
 //!
 //! **Rejeu sur interblocage** (Story 38-11c1, P2-L1 de la 38-11b) : la
 //! relecture verrouillante des soldes pose ses verrous partagés sur les lignes
@@ -44,6 +56,7 @@ use kesh_db::entities::bank_import::{BankImportSourceFormat, NewBankImport};
 use kesh_db::entities::bank_transaction::NewBankTransaction;
 use kesh_db::errors::DbError;
 use kesh_db::repositories::bank_accounts::{self, ProviderBalance};
+use kesh_db::repositories::bank_transactions::ExistingTransaction;
 use kesh_db::repositories::{audit_log, bank_imports, bank_transactions};
 use kesh_reconciliation::{ReconciliationError, with_account_locks};
 
@@ -69,7 +82,11 @@ pub const AUDIT_ACTIONS: &[&str] = &[
     "paypal_import.created",
     "stripe_download.created",
     "stripe_import.created",
+    "wise_import.created",
 ];
+
+/// Code de l'avertissement de continuité ([`ImportWarning`]).
+pub const WARNING_GAP: &str = "gap";
 
 /// Refuse une action de trace absente d'[`AUDIT_ACTIONS`] : faute de Kesh (un
 /// appelant neuf non inscrit, dont la trace n'aurait pas de libellé), non de
@@ -85,6 +102,15 @@ pub fn check_audit_action(action: &str) -> Result<(), AppError> {
     Err(AppError::Internal(
         "action de trace d'import non inscrite".into(),
     ))
+}
+
+/// Sens d'une ligne, pour une source où un même identifiant peut porter un
+/// débit **et** un crédit (Wise : réserve de carte expirée puis recréditée,
+/// vérification de carte — Story 39-11a2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LineDirection {
+    Debit,
+    Credit,
 }
 
 /// Une transaction à importer, indépendante du format d'origine.
@@ -118,6 +144,11 @@ pub struct ProviderLine {
     pub rank: usize,
     /// Solde du compte du prestataire après la ligne, s'il est connu.
     pub balance_after: Option<Decimal>,
+    /// IBAN de la contrepartie, s'il est connu (Wise, Story 39-14).
+    pub counterparty_iban: Option<String>,
+    /// Sens de la ligne ([`LineDirection`]) : `Some` fait juger le doublon sur
+    /// (identifiant, sens) ; `None` (PayPal, Stripe), sur l'identifiant seul.
+    pub direction: Option<LineDirection>,
     /// Date de valeur (Stripe : disponibilité des fonds) ; `None` pour PayPal.
     /// *Ajout de la 40-7b à la forme de la 38-12a.*
     pub value_date: Option<NaiveDate>,
@@ -141,7 +172,7 @@ impl ProviderLine {
             details: self.details,
             end_to_end_id: self.end_to_end_id,
             transaction_id: Some(self.transaction_id),
-            counterparty_iban: None,
+            counterparty_iban: self.counterparty_iban,
             counterparty_name: self.counterparty_name,
             provider_type: self.provider_type,
             counterparty_email: self.counterparty_email,
@@ -153,9 +184,25 @@ impl ProviderLine {
 /// l'unité des doublons. Jamais vide.
 pub type ProviderGroup = Vec<ProviderLine>;
 
+/// Avertissement d'un relevé — Story 39-11b (AC-5), au cœur depuis la Story
+/// 39-14 : `gap`, le relevé ne prolonge pas le précédent du compte
+/// (`expected` = sa clôture, `found` = l'ouverture du relevé).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportWarning {
+    pub code: &'static str,
+    pub expected: Decimal,
+    pub found: Decimal,
+    pub previous_import_id: i64,
+}
+
 /// Compte rendu d'une devise : son compte bancaire, l'entrée `bank_imports`
 /// créée (`null` si toutes ses lignes étaient des doublons), et les nombres de
-/// **transactions** insérées et ignorées comme doublons.
+/// **transactions** insérées et ignorées comme doublons. `warnings` : les
+/// avertissements de continuité d'un relevé ([`ImportSource::Statements`],
+/// éventuellement vide) ; **omis** pour les autres sources (la réponse PayPal
+/// ne change pas). Pour un relevé, la trace `*_import.created` fusionne ce
+/// compte rendu à [`CurrencyStatement::trace`] (`files`).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CurrencyReport {
@@ -164,6 +211,28 @@ pub struct CurrencyReport {
     pub import_id: Option<i64>,
     pub inserted: usize,
     pub duplicates: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warnings: Option<Vec<ImportWarning>>,
+}
+
+/// Le relevé d'une devise ([`ImportSource::Statements`]) : un fichier.
+#[derive(Debug, Clone)]
+pub struct CurrencyStatement<'a> {
+    /// Devise du relevé (une clé de [`ImportRequest::by_currency`]).
+    pub currency: String,
+    /// Nom de l'entrée (`bank_imports.filename`), borné par l'appelant.
+    pub filename: String,
+    /// Octets du fichier : empreinte = SHA-256(octets ‖ `:` ‖ devise).
+    pub bytes: &'a [u8],
+    /// Période du relevé entier (doublons compris).
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    /// Soldes d'ouverture et de clôture du relevé.
+    pub opening_balance: Decimal,
+    pub closing_balance: Decimal,
+    /// Champs propres au fichier, portés à la trace de la source avec le
+    /// compte rendu de la devise (`files`).
+    pub trace: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Ce sur quoi porte l'empreinte d'une devise.
@@ -176,6 +245,9 @@ pub enum ImportSource<'a> {
     /// triés, ‖ `:` ‖ devise ; **aucun** refus d'empreinte (relancer la même
     /// période rend « 0 insérée »).
     Download,
+    /// Un relevé par devise, dans l'ordre de l'appelant (Wise, Story 39-14) :
+    /// voir l'en-tête du module. `ImportRequest::filename` est alors ignoré.
+    Statements(&'a [CurrencyStatement<'a>]),
 }
 
 /// Une demande d'import au cœur.
@@ -186,13 +258,14 @@ pub struct ImportRequest<'a> {
     pub account: &'a str,
     /// Nom de l'import (`bank_imports.filename`), borné par l'appelant.
     pub filename: &'a str,
-    /// Fichier ou téléchargement.
+    /// Fichier, téléchargement ou relevés par devise ([`ImportSource`]).
     pub source: ImportSource<'a>,
     /// Nom de l'opération du rejeu sur interblocage (journal et tests).
     pub retry_operation: &'static str,
     /// Action de la trace de la source (`paypal_import.created`…).
     pub audit_action: &'static str,
-    /// `details` de cette trace, sans `currencies` (que le cœur ajoute).
+    /// `details` de cette trace, sans `currencies` (que le cœur ajoute pour un
+    /// fichier ou un téléchargement) ni `files` (qu'il ajoute pour des relevés).
     pub audit_details: serde_json::Map<String, serde_json::Value>,
     /// Les groupes (une ligne de la source chacun), ventilés par devise,
     /// dans l'ordre de la source.
@@ -223,13 +296,17 @@ struct Target<'a> {
     balance: &'a ProviderBalance,
     groups: Vec<ProviderGroup>,
     file_hash: String,
+    /// Son relevé ([`ImportSource::Statements`]).
+    statement: Option<&'a CurrencyStatement<'a>>,
 }
 
-/// L'empreinte d'une devise ([`ImportSource`]).
-fn file_hash(source: ImportSource<'_>, currency: &str, groups: &[ProviderGroup]) -> String {
-    let mut hashed = match source {
-        ImportSource::File(bytes) => bytes.to_vec(),
-        ImportSource::Download => {
+/// L'empreinte d'une devise : des octets d'un fichier ou d'un relevé
+/// (`bytes`), sinon des identifiants triés d'un téléchargement
+/// ([`ImportSource`]).
+fn file_hash(bytes: Option<&[u8]>, currency: &str, groups: &[ProviderGroup]) -> String {
+    let mut hashed = match bytes {
+        Some(bytes) => bytes.to_vec(),
+        None => {
             let mut ids: Vec<&str> = groups
                 .iter()
                 .flatten()
@@ -244,24 +321,85 @@ fn file_hash(source: ImportSource<'_>, currency: &str, groups: &[ProviderGroup])
     compute_sha256_hex(&hashed)
 }
 
-/// Écarte les **doublons** — par groupe ([`ProviderGroup`], une ligne de la
-/// source) : un groupe dont l'identifiant ([`ProviderLine::group_id`]) a déjà
-/// paru plus haut, ou dont une transaction existe déjà sur le compte
-/// (`existing`), est ignoré entier. Rend les lignes gardées et le nombre de
-/// **transactions** ignorées.
+/// Les transactions déjà sur un compte bancaire, pour le jugement des
+/// doublons : par identifiant, et par (identifiant, sens) — le sens d'une
+/// transaction en base se lit au signe de son montant (débit ≤ 0, crédit ≥ 0 ;
+/// un montant **nul** vaut pour les deux sens : il ne fait jamais insérer une
+/// seconde ligne). Règle de la Story 39-11a2, au cœur depuis la 39-14. Les
+/// identifiants se comparent exactement, tels que la base les rend.
+#[derive(Debug, Default)]
+pub struct ExistingKeys {
+    ids: HashSet<String>,
+    debits: HashSet<String>,
+    credits: HashSet<String>,
+}
+
+impl ExistingKeys {
+    /// Les clés des transactions `existing`.
+    pub fn of(existing: &[ExistingTransaction]) -> Self {
+        let mut keys = Self::default();
+        for t in existing {
+            if t.amount <= Decimal::ZERO {
+                keys.debits.insert(t.transaction_id.clone());
+            }
+            if t.amount >= Decimal::ZERO {
+                keys.credits.insert(t.transaction_id.clone());
+            }
+            keys.ids.insert(t.transaction_id.clone());
+        }
+        keys
+    }
+
+    /// Des identifiants seuls, sans montant : une ligne sans sens y est
+    /// présente si son identifiant y est ; une ligne à sens, jamais.
+    pub fn from_ids<I: IntoIterator<Item = String>>(ids: I) -> Self {
+        Self {
+            ids: ids.into_iter().collect(),
+            ..Self::default()
+        }
+    }
+
+    /// Vrai si `line` est déjà sur le compte : par identifiant, ou par
+    /// (identifiant, sens) si la ligne porte un sens.
+    pub fn contains(&self, line: &ProviderLine) -> bool {
+        let set = match line.direction {
+            None => &self.ids,
+            Some(LineDirection::Debit) => &self.debits,
+            Some(LineDirection::Credit) => &self.credits,
+        };
+        set.contains(&line.transaction_id)
+    }
+}
+
+/// [`dedupe_by_keys`] contre des identifiants seuls
+/// ([`ExistingKeys::from_ids`]) : la forme de la Story 38-12a, gardée pour
+/// ses appelants (tests de PayPal et de Stripe) ; le cœur appelle
+/// [`dedupe_by_keys`].
 pub fn dedupe_groups<'a>(
     groups: &'a [ProviderGroup],
     existing: &HashSet<String>,
 ) -> (Vec<&'a ProviderLine>, usize) {
-    let mut seen: HashSet<&str> = HashSet::new();
+    dedupe_by_keys(groups, &ExistingKeys::from_ids(existing.iter().cloned()))
+}
+
+/// Écarte les **doublons** — par groupe ([`ProviderGroup`], une ligne de la
+/// source) : un groupe dont l'identifiant ([`ProviderLine::group_id`]) a déjà
+/// paru plus haut avec le même sens, ou dont une transaction existe déjà sur
+/// le compte (`existing`), est ignoré entier. Rend les lignes gardées et le
+/// nombre de **transactions** ignorées.
+pub fn dedupe_by_keys<'a>(
+    groups: &'a [ProviderGroup],
+    existing: &ExistingKeys,
+) -> (Vec<&'a ProviderLine>, usize) {
+    let mut seen: HashSet<(&str, Option<LineDirection>)> = HashSet::new();
     let mut kept = Vec::new();
     let mut duplicates = 0;
     for group in groups {
         let Some(first) = group.first() else {
             continue;
         };
-        let in_source = !seen.insert(first.group_id.as_str());
-        if in_source || group.iter().any(|l| existing.contains(&l.transaction_id)) {
+        let in_source = !seen.insert((first.group_id.as_str(), first.direction));
+        if in_source || group.iter().any(|l| existing.contains(l)) {
             duplicates += group.len();
         } else {
             kept.extend(group.iter());
@@ -291,8 +429,10 @@ pub async fn import_lines(
         });
     }
 
+    let order = currency_order(request)?;
     let mut targets: Vec<Target<'_>> = Vec::new();
-    for (currency, groups) in &request.by_currency {
+    for (currency, statement) in order {
+        let groups = &request.by_currency[currency];
         let mut matching = balances
             .iter()
             .filter(|b| b.currency() == currency.as_str());
@@ -306,11 +446,17 @@ pub async fn import_lines(
                 bank_account_id: second.account.id,
             });
         }
+        let bytes = match (request.source, statement) {
+            (_, Some(statement)) => Some(statement.bytes),
+            (ImportSource::File(bytes), None) => Some(bytes),
+            _ => None,
+        };
         targets.push(Target {
             currency: currency.clone(),
             balance: first,
             groups: groups.clone(),
-            file_hash: file_hash(request.source, currency, groups),
+            file_hash: file_hash(bytes, currency, groups),
+            statement,
         });
     }
     if let Some(closed) = targets.iter().find(|t| t.balance.account.is_closed()) {
@@ -329,6 +475,34 @@ pub async fn import_lines(
         import_under_locks(pool, current_user, request, &targets, &ids, audit_entity_id)
     })
     .await
+}
+
+/// L'ordre des devises : celui des relevés ([`ImportSource::Statements`]),
+/// sinon celui de `by_currency`, chacune avec son relevé. Des relevés qui ne
+/// couvrent pas exactement les devises de `by_currency`, une fois chacune,
+/// sont une faute de l'appelant : `AppError::Internal`, rien d'écrit.
+fn currency_order<'r>(
+    request: &'r ImportRequest<'_>,
+) -> Result<Vec<(&'r String, Option<&'r CurrencyStatement<'r>>)>, AppError> {
+    let ImportSource::Statements(statements) = request.source else {
+        return Ok(request.by_currency.keys().map(|c| (c, None)).collect());
+    };
+    let distinct: HashSet<&str> = statements.iter().map(|s| s.currency.as_str()).collect();
+    let covered = distinct.len() == statements.len()
+        && statements.len() == request.by_currency.len()
+        && statements
+            .iter()
+            .all(|s| request.by_currency.contains_key(&s.currency));
+    if !covered {
+        tracing::error!(
+            provider = request.provider,
+            "import : relevés et devises ne coïncident pas"
+        );
+        return Err(AppError::Internal(
+            "import : relevés et devises ne coïncident pas".into(),
+        ));
+    }
+    Ok(statements.iter().map(|s| (&s.currency, Some(s))).collect())
 }
 
 /// **Une tentative** de l'import : les verrous nommés des comptes `ids`, par
@@ -477,7 +651,7 @@ async fn write_under_locks(
         return Err(e);
     }
 
-    if let ImportSource::File(_) = request.source {
+    if !matches!(request.source, ImportSource::Download) {
         for target in targets {
             if let Some(existing) =
                 bank_imports::find_by_company_and_hash(&mut *tx, company_id, &target.file_hash)
@@ -501,14 +675,37 @@ async fn write_under_locks(
             .flatten()
             .map(|l| l.transaction_id.clone())
             .collect();
-        let existing = bank_transactions::existing_transaction_ids(
+        let existing = bank_transactions::existing_transactions_by_ids(
             &mut tx,
             company_id,
             bank_account_id,
             &candidate_ids,
         )
         .await?;
-        let (kept, duplicates) = dedupe_groups(&target.groups, &existing);
+        let (kept, duplicates) = dedupe_by_keys(&target.groups, &ExistingKeys::of(&existing));
+        // Continuité d'un relevé : jugée sous les verrous, avant l'insertion.
+        let warnings = match target.statement {
+            None => None,
+            Some(statement) => Some(
+                bank_imports::continuity_gap(
+                    &mut tx,
+                    company_id,
+                    bank_account_id,
+                    statement.period_from,
+                    statement.opening_balance,
+                    None,
+                )
+                .await?
+                .into_iter()
+                .map(|gap| ImportWarning {
+                    code: WARNING_GAP,
+                    expected: gap.expected,
+                    found: gap.found,
+                    previous_import_id: gap.previous_import_id,
+                })
+                .collect(),
+            ),
+        };
         if kept.is_empty() {
             reports.push(CurrencyReport {
                 currency: target.currency.clone(),
@@ -516,26 +713,37 @@ async fn write_under_locks(
                 import_id: None,
                 inserted: 0,
                 duplicates,
+                warnings,
             });
             continue;
         }
-        let period_from = kept
-            .iter()
-            .map(|l| l.booking_date)
-            .min()
-            .unwrap_or(NaiveDate::MIN);
-        let period_to = kept
-            .iter()
-            .map(|l| l.booking_date)
-            .max()
-            .unwrap_or(NaiveDate::MIN);
-        // Le solde de la dernière ligne (date la plus tardive ; à date égale, la
-        // dernière de la source) qui en porte un.
-        let closing_balance = kept
-            .iter()
-            .filter(|l| l.balance_after.is_some())
-            .max_by_key(|l| (l.booking_date, l.rank))
-            .and_then(|l| l.balance_after);
+        let (period_from, period_to, opening_balance, closing_balance) = match target.statement {
+            // Le relevé entier, doublons compris (la continuité relit ces
+            // valeurs stockées, Story 39-11c).
+            Some(s) => (
+                s.period_from,
+                s.period_to,
+                Some(s.opening_balance),
+                Some(s.closing_balance),
+            ),
+            None => (
+                kept.iter()
+                    .map(|l| l.booking_date)
+                    .min()
+                    .unwrap_or(NaiveDate::MIN),
+                kept.iter()
+                    .map(|l| l.booking_date)
+                    .max()
+                    .unwrap_or(NaiveDate::MIN),
+                None,
+                // Le solde de la dernière ligne (date la plus tardive ; à date
+                // égale, la dernière de la source) qui en porte un.
+                kept.iter()
+                    .filter(|l| l.balance_after.is_some())
+                    .max_by_key(|l| (l.booking_date, l.rank))
+                    .and_then(|l| l.balance_after),
+            ),
+        };
         let new_txs: Vec<NewBankTransaction> = kept
             .into_iter()
             .map(|l| {
@@ -549,13 +757,16 @@ async fn write_under_locks(
         let new_import = NewBankImport {
             company_id,
             bank_account_id,
-            filename: request.filename.to_string(),
+            filename: target
+                .statement
+                .map_or(request.filename, |s| s.filename.as_str())
+                .to_string(),
             file_hash: target.file_hash.clone(),
             source_format: BankImportSourceFormat::Csv,
             statement_id: None,
             period_from,
             period_to,
-            opening_balance: None,
+            opening_balance,
             closing_balance,
             transaction_count,
             imported_by_user_id: current_user.user_id,
@@ -596,11 +807,32 @@ async fn write_under_locks(
             import_id: Some(header.id),
             inserted,
             duplicates,
+            warnings,
         });
     }
 
     let mut details = request.audit_details.clone();
-    details.insert("currencies".into(), serde_json::json!(reports));
+    match request.source {
+        // Un relevé : ses champs propres, complétés du compte rendu de sa
+        // devise (les cibles suivent l'ordre des relevés).
+        ImportSource::Statements(statements) => {
+            let files: Vec<serde_json::Value> = statements
+                .iter()
+                .zip(&reports)
+                .map(|(statement, report)| {
+                    let mut file = statement.trace.clone();
+                    if let serde_json::Value::Object(report) = serde_json::json!(report) {
+                        file.extend(report);
+                    }
+                    serde_json::Value::Object(file)
+                })
+                .collect();
+            details.insert("files".into(), serde_json::Value::Array(files));
+        }
+        _ => {
+            details.insert("currencies".into(), serde_json::json!(reports));
+        }
+    }
     audit_log::insert_in_tx(
         &mut tx,
         NewAuditLogEntry::for_actor(
@@ -621,9 +853,9 @@ async fn write_under_locks(
 }
 
 // ---------------------------------------------------------------------------
-// Aides communes aux routes d'import de prestataire (ajout de la 40-7b :
-// la route Stripe en a besoin, celle de PayPal garde ses copies privées —
-// à replier à l'intégration, voir le Dev Agent Record de la 40-7b)
+// Aides communes aux routes d'import de prestataire (ajout de la 40-7b ;
+// les copies de PayPal et de Wise y sont repliées à l'intégration des Epics
+// 39 et 40 : une seule définition, PayPal, Stripe et Wise s'en servent)
 // ---------------------------------------------------------------------------
 
 /// Borne des colonnes texte `details`, en caractères.
@@ -637,8 +869,10 @@ pub const FILENAME_MAX_BYTES: usize = 255;
 /// Longueur de la colonne `bank_transactions.transaction_id`, et de
 /// `reference`, en caractères.
 pub const TXID_COLUMN_MAX_CHARS: usize = 255;
-/// Suffixe de l'identifiant de la transaction des **frais** : `<id>:FEE`.
-pub const FEE_SUFFIX: &str = ":FEE";
+/// Suffixe de l'identifiant de la transaction des **frais** : `<id>:FEE`,
+/// celui du classement qui le lit (`kesh_reconciliation::paypal`, repris par
+/// `kesh_reconciliation::stripe`) — une seule définition.
+pub const FEE_SUFFIX: &str = kesh_reconciliation::paypal::PAYPAL_FEE_SUFFIX;
 
 /// Coupe `s` à `max` caractères.
 pub fn truncate_chars(s: &str, max: usize) -> String {
@@ -737,6 +971,7 @@ mod tests {
     fn action_de_trace_inscrite_ou_refusee() {
         assert!(check_audit_action("paypal_import.created").is_ok());
         assert!(check_audit_action("paypal_download.created").is_ok());
+        assert!(check_audit_action("wise_import.created").is_ok());
         assert!(matches!(
             check_audit_action("inconnue"),
             Err(AppError::Internal(_))
@@ -758,6 +993,8 @@ mod tests {
             provider_type: None,
             rank: 1,
             balance_after: None,
+            counterparty_iban: None,
+            direction: None,
             value_date: None,
         }
     }
@@ -766,18 +1003,9 @@ mod tests {
     fn l_empreinte_d_un_telechargement_ne_depend_pas_de_l_ordre() {
         let a = [vec![line("A", "A", "1")], vec![line("B", "B", "2")]];
         let b = [vec![line("B", "B", "2")], vec![line("A", "A", "1")]];
-        assert_eq!(
-            file_hash(ImportSource::Download, "EUR", &a),
-            file_hash(ImportSource::Download, "EUR", &b)
-        );
-        assert_ne!(
-            file_hash(ImportSource::Download, "EUR", &a),
-            file_hash(ImportSource::Download, "USD", &a)
-        );
-        assert_ne!(
-            file_hash(ImportSource::Download, "EUR", &a),
-            file_hash(ImportSource::Download, "EUR", &a[..1])
-        );
+        assert_eq!(file_hash(None, "EUR", &a), file_hash(None, "EUR", &b));
+        assert_ne!(file_hash(None, "EUR", &a), file_hash(None, "USD", &a));
+        assert_ne!(file_hash(None, "EUR", &a), file_hash(None, "EUR", &a[..1]));
     }
 
     #[test]
@@ -795,5 +1023,135 @@ mod tests {
         let ids: Vec<&str> = kept.iter().map(|l| l.transaction_id.as_str()).collect();
         assert_eq!(ids, ["A", "A:FEE", "C"]);
         assert_eq!(duplicates, 4, "la seconde A (deux) et B (deux)");
+    }
+    /// Story 39-11a2, au cœur depuis la 39-14 — le sens d'une transaction en
+    /// base se lit au signe de son montant, un montant nul vaut pour les deux ;
+    /// une ligne sans sens se juge sur l'identifiant seul.
+    #[test]
+    fn les_cles_existantes_lisent_le_sens_au_signe() {
+        let t = |id: &str, amount: &str| ExistingTransaction {
+            transaction_id: id.into(),
+            amount: amount.parse().unwrap(),
+            booking_date: NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+        };
+        let keys = ExistingKeys::of(&[
+            t("CARD-1", "-32.10"),
+            t("CARD-2", "0.50"),
+            t("CARD-3", "0.00"),
+        ]);
+        let has = |id: &str, direction| {
+            keys.contains(&ProviderLine {
+                direction,
+                ..line(id, id, "1")
+            })
+        };
+        use LineDirection::{Credit, Debit};
+        assert!(has("CARD-1", Some(Debit)));
+        assert!(!has("CARD-1", Some(Credit)));
+        assert!(has("CARD-2", Some(Credit)));
+        assert!(!has("CARD-2", Some(Debit)));
+        assert!(has("CARD-3", Some(Debit)));
+        assert!(has("CARD-3", Some(Credit)));
+        assert!(has("CARD-1", None) && has("CARD-2", None) && has("CARD-3", None));
+        assert!(!has("CARD-4", None));
+    }
+
+    /// Un même identifiant au débit puis au crédit, dans la source : deux
+    /// groupes distincts, aucun doublon ; le même sens deux fois : doublon.
+    #[test]
+    fn dans_la_source_le_doublon_tient_compte_du_sens() {
+        let sens = |id: &str, amount: &str, direction| {
+            vec![ProviderLine {
+                direction: Some(direction),
+                ..line(id, id, amount)
+            }]
+        };
+        let groups = [
+            sens("CARD-1", "-5", LineDirection::Debit),
+            sens("CARD-1", "5", LineDirection::Credit),
+            sens("CARD-1", "-5", LineDirection::Debit),
+        ];
+        let (kept, duplicates) = dedupe_by_keys(&groups, &ExistingKeys::default());
+        assert_eq!(kept.len(), 2);
+        assert_eq!(duplicates, 1);
+    }
+
+    /// L'empreinte d'un relevé est celle d'un fichier de mêmes octets
+    /// (SHA-256(octets ‖ `:` ‖ devise)), indépendante des lignes.
+    #[test]
+    fn l_empreinte_d_un_releve_est_celle_de_ses_octets() {
+        let groups = [vec![line("A", "A", "1")]];
+        assert_eq!(
+            file_hash(Some(b"abc"), "CHF", &groups),
+            compute_sha256_hex(b"abc:CHF")
+        );
+        assert_eq!(
+            file_hash(Some(b"abc"), "CHF", &groups),
+            file_hash(Some(b"abc"), "CHF", &[])
+        );
+    }
+
+    fn request<'a>(
+        statements: &'a [CurrencyStatement<'a>],
+        currencies: &[&str],
+    ) -> ImportRequest<'a> {
+        ImportRequest {
+            provider: "wise",
+            account: "Compte",
+            filename: "",
+            source: ImportSource::Statements(statements),
+            retry_operation: "test",
+            audit_action: "wise_import.created",
+            audit_details: serde_json::Map::new(),
+            by_currency: currencies
+                .iter()
+                .map(|c| (c.to_string(), vec![vec![line("A", "A", "1")]]))
+                .collect(),
+        }
+    }
+
+    fn statement(currency: &str) -> CurrencyStatement<'static> {
+        let d = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+        CurrencyStatement {
+            currency: currency.into(),
+            filename: format!("{currency}.csv"),
+            bytes: b"x",
+            period_from: d,
+            period_to: d,
+            opening_balance: Decimal::ZERO,
+            closing_balance: Decimal::ZERO,
+            trace: serde_json::Map::new(),
+        }
+    }
+
+    /// Les relevés fixent l'ordre des devises (celui de l'appelant, non
+    /// l'alphabétique) ; des relevés qui ne couvrent pas exactement les
+    /// devises, une fois chacune, sont refusés en erreur interne.
+    #[test]
+    fn l_ordre_des_releves_et_leur_couverture() {
+        let usd_chf = [statement("USD"), statement("CHF")];
+        let usd_chf_request = request(&usd_chf, &["CHF", "USD"]);
+        let order: Vec<&str> = currency_order(&usd_chf_request)
+            .unwrap()
+            .into_iter()
+            .map(|(c, s)| {
+                assert_eq!(s.map(|s| s.currency.as_str()), Some(c.as_str()));
+                c.as_str()
+            })
+            .collect();
+        assert_eq!(order, ["USD", "CHF"]);
+        let refuse = |statements: &[CurrencyStatement<'_>], currencies: &[&str]| {
+            matches!(
+                currency_order(&request(statements, currencies)),
+                Err(AppError::Internal(_))
+            )
+        };
+        assert!(refuse(&[statement("USD")], &["CHF", "USD"]));
+        assert!(refuse(&usd_chf, &["USD"]));
+        assert!(refuse(
+            &[statement("USD"), statement("USD")],
+            &["CHF", "USD"]
+        ));
+        assert!(refuse(&[statement("EUR")], &["USD"]));
     }
 }

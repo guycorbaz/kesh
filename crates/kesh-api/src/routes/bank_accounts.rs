@@ -39,8 +39,8 @@ use kesh_db::entities::account::AccountType;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::bank_account::{
     BANK_ACCOUNT_BANK_NAME_MAX_CHARS, BANK_ACCOUNT_DESCRIPTION_MAX_CHARS, BankAccount,
-    BankAccountKind, NewBankAccount, PROVIDER_ACCOUNT_MAX_CHARS, PROVIDER_STRIPE, PaypalSettings,
-    ProviderSettings, StripeSettings, bank_account_display_name,
+    BankAccountKind, NewBankAccount, PROVIDER_ACCOUNT_MAX_CHARS, PROVIDER_STRIPE, PROVIDER_WISE,
+    PaypalSettings, ProviderSettings, StripeSettings, bank_account_display_name,
 };
 use kesh_db::errors::{DbError, NonPostableAccount};
 use kesh_db::repositories::bank_accounts::BankAccountPutFields;
@@ -113,9 +113,15 @@ pub struct CreateBankAccountBody {
     /// bancaire ordinaire.
     #[serde(default)]
     pub paypal: Option<PaypalSettings>,
+    /// Story 39-11b (AC-2) — réglages Wise, de même forme que `paypal` : le
+    /// compte est le solde, dans la devise de son compte du plan, du compte Wise
+    /// `account`.
+    #[serde(default)]
+    pub wise: Option<PaypalSettings>,
     /// Story 40-7b (AC-2) — réglages Stripe, facultatifs : `{ account,
-    /// feeAccountId, payoutBankAccountId }`. Mêmes règles que `paypal` ; les
-    /// deux ensemble sont refusés (`400 VALIDATION_ERROR`).
+    /// feeAccountId, payoutBankAccountId }`. Mêmes règles que `paypal` ; deux
+    /// prestataires ensemble (`paypal`, `wise`, `stripe`) sont refusés (`400
+    /// VALIDATION_ERROR`).
     #[serde(default)]
     pub stripe: Option<StripeSettings>,
 }
@@ -214,6 +220,10 @@ pub struct UpdateBankAccountBody {
     /// posés ou remplacés.
     #[serde(default, deserialize_with = "crate::helpers::double_option")]
     pub paypal: Option<Option<PaypalSettings>>,
+    /// Story 39-11b (AC-2) — réglages Wise : mêmes règles que `paypal`
+    /// (absents = inchangés, `null` = retirés).
+    #[serde(default, deserialize_with = "crate::helpers::double_option")]
+    pub wise: Option<Option<PaypalSettings>>,
     /// Story 40-7b (AC-2) — réglages Stripe : mêmes règles que `paypal`
     /// (absents = inchangés, `null` = retirés).
     #[serde(default, deserialize_with = "crate::helpers::double_option")]
@@ -323,7 +333,7 @@ impl_validation_extractor!(
 impl_validation_extractor!(
     CreateBankAccountBodyExtractor,
     CreateBankAccountBody,
-    "`bankName` str, `description?` str, `iban?` str, `qrIban?` str, `isPrimary?` bool, `journalAccountId?` i64, `accountKind?` (`bank` | `credit_card`), `cardLast4?` str, `openingBalance?` { `amount` str, `side` \"debit\" | \"credit\" }, `paypal?` { `account` str, `feeAccountId?` i64 }, `stripe?` { `account` str, `feeAccountId?` i64, `payoutBankAccountId?` i64 }"
+    "`bankName` str, `description?` str, `iban?` str, `qrIban?` str, `isPrimary?` bool, `journalAccountId?` i64, `accountKind?` (`bank` | `credit_card`), `cardLast4?` str, `openingBalance?` { `amount` str, `side` \"debit\" | \"credit\" }, `paypal?` { `account` str, `feeAccountId?` i64 }, `wise?` { `account` str, `feeAccountId?` i64 }, `stripe?` { `account` str, `feeAccountId?` i64, `payoutBankAccountId?` i64 }"
 );
 impl_validation_extractor!(
     OpeningBalanceBodyExtractor,
@@ -333,7 +343,7 @@ impl_validation_extractor!(
 impl_validation_extractor!(
     UpdateBankAccountBodyExtractor,
     UpdateBankAccountBody,
-    "`bankName` str, `description?` str, `iban?` str, `qrIban?` str, `isPrimary?` bool, `journalAccountId?` i64, `accountKind?` (`bank` | `credit_card`), `cardLast4?` str, `paypal?` { `account` str, `feeAccountId?` i64 } | null, `stripe?` { `account` str, `feeAccountId?` i64, `payoutBankAccountId?` i64 } | null, `version` i32"
+    "`bankName` str, `description?` str, `iban?` str, `qrIban?` str, `isPrimary?` bool, `journalAccountId?` i64, `accountKind?` (`bank` | `credit_card`), `cardLast4?` str, `paypal?` { `account` str, `feeAccountId?` i64 } | null, `wise?` { `account` str, `feeAccountId?` i64 } | null, `stripe?` { `account` str, `feeAccountId?` i64, `payoutBankAccountId?` i64 } | null, `version` i32"
 );
 impl_validation_extractor!(
     ArchiveBankAccountBodyExtractor,
@@ -715,7 +725,8 @@ fn validate_bank_input(f: BankInputFields<'_>) -> Result<ValidatedBankInput, App
 /// Garde 1 des réglages de prestataire — Story 38-11b (AC-2), généralisée par
 /// la 40-7b : le libellé du compte rogné, de 1 à [`PROVIDER_ACCOUNT_MAX_CHARS`]
 /// caractères (`400 VALIDATION_ERROR`), sans numéro de carte (`400
-/// CARD_NUMBER_NOT_ALLOWED`, `field: paypal.account` ou `stripe.account`), et
+/// CARD_NUMBER_NOT_ALLOWED`, `field: paypal.account`, `wise.account` ou
+/// `stripe.account`), et
 /// — Story 40-7b — un compte de versement **refusé hors Stripe** (`400
 /// VALIDATION_ERROR`). Le compte de frais et le compte de versement passent
 /// tels quels : ils sont jugés dans la transaction
@@ -735,10 +746,10 @@ fn normalize_provider_settings(settings: &ProviderSettings) -> Result<ProviderSe
         )));
     }
     refuse_card_number(
-        if settings.provider == PROVIDER_STRIPE {
-            "stripe.account"
-        } else {
-            "paypal.account"
+        match settings.provider {
+            PROVIDER_STRIPE => "stripe.account",
+            PROVIDER_WISE => "wise.account",
+            _ => "paypal.account",
         },
         account,
     )?;
@@ -755,39 +766,57 @@ fn normalize_provider_settings(settings: &ProviderSettings) -> Result<ProviderSe
     })
 }
 
-/// Ramène les corps `paypal` et `stripe` à **un** prestataire — Story 40-7b :
-/// les deux ensemble sont refusés (`400 VALIDATION_ERROR`).
-fn choose_provider(
-    paypal: Option<&PaypalSettings>,
-    stripe: Option<&StripeSettings>,
-) -> Result<Option<ProviderSettings>, AppError> {
-    match (paypal, stripe) {
-        (Some(_), Some(_)) => Err(AppError::Validation(
-            "paypal et stripe : un compte n'a qu'un prestataire".into(),
-        )),
-        (Some(p), None) => Ok(Some(p.clone().into())),
-        (None, Some(s)) => Ok(Some(s.clone().into())),
-        (None, None) => Ok(None),
-    }
+/// Le refus de deux prestataires posés ensemble — Story 39-11b (AC-2),
+/// étendu à Stripe à l'intégration des Epics 39 et 40 : `400
+/// VALIDATION_ERROR`, rien d'écrit.
+fn several_providers_refusal() -> AppError {
+    AppError::Validation(crate::errors::t(
+        "error-provider-settings-both",
+        "Un compte bancaire ne peut être le solde que d'un seul prestataire : réglages de plusieurs prestataires ensemble refusés.",
+    ))
 }
 
-/// Les réglages **résultants** d'un `PUT` — Story 38-11b (AC-2), 40-7b : un
-/// prestataire donné (non `null`) remplace ; `null` retire les réglages du
-/// compte **s'il porte ce prestataire** (un `paypal: null` sur un compte Stripe
-/// ne retire rien) ; absents, les réglages du compte restent. Les deux donnés
-/// ensemble : `400`.
+/// Ramène les corps `paypal`, `wise` (Story 39-11b) et `stripe` (Story 40-7b)
+/// à **un** prestataire : deux ou trois ensemble sont refusés (`400
+/// VALIDATION_ERROR`).
+fn choose_provider(
+    paypal: Option<&PaypalSettings>,
+    wise: Option<&PaypalSettings>,
+    stripe: Option<&StripeSettings>,
+) -> Result<Option<ProviderSettings>, AppError> {
+    let given = [
+        paypal.map(|p| ProviderSettings::from(p.clone())),
+        wise.map(|w| ProviderSettings::wise(w.clone())),
+        stripe.map(|s| ProviderSettings::from(s.clone())),
+    ];
+    let mut given = given.into_iter().flatten();
+    let first = given.next();
+    if given.next().is_some() {
+        return Err(several_providers_refusal());
+    }
+    Ok(first)
+}
+
+/// Les réglages **résultants** d'un `PUT` — Story 38-11b (AC-2), 39-11b,
+/// 40-7b : un prestataire donné (non `null`) remplace ; `null` retire les
+/// réglages du compte **s'il porte ce prestataire** (un `paypal: null` sur un
+/// compte Stripe ne retire rien) ; absents, les réglages du compte restent.
+/// Deux prestataires donnés ensemble : `400`.
 fn resulting_provider(
     current: &BankAccount,
     paypal: &Option<Option<PaypalSettings>>,
+    wise: &Option<Option<PaypalSettings>>,
     stripe: &Option<Option<StripeSettings>>,
 ) -> Result<Option<ProviderSettings>, AppError> {
     let given_paypal = paypal.as_ref().and_then(|p| p.as_ref());
+    let given_wise = wise.as_ref().and_then(|w| w.as_ref());
     let given_stripe = stripe.as_ref().and_then(|s| s.as_ref());
-    if given_paypal.is_some() || given_stripe.is_some() {
-        return choose_provider(given_paypal, given_stripe);
+    if given_paypal.is_some() || given_wise.is_some() || given_stripe.is_some() {
+        return choose_provider(given_paypal, given_wise, given_stripe);
     }
     let settings = &current.provider_settings;
     let removed = (matches!(paypal, Some(None)) && settings.is_paypal())
+        || (matches!(wise, Some(None)) && settings.is_wise())
         || (matches!(stripe, Some(None)) && settings.is_stripe());
     Ok(if removed { None } else { settings.settings() })
 }
@@ -1368,7 +1397,12 @@ pub async fn create_bank_account(
         qr_iban: body.qr_iban.as_deref(),
         is_primary: body.is_primary,
         card_last4: body.card_last4.as_deref(),
-        provider: choose_provider(body.paypal.as_ref(), body.stripe.as_ref())?.as_ref(),
+        provider: choose_provider(
+            body.paypal.as_ref(),
+            body.wise.as_ref(),
+            body.stripe.as_ref(),
+        )?
+        .as_ref(),
     })?;
     let opening = parse_opening_balance(body.opening_balance.as_ref())?;
     if opening.is_some() && body.journal_account_id.is_none() {
@@ -1832,7 +1866,7 @@ pub async fn update_bank_account(
     }
     let kind = current.account_kind;
     // Story 38-11b (AC-2) — l'état résultant des réglages PayPal.
-    let provider = resulting_provider(&current, &body.paypal, &body.stripe)?;
+    let provider = resulting_provider(&current, &body.paypal, &body.wise, &body.stripe)?;
 
     // Story 38-11b (AC-2, AC-3) — pré-vol de la garde 5 (compte PayPal qui
     // porte des transactions), avant tout autre refus : un `PUT` qui retire les
