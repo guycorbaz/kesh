@@ -77,6 +77,12 @@ conteneur.** Binaires pertinents : `textes_coherents`, `mcp_matrice_manuel`, `co
 - Ni `gh` en écriture, ni `scripts/prepare-release.sh`, ni aucun script mutant, ni `docker`, ni `git merge`/`rebase`/`push` hors du commit du prompt
   suivant ; rien sous `~/kesh/` ; **jamais `pkill`, `killall` ni `kill` par motif**.
 
+## Mise à jour du 2026-11-27 (remédiation de la P1)
+
+- **Reprise de `main`** : `f7a13ba7e` (fusion de `0e99cd2db`, v0.20.0 ; un conflit au point « Portée » de `admin-manual.tex`, résolu à la main en gardant le début de la story et la fin de la v0.20.0, par un court script Python : à relire en diff combiné, `git show --cc f7a13ba7e`). La **base de comparaison est donc `0e99cd2db`** (`git diff 0e99cd2db HEAD`).
+- **Remédiation** : `e4e4d7278` (M1, M2, M3, L1 à L4, L6, L7, L9, L11 ; L5 laissé par choix de la fiche, D2). Fichiers touchés : `admin-manual.tex`, `user-manual.tex`, `api-external.md`, `.env.example`, `migrations-idempotence-audit.md`, `config.rs` (doc-comment), `audit_route_registry.rs` (doc-comment). Le commit suivant ne touche que la fiche et ce prompt.
+- À contrôler en plus : les quatre libellés d'audit ajoutés au tableau des rôles existent et s'écrivent bien sous tout rôle ; l'Overfull de « Portée » a disparu et la remédiation n'en crée pas (`admin-manual.log`, base `0e99cd2db` : 191 ; tête annoncée : 190) ; `tail -F`, `+%F-%H` et `kesh.log` (`never`) au code de `logging.rs` et de `tracing-appender` ; « seule l'imputabilité est exemptée » (`crates/kesh-db/src/repositories/invoices.rs:715`).
+
 ## Rendu
 
 Rapport : `/home/gcorbaz/devel/kesh-gate-logs/e58/58-3-revue-p2.md` — findings classés (CRITICAL / HIGH / MEDIUM / LOW) avec preuve (ligne lue citée),
