@@ -13,8 +13,9 @@ facture, miroir TypeScript du format, tests ; **aucune migration, aucune règle 
   *Priorités des défauts*) ; la fiche `_bmad-output/implementation-artifacts/58-1-numero-facture-textes-tests.md` (AC1 à AC9,
   Décisions D1 à D5, Journal des sorties, Dev Agent Record) ; le rapport de la P1,
   `/home/gcorbaz/devel/kesh-gate-logs/e58/58-1-revue-p1.md` (0/0/2/5), à lire en entier.
-- Captures de la recette visuelle (exigées par R1-2) : `/home/gcorbaz/devel/kesh-gate-logs/s581/captures/`. **Si le dossier est
-  vide ou absent, R1-2 n'est pas remédié : dis-le comme finding MEDIUM.**
+- Captures de la recette visuelle (exigées par R1-2) : `/home/gcorbaz/devel/kesh-gate-logs/s581/captures/` (neuf PNG, `01` à `09`,
+  décrits au tableau « Recette visuelle — rattrapée le 2026-11-27 » de la fiche ; script `s581/captures-s581.mjs`). **Si le dossier est
+  vide ou absent, R1-2 n'est pas remédié : dis-le comme finding MEDIUM.** Lis les images (outil Read) : le texte entier se lit-il ?
 
 ## Interdits
 
@@ -56,7 +57,7 @@ Rapport : **`/home/gcorbaz/devel/kesh-gate-logs/e58/58-1-revue-p2.md`** (le seul
 8. **Propagation des valeurs changées** sur tout le dépôt (code, doc-comments, tests, quatre catalogues, replis Svelte/TS, manuels,
    `docs/`) : greppe le jeton, non la formulation.
 9. **Recette visuelle** : captures de chaque état touché (refus `too_long`, refus `duplicate`, page *Administration → Facturation* :
-   espace insécable, 33 « é » → « 64 octets (actuel : 71) », numéro interne), thème clair. Le texte entier se lit-il dans l'avis ?
+   espace insécable, 33 « é » → « 64 octets (actuel : 71) », numéro interne ; captures 01 à 09), thème clair. Le texte entier se lit-il dans l'avis ?
 
 Pour tout finding CRITICAL ou HIGH qui affirme une absence ou un anti-pattern : preuve `grep -nF "<chaîne>" <fichier>` ou extrait
 lu, cité au rapport. Classe chaque finding CRITICAL/HIGH/MEDIUM/LOW avec sa preuve, puis le triage (decision-needed, patch, defer,
