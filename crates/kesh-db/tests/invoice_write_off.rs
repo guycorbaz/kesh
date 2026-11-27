@@ -1133,14 +1133,10 @@ async fn unlinking_a_reconciled_settlement_is_refused_while_a_write_off_exists(p
         .await
         .expect("solde des 81.00");
 
-    let view = reconciliation_cancel::get_view(
-        &pool,
-        seeded.company_id,
-        bt,
-    )
-    .await
-    .unwrap()
-    .expect("vue");
+    let view = reconciliation_cancel::get_view(&pool, seeded.company_id, bt)
+        .await
+        .unwrap()
+        .expect("vue");
     assert_eq!(
         view.cancel_blocker.map(|h| h.0),
         Some(SettlementCancelBlocker::WriteOffExists)

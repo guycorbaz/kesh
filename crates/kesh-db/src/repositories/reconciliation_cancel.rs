@@ -380,9 +380,13 @@ pub async fn entry_cancel_outlook(
     // Story 43-1a (AC7) — un règlement groupé n'est jamais un retrait seul : le
     // rang 0 ne s'applique pas ; ses motifs se lisent facture par facture.
     if let ReconciliationKind::GroupedSettlement { .. } = kind {
-        let hit =
-            super::grouped_settlements::group_cancel_blocker(conn, company_id, entry_id, concerned.id)
-                .await?;
+        let hit = super::grouped_settlements::group_cancel_blocker(
+            conn,
+            company_id,
+            entry_id,
+            concerned.id,
+        )
+        .await?;
         let (blocker, blocked_invoice) = match hit {
             Some((hit, piece)) => (Some(hit), Some(piece)),
             None => (None, None),

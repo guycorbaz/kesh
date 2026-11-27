@@ -586,7 +586,8 @@ pub async fn reglements(
             &mut tx,
             company.id,
             reglement.id,
-            aujourd_hui,
+            // L'annulation depuis la fiche est datée du jour (Q3, Story 53-6a).
+            kesh_db::repositories::journal_entries::CancellationDating::Today(aujourd_hui),
         )
         .await?;
         out.push(ReglementFacture { reglement, motif });

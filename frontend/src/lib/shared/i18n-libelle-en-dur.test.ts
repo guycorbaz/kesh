@@ -497,7 +497,10 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
 // (141 + 5), `ecartee` **22** ; confirmés par la garde (`kesh-gate-logs/s46-pr2/compteurs-1.log`).
 // **169** (reprise de main à 0e99cd2db dans story/53-6, 2026-11-27) : 168 (main) + 1 (53-1a, `entryDuplicateText`) ;
 // `conforme` **147** (146 + 1), `ecartee` **22** ; confirmés par la garde (`kesh-gate-logs/e53/s536a/fusion-compteurs.log`).
-const CANDIDATES_ATTENDUES = 169;
+// **169 → 170** (Story 53-6a, #1674) : `vatText` (`reconciliation/CancelReconciliationDialog.svelte`,
+// par `i18nMsg`) ; `conforme` **147 → 148**, relevés par la garde (« expected 170 to be 169 »,
+// `kesh-gate-logs/e53/s536a/t5-vitest-gardes.log`).
+const CANDIDATES_ATTENDUES = 170;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -1014,7 +1017,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 22, conforme: 147 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 22, conforme: 148 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

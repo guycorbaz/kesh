@@ -6113,10 +6113,18 @@ pub struct ReconciliationTransactionResponse {
     pub unlink_only: bool,
     /// Code du premier motif qui refuse l'annulation.
     pub cancel_blocked_by: Option<&'static str>,
-    /// Le numéro du compte archivé (rang 4).
+    /// Le numéro du compte archivé (rang 4), ou la borne du verrou de période
+    /// (`AAAA-MM-JJ`, motif `PERIOD_LOCKED`, Story 53-6a).
     pub cancel_blocked_label: Option<String>,
     /// L'**autre** transaction qui pointe la même écriture (rang 3).
     pub cancel_blocked_document_id: Option<i64>,
+    /// Story 53-6a (#1674, D4) — la date dont la contre-passation serait datée :
+    /// celle de l'écriture du rapprochement. `null` pour une transaction non
+    /// rapprochée ou un retrait seul (champ additif).
+    pub reversal_date: Option<chrono::NaiveDate>,
+    /// Story 53-6a (D4) — l'exercice de cette écriture, où la contre-passation
+    /// serait passée ; `null` comme `reversalDate`.
+    pub reversal_fiscal_year_name: Option<String>,
     /// Story 43-2 (#823) — les factures d'un **règlement groupé**, par
     /// identifiant croissant, montant brut ; vide hors groupe (champ additif).
     pub grouped_invoices: Vec<super::reconciliation_group::GroupedInvoiceResponse>,
@@ -6142,11 +6150,12 @@ pub async fn get_reconciliation_transaction(
     Extension(current_user): Extension<CurrentUser>,
     axum::extract::Path(id): axum::extract::Path<i64>,
 ) -> Result<Json<ReconciliationTransactionResponse>, AppError> {
+    // Story 53-6a (D6) : aucune date du jour — la contre-passation serait datée
+    // de l'écriture du rapprochement.
     let view = kesh_db::repositories::reconciliation_cancel::get_view(
         &state.pool,
         current_user.company_id,
         id,
-        state.horloge.aujourd_hui(),
     )
     .await?
     .ok_or(AppError::Database(DbError::NotFound))?;
@@ -6179,6 +6188,8 @@ pub async fn get_reconciliation_transaction(
         cancel_blocked_by: hit.as_ref().map(|h| h.0.code()),
         cancel_blocked_label: hit.as_ref().and_then(|h| h.2.clone()),
         cancel_blocked_document_id: hit.as_ref().and_then(|h| h.1),
+        reversal_date: view.reversal_date,
+        reversal_fiscal_year_name: view.reversal_fiscal_year_name,
         grouped_invoices: group.grouped_invoices,
         gap: group.gap,
         difference_account: group.difference_account,
@@ -6192,9 +6203,10 @@ pub async fn get_reconciliation_transaction(
 pub struct CancelReconciliationResponse {
     /// La transaction relue, revenue « à rapprocher ».
     pub bank_transaction: crate::routes::bank_imports::TransactionResponse,
-    /// L'écriture inverse, datée du jour — `null` quand seul le lien a été
-    /// retiré (Story 34-11b, #972 : l'autre côté d'un virement reste
-    /// rapproché de l'écriture).
+    /// L'écriture inverse, datée de l'écriture du rapprochement, dans son
+    /// exercice (Story 53-6a, #1674) — `null` quand seul le lien a été retiré
+    /// (Story 34-11b, #972 : l'autre côté d'un virement reste rapproché de
+    /// l'écriture).
     pub reversal_journal_entry_id: Option<i64>,
     /// La facture dont le règlement a été retiré, pour un règlement client.
     pub invoice_id: Option<i64>,
@@ -6265,18 +6277,10 @@ pub async fn post_cancel_reconciliation(
     let acteur = Acteur::from(&current_user);
     // Revue P2 (B2-1) : corps brut, jamais refusé pour sa forme ou son type.
     let expect_unlink_only = parse_cancel_expectation(&body)?;
-    // Story 35-5a0 — la date du jour, lue une fois, avant l'attente du verrou
-    // et les rejeux.
-    let aujourd_hui = state.horloge.aujourd_hui();
+    // Story 53-6a (#1674, D6) : le geste ne lit plus la date du jour — la
+    // contre-passation est datée de l'écriture du rapprochement.
     crate::retry::retry_app_on_deadlock("reconciliation::cancel", || {
-        cancel_reconciliation_once(
-            &state.pool,
-            company_id,
-            id,
-            acteur,
-            expect_unlink_only,
-            aujourd_hui,
-        )
+        cancel_reconciliation_once(&state.pool, company_id, id, acteur, expect_unlink_only)
     })
     .await
     .map(Json)
@@ -6289,7 +6293,6 @@ async fn cancel_reconciliation_once(
     bank_transaction_id: i64,
     acteur: Acteur,
     expect_unlink_only: Option<bool>,
-    aujourd_hui: chrono::NaiveDate,
 ) -> Result<CancelReconciliationResponse, AppError> {
     let bank_account_id =
         bank_account_of_transaction(pool, company_id, bank_transaction_id).await?;
@@ -6310,7 +6313,6 @@ async fn cancel_reconciliation_once(
                 bank_transaction_id,
                 acteur,
                 expect_unlink_only,
-                aujourd_hui,
             )
             .await?)
         },
@@ -6971,8 +6973,8 @@ pub async fn get_entry_candidates(
     )
     .await?;
     let mut candidates = Vec::with_capacity(found.len());
-    // Story 35-5a0 — la date du jour, lue une fois pour toutes les candidates.
-    let aujourd_hui = state.horloge.aujourd_hui();
+    // Story 53-6a (D6) : aucune date du jour — l'annulation d'un rapprochement
+    // se date de l'écriture.
     for c in found {
         // Story 34-11b (C-e341-35) : la transaction prospective `t` est la
         // transaction concernée — la décision « autre côté » la lit.
@@ -6983,7 +6985,6 @@ pub async fn get_entry_candidates(
             company_id,
             c.journal_entry_id,
             &t,
-            aujourd_hui,
         )
         .await?;
         let (hit, unlink_only) = (outlook.blocker, outlook.unlink_only);

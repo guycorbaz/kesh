@@ -1706,16 +1706,11 @@ impl Annulation {
         // prennent l'acteur entier.
         let acteur = kesh_db::entities::audit_log::Acteur::utilisateur(user_id);
         match self {
-            Annulation::Rapprochement(t) => reconciliation_cancel::cancel_in_tx(
-                tx,
-                company_id,
-                t,
-                acteur,
-                None,
-                crate::common::jour::aujourd_hui_test(),
-            )
-            .await
-            .map(|_| ()),
+            Annulation::Rapprochement(t) => {
+                reconciliation_cancel::cancel_in_tx(tx, company_id, t, acteur, None)
+                    .await
+                    .map(|_| ())
+            }
             Annulation::Import(i) => {
                 match bank_imports::delete_unreconciled_in_tx(tx, company_id, i).await? {
                     bank_imports::DeleteBankImportOutcome::Deleted(_) => Ok(()),
@@ -1729,7 +1724,9 @@ impl Annulation {
                     facture,
                     reglement,
                     acteur,
-                    crate::common::jour::aujourd_hui_test(),
+                    kesh_db::repositories::journal_entries::CancellationDating::Today(
+                        crate::common::jour::aujourd_hui_test(),
+                    ),
                 )
                 .await
                 .map(|_| ())
@@ -1748,7 +1745,9 @@ impl Annulation {
                 company_id,
                 f,
                 acteur,
-                crate::common::jour::aujourd_hui_test(),
+                kesh_db::repositories::journal_entries::CancellationDating::Today(
+                    crate::common::jour::aujourd_hui_test(),
+                ),
             )
             .await
             .map(|_| ()),

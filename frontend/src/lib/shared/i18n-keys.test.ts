@@ -1284,7 +1284,11 @@ const ATTENDU = {
 	// `kesh-gate-logs/s46-pr2/garde-vitest-1.log`) — `numberBankLinked` et `parentBankLinked` (`accounts/groups/messages.ts`).
 	// Reprise de main à 0e99cd2db dans story/53-6 (2026-11-27) : les deux côtés gardés ; 3958 (main) + 15
 	// (53-1a : 8, 53-1b : 7, de 3771 à 3786 de leur côté) = **3973**, confirmé par la garde (`kesh-gate-logs/e53/s536a/fusion-compteurs.log`).
-	sitesTotal: 3973,
+	// Story 53-6a (#1674) : **3973 → 3975**, relevé par la garde (« expected 3975 to be 3973 »,
+	// `kesh-gate-logs/e53/s536a/t5-vitest-gardes.log`) — `reconciliation-cancel-blocked-period-locked`
+	// (`reconciliation-cancel.ts`) et `reconciliation-cancel-confirm-vat`
+	// (`CancelReconciliationDialog.svelte`).
+	sitesTotal: 3975,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

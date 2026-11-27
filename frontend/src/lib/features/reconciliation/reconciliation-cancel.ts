@@ -4,13 +4,15 @@
  * ⛔ **Pas la famille `settlement-cancel-blocked-*`**, qui dit « ce règlement » :
  * une écriture d'éclatement, de règle ou de rapprochement manuel n'est pas un
  * règlement. Le dialogue traduit toujours le **code** reçu — par la lecture
- * (`GET …/transactions/{id}`) comme par le refus au clic —, pour les huit motifs,
- * `INVOICE_CREDITED` compris.
+ * (`GET …/transactions/{id}`) comme par le refus au clic —, pour les neuf motifs,
+ * `INVOICE_CREDITED` compris, et `PERIOD_LOCKED` depuis la Story 53-6a (#1674 : la
+ * contre-passation est datée de l'écriture, que la borne du verrou peut couvrir).
  *
  * ⚠️ Les replis en dur disent **mot pour mot** le FTL fr-CH — le serveur rend
  * les mêmes clés quand il refuse (`crates/kesh-api/src/errors.rs`,
  * `reconciliation_cancel_blocked_text`).
  */
+import { formatSwissDate } from '$lib/features/reports/reports.api';
 import type { ApiError } from '$lib/shared/types/api';
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 import type {
@@ -26,17 +28,19 @@ const MOTIFS: readonly ReconciliationCancelCode[] = [
 	'LETTERING_ALL_LINES_IN_CLOSED_PERIODS',
 	'MATCHED_BANK_TRANSACTION',
 	'ACCOUNT_ARCHIVED',
+	'PERIOD_LOCKED',
 	'FISCAL_YEAR_INVALID',
 ];
 
-/** Le code est-il l'un des huit motifs du dé-rapprochement ? */
+/** Le code est-il l'un des neuf motifs du dé-rapprochement ? */
 export function isReconciliationCancelCode(code: string): code is ReconciliationCancelCode {
 	return (MOTIFS as readonly string[]).includes(code);
 }
 
 /**
  * Le texte d'un motif. `label` porte le **numéro du compte** archivé — sans
- * lui, « réactivez-le » ne dirait pas lequel.
+ * lui, « réactivez-le » ne dirait pas lequel —, ou la **borne** du verrou de
+ * période (`AAAA-MM-JJ`, `PERIOD_LOCKED`), ajoutée en date suisse.
  */
 export function reconciliationCancelMessage(
 	code: ReconciliationCancelCode,
@@ -80,6 +84,16 @@ export function reconciliationCancelMessage(
 			);
 			return label ? `${base} (${label})` : base;
 		}
+		case 'PERIOD_LOCKED': {
+			// Story 53-6a (#1674, D5) — clé sans variable (le serveur la rend telle quelle) ; la
+			// borne s'ajoute comme le numéro du compte archivé, en date suisse.
+			const base = i18nMsg(
+				'reconciliation-cancel-blocked-period-locked',
+				"L'écriture de ce rapprochement est dans une période verrouillée : pour pouvoir l'annuler, un administrateur doit faire reculer le verrou avant sa date.",
+			);
+			return label ? `${base} (${formatSwissDate(label)})` : base;
+		}
+		// Inatteignable pour le dé-rapprochement depuis la Story 53-6a ; clé et repli gardés.
 		case 'FISCAL_YEAR_INVALID':
 			return i18nMsg(
 				'reconciliation-cancel-blocked-no-fiscal-year',
@@ -87,7 +101,7 @@ export function reconciliationCancelMessage(
 			);
 		default: {
 			// ⛔ C'est l'affectation à `never` qui fait rougir le type-check si un
-			// neuvième motif s'ajoute au type sans s'ajouter ici.
+			// dixième motif s'ajoute au type sans s'ajouter ici.
 			const exhaustive: never = code;
 			return exhaustive;
 		}
@@ -161,9 +175,11 @@ export function groupedCancelBlockedMessage(
 }
 
 /**
- * Le texte d'un refus **au clic**. Un motif des huit → son texte (le 400
- * `ACCOUNT_ARCHIVED` nomme le compte dans `details.rejected[]`). ⛔ **Tout autre
- * code** — `PERIOD_LOCKED`, `OPTIMISTIC_LOCK_CONFLICT`,
+ * Le texte d'un refus **au clic**. Un motif des neuf → son texte (le 400
+ * `ACCOUNT_ARCHIVED` nomme le compte dans `details.rejected[]` ; le 400
+ * `PERIOD_LOCKED` du socle porte la borne dans `details.lockedThrough`, que le
+ * 409 d'un règlement groupé n'a pas — le texte est alors rendu sans elle).
+ * ⛔ **Tout autre code** — `LATER_FISCAL_YEAR_CLOSED`, `OPTIMISTIC_LOCK_CONFLICT`,
  * `RECONCILIATION_ACCOUNT_LOCKED`, `NOT_FOUND`… — affiche le **message du
  * serveur**, déjà traduit et propre à chacun : jamais un texte générique.
  */
@@ -176,6 +192,10 @@ export function reconciliationCancelErrorMessage(err: ApiError): string {
 			.map((r) => (r as { accountNumber?: unknown }).accountNumber)
 			.filter((n): n is string => typeof n === 'string');
 		label = numbers.length > 0 ? numbers.join(', ') : null;
+	}
+	const lockedThrough = err.details?.lockedThrough;
+	if (err.code === 'PERIOD_LOCKED' && typeof lockedThrough === 'string') {
+		label = lockedThrough;
 	}
 	return reconciliationCancelMessage(err.code, label);
 }

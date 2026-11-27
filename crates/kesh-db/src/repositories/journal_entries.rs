@@ -3341,8 +3341,18 @@ mod verdict_de_datation {
             // OriginDate, exercice ouvert : datée de l'origine, sauf sous la borne.
             (D::OriginDate, false, None, V::Dated(origine)),
             (D::OriginDate, false, Some(j(3, 13)), V::Dated(origine)),
-            (D::OriginDate, false, Some(j(3, 14)), verrou(j(3, 14), origine)),
-            (D::OriginDate, false, Some(j(3, 15)), verrou(j(3, 15), origine)),
+            (
+                D::OriginDate,
+                false,
+                Some(j(3, 14)),
+                verrou(j(3, 14), origine),
+            ),
+            (
+                D::OriginDate,
+                false,
+                Some(j(3, 15)),
+                verrou(j(3, 15), origine),
+            ),
             // OriginDate, exercice clos : refus, quelle que soit la borne.
             (D::OriginDate, true, None, V::FiscalYearClosed),
             (D::OriginDate, true, Some(j(3, 13)), V::FiscalYearClosed),
@@ -3351,21 +3361,81 @@ mod verdict_de_datation {
             // Today : datée du jour, l'exercice de l'origine n'importe pas.
             (D::Today(jour), false, None, V::Dated(jour)),
             (D::Today(jour), false, Some(j(11, 19)), V::Dated(jour)),
-            (D::Today(jour), false, Some(j(11, 20)), verrou(j(11, 20), jour)),
-            (D::Today(jour), false, Some(j(11, 21)), verrou(j(11, 21), jour)),
+            (
+                D::Today(jour),
+                false,
+                Some(j(11, 20)),
+                verrou(j(11, 20), jour),
+            ),
+            (
+                D::Today(jour),
+                false,
+                Some(j(11, 21)),
+                verrou(j(11, 21), jour),
+            ),
             (D::Today(jour), true, None, V::Dated(jour)),
             (D::Today(jour), true, Some(j(11, 19)), V::Dated(jour)),
-            (D::Today(jour), true, Some(j(11, 20)), verrou(j(11, 20), jour)),
-            (D::Today(jour), true, Some(j(11, 21)), verrou(j(11, 21), jour)),
+            (
+                D::Today(jour),
+                true,
+                Some(j(11, 20)),
+                verrou(j(11, 20), jour),
+            ),
+            (
+                D::Today(jour),
+                true,
+                Some(j(11, 21)),
+                verrou(j(11, 21), jour),
+            ),
             // NextFiscalYearStart : la date se lit en base.
-            (D::NextFiscalYearStart, false, None, V::FirstDayOfNextFiscalYear),
-            (D::NextFiscalYearStart, false, Some(j(3, 13)), V::FirstDayOfNextFiscalYear),
-            (D::NextFiscalYearStart, false, Some(j(3, 14)), V::FirstDayOfNextFiscalYear),
-            (D::NextFiscalYearStart, false, Some(j(3, 15)), V::FirstDayOfNextFiscalYear),
-            (D::NextFiscalYearStart, true, None, V::FirstDayOfNextFiscalYear),
-            (D::NextFiscalYearStart, true, Some(j(3, 13)), V::FirstDayOfNextFiscalYear),
-            (D::NextFiscalYearStart, true, Some(j(3, 14)), V::FirstDayOfNextFiscalYear),
-            (D::NextFiscalYearStart, true, Some(j(3, 15)), V::FirstDayOfNextFiscalYear),
+            (
+                D::NextFiscalYearStart,
+                false,
+                None,
+                V::FirstDayOfNextFiscalYear,
+            ),
+            (
+                D::NextFiscalYearStart,
+                false,
+                Some(j(3, 13)),
+                V::FirstDayOfNextFiscalYear,
+            ),
+            (
+                D::NextFiscalYearStart,
+                false,
+                Some(j(3, 14)),
+                V::FirstDayOfNextFiscalYear,
+            ),
+            (
+                D::NextFiscalYearStart,
+                false,
+                Some(j(3, 15)),
+                V::FirstDayOfNextFiscalYear,
+            ),
+            (
+                D::NextFiscalYearStart,
+                true,
+                None,
+                V::FirstDayOfNextFiscalYear,
+            ),
+            (
+                D::NextFiscalYearStart,
+                true,
+                Some(j(3, 13)),
+                V::FirstDayOfNextFiscalYear,
+            ),
+            (
+                D::NextFiscalYearStart,
+                true,
+                Some(j(3, 14)),
+                V::FirstDayOfNextFiscalYear,
+            ),
+            (
+                D::NextFiscalYearStart,
+                true,
+                Some(j(3, 15)),
+                V::FirstDayOfNextFiscalYear,
+            ),
         ];
         for (dating, clos, borne, attendu) in cas {
             assert_eq!(
@@ -3554,8 +3624,15 @@ async fn reverse_in_tx_inner(
     .fetch_optional(&mut **tx)
     .await
     .map_err(map_db_error)?;
-    let (_, entry_number, origin_fy_name, origin_fy_end, origin_date, origin_fy_id, origin_fy_status) =
-        origin.ok_or(DbError::NotFound)?;
+    let (
+        _,
+        entry_number,
+        origin_fy_name,
+        origin_fy_end,
+        origin_date,
+        origin_fy_id,
+        origin_fy_status,
+    ) = origin.ok_or(DbError::NotFound)?;
 
     // (1-bis) ⛔ Une autorité fournisseur ne vaut que pour l'écriture de SON
     // rôle — règlement (25-3-a-2) ou achat (25-3-c) — de la facture nommée :

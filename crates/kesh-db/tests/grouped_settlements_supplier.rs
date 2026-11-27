@@ -1081,14 +1081,8 @@ async fn unreconciling_a_supplier_group_undoes_it_entirely(pool: MySqlPool) {
     // Jamais un retrait seul : refusé sans `Invariant`, rien d'écrit.
     let avant = empreinte(&pool).await;
     let mut tx = pool.begin().await.unwrap();
-    let changed = reconciliation_cancel::cancel_in_tx(
-        &mut tx,
-        m.s.company_id,
-        bt,
-        cle,
-        Some(true),
-    )
-    .await;
+    let changed =
+        reconciliation_cancel::cancel_in_tx(&mut tx, m.s.company_id, bt, cle, Some(true)).await;
     assert!(
         matches!(
             changed,
@@ -1208,8 +1202,7 @@ async fn an_entry_blocker_refuses_and_names_the_first_invoice(pool: MySqlPool) {
     assert_eq!(piece.number, numero(&pool, a).await);
 
     let avant = empreinte(&pool).await;
-    let refus =
-        reconciliation_cancel::cancel(&pool, m.s.company_id, bt, acteur(&m)).await;
+    let refus = reconciliation_cancel::cancel(&pool, m.s.company_id, bt, acteur(&m)).await;
     assert!(
         matches!(refus, Err(DbError::ReconciliationNotCancellable { .. })),
         "{refus:?}"
@@ -1270,13 +1263,17 @@ async fn s536a_a_supplier_group_under_the_period_lock_is_refused(pool: MySqlPool
     let undone = reconciliation_cancel::cancel(&pool, m.s.company_id, bt, acteur(&m))
         .await
         .expect("dé-rapproché au lendemain de la borne");
-    let date: NaiveDate =
-        sqlx::query_scalar("SELECT entry_date FROM journal_entries WHERE id = ?")
-            .bind(undone.reversal_journal_entry_id.expect("contre-passée"))
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(date, jour(6, 15), "datée de l'écriture {}", done.journal_entry_id);
+    let date: NaiveDate = sqlx::query_scalar("SELECT entry_date FROM journal_entries WHERE id = ?")
+        .bind(undone.reversal_journal_entry_id.expect("contre-passée"))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        date,
+        jour(6, 15),
+        "datée de l'écriture {}",
+        done.journal_entry_id
+    );
 }
 
 /// Story 53-6a (AC-9, précédence pour le chemin FOURNISSEUR) — un groupe payé
@@ -1366,10 +1363,9 @@ async fn a_detached_invoice_leaves_the_group_and_the_rest_unreconciles(pool: MyS
     );
     assert_eq!(view.grouped_difference_account_id, Some(m.ecart));
 
-    let undone =
-        reconciliation_cancel::cancel(&pool, m.s.company_id, bt, acteur(&m))
-            .await
-            .expect("dé-rapproché");
+    let undone = reconciliation_cancel::cancel(&pool, m.s.company_id, bt, acteur(&m))
+        .await
+        .expect("dé-rapproché");
     assert_eq!(
         undone
             .grouped_invoices
@@ -1579,10 +1575,9 @@ async fn detaching_the_first_or_a_middle_invoice_keeps_the_view_right(pool: MySq
         let v = vue(&pool, &m, bt).await;
         assert_eq!(ids_de(&v), restantes, "détachée : {detachee}");
         assert_eq!(v.grouped_difference_account_id, Some(m.ecart));
-        let undone =
-            reconciliation_cancel::cancel(&pool, m.s.company_id, bt, acteur(&m))
-                .await
-                .expect("dé-rapproché");
+        let undone = reconciliation_cancel::cancel(&pool, m.s.company_id, bt, acteur(&m))
+            .await
+            .expect("dé-rapproché");
         assert_eq!(
             undone
                 .grouped_invoices

@@ -192,13 +192,7 @@ async fn a_concurrent_close_waits_for_the_unreconciliation(pool: MySqlPool) {
     let p = pool.clone();
     let (company_id, user_id) = (seeded.company_id, seeded.admin_user_id);
     let annulation = tokio::spawn(async move {
-        reconciliation_cancel::cancel(
-            &p,
-            company_id,
-            tx_id,
-            Acteur::utilisateur(user_id),
-        )
-        .await
+        reconciliation_cancel::cancel(&p, company_id, tx_id, Acteur::utilisateur(user_id)).await
     });
     // ⛔ Synchronisation déterministe : on ne valide la clôture qu'une fois le
     // geste VU en attente d'un `FOR UPDATE` sur `fiscal_years`.
@@ -384,14 +378,9 @@ async fn s536a_ac3_un_exercice_rouvert_recoit_l_inverse_et_se_recloture(pool: My
         .expect("réouverture de 2019");
     let avant = ecritures_de(&pool, seeded.fiscal_year_id).await;
 
-    reconciliation_cancel::cancel(
-        &pool,
-        c,
-        tx_id,
-        Acteur::utilisateur(u),
-    )
-    .await
-    .expect("dé-rapprochement dans l'exercice rouvert");
+    reconciliation_cancel::cancel(&pool, c, tx_id, Acteur::utilisateur(u))
+        .await
+        .expect("dé-rapprochement dans l'exercice rouvert");
 
     let ((_, date, fy, _), _) = inverse_de(&pool, entry).await;
     assert_eq!((date, fy), (jour(2019, 6, 3), fy_2019));
@@ -719,9 +708,7 @@ async fn unreconciling_a_supplier_settlement_undoes_it(pool: MySqlPool) {
 /// qui répond d'abord). L'état **hérité** — facture soldée sans groupe
 /// `document` — est posé en SQL, comme la fiche l'admet.
 #[sqlx::test(migrations = "./test-schema")]
-async fn s536a_a_supplier_settlement_under_the_period_lock_is_refused_by_the_core(
-    pool: MySqlPool,
-) {
+async fn s536a_a_supplier_settlement_under_the_period_lock_is_refused_by_the_core(pool: MySqlPool) {
     let (seeded, r) = monter_fournisseur(&pool).await;
     let c = seeded.company_id;
     sqlx::query(
@@ -921,14 +908,10 @@ async fn assert_supplier_link_intact(
 #[sqlx::test(migrations = "./test-schema")]
 async fn the_view_says_a_reconciled_supplier_settlement_is_cancellable(pool: MySqlPool) {
     let (seeded, r) = monter_fournisseur(&pool).await;
-    let view = reconciliation_cancel::get_view(
-        &pool,
-        seeded.company_id,
-        r.bank_transaction_id,
-    )
-    .await
-    .unwrap()
-    .unwrap();
+    let view = reconciliation_cancel::get_view(&pool, seeded.company_id, r.bank_transaction_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(view.kind.map(|k| k.code()), Some("supplier_settlement"));
     assert_eq!(view.cancel_blocker, None, "{view:?}");
 }
@@ -973,12 +956,7 @@ async fn unreconciliation_and_invoice_cancellation_race_without_a_mixed_state(po
     let bt = r.bank_transaction_id;
     let derapprochement = tokio::spawn(async move {
         retry_on_deadlock("test::reconciliation_cancel", || {
-            reconciliation_cancel::cancel(
-                &p,
-                c,
-                bt,
-                Acteur::utilisateur(u),
-            )
+            reconciliation_cancel::cancel(&p, c, bt, Acteur::utilisateur(u))
         })
         .await
     });
@@ -1081,13 +1059,7 @@ async fn a_supplier_unreconciliation_waits_for_a_concurrent_close(pool: MySqlPoo
         r.bank_transaction_id,
     );
     let annulation = tokio::spawn(async move {
-        reconciliation_cancel::cancel(
-            &p,
-            c,
-            bt,
-            Acteur::utilisateur(u),
-        )
-        .await
+        reconciliation_cancel::cancel(&p, c, bt, Acteur::utilisateur(u)).await
     });
     let vue = attendre_des_requetes_en_cours(&pool, &["fiscal_years", "FOR UPDATE"], 1, || {
         annulation.is_finished()

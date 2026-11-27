@@ -138,7 +138,7 @@ export async function getReconciliationTransaction(
 
 /**
  * Story 25-3-b (#418) — annule un rapprochement : l'écriture est
- * contre-passée (datée du jour), la transaction redevient à rapprocher, et le
+ * contre-passée (datée de l'écriture, dans son exercice — Story 53-6a), la transaction redevient à rapprocher, et le
  * règlement d'une facture est retiré.
  *
  * Story 34-11b (#972, revue P1 E1-1) — `expectUnlinkOnly` : la décision que la confirmation a

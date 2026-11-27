@@ -695,6 +695,10 @@ async fn ac3_annulation_d_un_reglement_fournisseur_la_nuit(pool: MySqlPool) {
 }
 
 /// AC3 — annulation d'un rapprochement manuel. Tue M7.
+///
+/// Story 53-6a (#1674) : l'annulation d'un rapprochement n'est plus datée du
+/// jour, mais de l'écriture du rapprochement, dans son exercice (2025) — la nuit
+/// du Nouvel An ne change plus rien à sa date ; le test fixe désormais cela.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac3_annulation_d_un_rapprochement_la_nuit(pool: MySqlPool) {
     let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
@@ -724,8 +728,17 @@ async fn ac3_annulation_d_un_rapprochement_la_nuit(pool: MySqlPool) {
         .post_vide(&format!("/api/v1/reconciliation/transactions/{t}/cancel"))
         .await;
     assert_eq!(s, 200, "{b}");
-    ctx.assert_contre_passee_le_1er_janvier(ecriture, "rapprochement")
-        .await;
+    let origine = ctx.date_et_exercice(ecriture).await;
+    assert_eq!(origine.1, ctx.fy_2025, "montage : l'écriture est dans 2025");
+    let inverse = ctx
+        .inverse_de(ecriture)
+        .await
+        .expect("rapprochement : une contre-passation");
+    assert_eq!(
+        ctx.date_et_exercice(inverse).await,
+        origine,
+        "rapprochement : la contre-passation est datée de l'écriture, dans son exercice"
+    );
 }
 
 /// AC3 — le refus : seul l'exercice 2025 existe ; aucun ne couvre le
@@ -865,9 +878,13 @@ fn assert_borne_refusee(s: u16, b: &Value) {
 
 /// AC7 — **aucun exercice ouvert ne couvre le jour suisse** (pas d'exercice
 /// 2026) : à 00 h 30 le 1er janvier à Zurich, le règlement de décembre ne
-/// s'annule pas (rang 5), et la liste des règlements le dit ; de même la
-/// candidate au rattachement d'une transaction (`entry_cancel_outlook`). Le
+/// s'annule pas depuis sa fiche (rang 5), et la liste des règlements le dit. Le
 /// jour UTC (31 décembre, exercice 2025 ouvert) n'annonçait aucun motif.
+///
+/// Story 53-6a (#1674) : la candidate au rattachement d'une transaction
+/// (`entry_cancel_outlook`) ne lit plus le jour — l'annulation d'un
+/// rapprochement est datée de l'écriture (décembre, exercice 2025 ouvert) :
+/// aucun motif (`null`), là où le rang 5 répondait avant.
 ///
 /// ⚠️ Un exercice 2026 **clos** ne convient pas : il fige 2025, qu'il suit
 /// (`LATER_FISCAL_YEAR_CLOSED` à l'écriture, `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`
@@ -937,7 +954,7 @@ async fn ac7_les_services_jugent_au_jour_suisse(pool: MySqlPool) {
         .find(|c| c["journalEntryId"] == json!(candidate))
         .unwrap_or_else(|| panic!("candidate absente : {b}"))
         .clone();
-    assert_eq!(c["cancelBlockedBy"], json!("FISCAL_YEAR_INVALID"), "{b}");
+    assert_eq!(c["cancelBlockedBy"], json!(null), "{b}");
 }
 
 // ============================================================
@@ -1494,4 +1511,354 @@ async fn ac4_la_fin_donnee_d_un_projet_l_emporte_sur_le_jour(pool: MySqlPool) {
         .parse()
         .unwrap();
     assert_eq!(total, dec!(100), "{rapport}");
+}
+
+// ============================================================
+// Story 53-6a (#1674) — l'annulation d'un rapprochement, datée de l'écriture
+// ============================================================
+//
+// Le montage de ce fichier est celui du défaut : l'horloge au 1er janvier 2026
+// (Zurich), l'écriture rapprochée en décembre 2025, dans un exercice 2025
+// encore ouvert, et un exercice 2026 ouvert où la contre-passation tombait.
+
+impl Ctx {
+    /// Une écriture OD de 42.– sur le `1020` (la banque du montage), au `date`,
+    /// dans 2025 — à rattacher à une transaction d'une AUTRE date (M10).
+    async fn versement(&self, date: NaiveDate) -> i64 {
+        journal_entries::create(
+            &self.pool,
+            self.fy_2025,
+            kesh_db::entities::audit_log::Acteur::utilisateur(self.s.admin_user_id),
+            NewJournalEntry {
+                company_id: self.s.company_id,
+                entry_date: date,
+                journal: Journal::OD,
+                description: "Versement".into(),
+                project_id: None,
+                lines: vec![
+                    NewJournalEntryLine {
+                        account_id: self.ledger,
+                        debit: dec!(42.00),
+                        credit: dec!(0),
+                        project_id: None,
+                        foreign: None,
+                    },
+                    NewJournalEntryLine {
+                        account_id: self.s.accounts["3000"],
+                        debit: dec!(0),
+                        credit: dec!(42.00),
+                        project_id: None,
+                        foreign: None,
+                    },
+                ],
+            },
+        )
+        .await
+        .expect("versement")
+        .entry
+        .id
+    }
+
+    /// Pose la borne du verrou de période (SQL : `lock_books` refuse une borne
+    /// postérieure au jour, ce qui n'est pas le sujet ici).
+    async fn verrouiller(&self, through: NaiveDate) {
+        sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+            .bind(through)
+            .bind(self.s.company_id)
+            .execute(&self.pool)
+            .await
+            .unwrap();
+    }
+
+    /// Le nombre d'écritures de l'exercice `fy`.
+    async fn ecritures_de(&self, fy: i64) -> i64 {
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE fiscal_year_id = ?")
+            .bind(fy)
+            .fetch_one(&self.pool)
+            .await
+            .unwrap()
+    }
+
+    /// Une transaction de 42.– (du 20 décembre) rattachée à un versement du
+    /// 15 décembre : `(transaction, écriture)`.
+    async fn versement_rattache(&self) -> (i64, i64) {
+        let bank = self.compte_bancaire(IBAN_A, true, self.ledger).await;
+        let entry = self.versement(jour(2025, 12, 15)).await;
+        let t = self.transaction(bank, "42.00").await;
+        let (s, b) = self
+            .app
+            .post(
+                &format!("/api/v1/reconciliation/transactions/{t}/link-entry"),
+                json!({ "journalEntryId": entry }),
+            )
+            .await;
+        assert_eq!(s, 200, "rattachement : {b}");
+        (t, entry)
+    }
+}
+
+/// AC-1, AC-2, AC-10 (R1, D1, D4) — **une écriture de décembre 2025, exercice
+/// encore ouvert, rapprochement annulé le 1er janvier 2026** : la vue annonce
+/// la date et l'exercice de l'écriture ; l'inverse est datée du 15 décembre 2025
+/// — la date de l'**écriture**, non celle de la transaction (20 décembre), ni le
+/// jour —, dans 2025, sans suffixe ; rien n'est écrit dans 2026 ; la trace
+/// `journal_entry.reversed` porte `"dating": "originDate"`. Tue M1 et M10.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s536a_ac1_l_annulation_est_datee_de_l_ecriture_dans_son_exercice(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+    let fy_2026 = ctx.fy_2026.unwrap();
+    let (t, entry) = ctx.versement_rattache().await;
+
+    let (s, vue) = ctx
+        .app
+        .get(&format!("/api/v1/reconciliation/transactions/{t}"))
+        .await;
+    assert_eq!(s, 200, "{vue}");
+    assert_eq!(vue["cancellable"], json!(true), "{vue}");
+    assert_eq!(vue["reversalDate"], json!("2025-12-15"), "{vue}");
+    assert_eq!(
+        vue["reversalFiscalYearName"],
+        json!("Exercice 2025"),
+        "{vue}"
+    );
+
+    let dans_2026 = ctx.ecritures_de(fy_2026).await;
+    let (s, b) = ctx
+        .app
+        .post_vide(&format!("/api/v1/reconciliation/transactions/{t}/cancel"))
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let inverse = ctx.inverse_de(entry).await.expect("une contre-passation");
+    assert_eq!(b["reversalJournalEntryId"], json!(inverse));
+    assert_eq!(
+        ctx.date_et_exercice(inverse).await,
+        (jour(2025, 12, 15), ctx.fy_2025),
+        "datée de l'écriture, dans 2025"
+    );
+    assert_eq!(ctx.ecritures_de(fy_2026).await, dans_2026, "rien dans 2026");
+    let (libelle, numero): (String, i64) = sqlx::query_as(
+        "SELECT i.description, o.entry_number FROM journal_entries i \
+         JOIN journal_entries o ON o.id = i.reverses_entry_id WHERE i.id = ?",
+    )
+    .bind(inverse)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(libelle, format!("Contre-passation écriture n° {numero}"));
+    let details: Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'journal_entry.reversed' \
+         AND entity_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(entry)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        details,
+        json!({ "reversalJournalEntryId": inverse, "dating": "originDate" })
+    );
+}
+
+/// AC-4 (R1, Q6) — **exercice de l'écriture clos** : la vue l'annonce, le clic
+/// est refusé `409 FISCAL_YEAR_CLOSED` avec le texte du rapprochement, rien
+/// n'est écrit, le lien reste. On ne rouvre pas d'office.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s536a_ac4_un_exercice_clos_refuse_l_annulation(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+    let (t, entry) = ctx.versement_rattache().await;
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(ctx.fy_2025)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (_, vue) = ctx
+        .app
+        .get(&format!("/api/v1/reconciliation/transactions/{t}"))
+        .await;
+    assert_eq!(vue["cancelBlockedBy"], json!("FISCAL_YEAR_CLOSED"), "{vue}");
+    let avant = ctx.nombre_d_ecritures().await;
+    let (s, b) = ctx
+        .app
+        .post_vide(&format!("/api/v1/reconciliation/transactions/{t}/cancel"))
+        .await;
+    assert_eq!(s, 409, "{b}");
+    assert_eq!(b["error"]["code"], json!("FISCAL_YEAR_CLOSED"), "{b}");
+    assert!(
+        b["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.starts_with("Ce rapprochement appartient à un exercice clôturé")),
+        "{b}"
+    );
+    assert_eq!(ctx.nombre_d_ecritures().await, avant, "rien d'écrit");
+    assert_eq!(ctx.inverse_de(entry).await, None);
+    let lien: Option<i64> =
+        sqlx::query_scalar("SELECT matched_entry_id FROM bank_transactions WHERE id = ?")
+            .bind(t)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(lien, Some(entry), "le lien reste");
+}
+
+/// AC-9 (R1, D5, Q2) — **l'écriture sous la borne du verrou** (seuil inclusif,
+/// au jour de la borne) : la vue rend `PERIOD_LOCKED` et la borne, le clic est
+/// refusé par le socle en `400 PERIOD_LOCKED` (`details.lockedThrough`,
+/// `details.attempted`), rien n'est écrit ; au **lendemain** de la borne,
+/// l'annulation passe. Tue M6 (vue) et M11 (seuil de la vue).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s536a_ac9_une_ecriture_sous_le_verrou_est_refusee(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+    let (t, entry) = ctx.versement_rattache().await;
+    ctx.verrouiller(jour(2025, 12, 15)).await;
+
+    let (_, vue) = ctx
+        .app
+        .get(&format!("/api/v1/reconciliation/transactions/{t}"))
+        .await;
+    assert_eq!(vue["cancellable"], json!(false), "{vue}");
+    assert_eq!(vue["cancelBlockedBy"], json!("PERIOD_LOCKED"), "{vue}");
+    assert_eq!(vue["cancelBlockedLabel"], json!("2025-12-15"), "{vue}");
+
+    let avant = ctx.nombre_d_ecritures().await;
+    let (s, b) = ctx
+        .app
+        .post_vide(&format!("/api/v1/reconciliation/transactions/{t}/cancel"))
+        .await;
+    assert_eq!(s, 400, "{b}");
+    assert_eq!(b["error"]["code"], json!("PERIOD_LOCKED"), "{b}");
+    assert_eq!(
+        b["error"]["details"]["lockedThrough"],
+        json!("2025-12-15"),
+        "{b}"
+    );
+    assert_eq!(
+        b["error"]["details"]["attempted"],
+        json!("2025-12-15"),
+        "{b}"
+    );
+    assert_eq!(ctx.nombre_d_ecritures().await, avant, "rien d'écrit");
+    assert_eq!(ctx.inverse_de(entry).await, None);
+
+    ctx.verrouiller(jour(2025, 12, 14)).await;
+    let (_, vue) = ctx
+        .app
+        .get(&format!("/api/v1/reconciliation/transactions/{t}"))
+        .await;
+    assert_eq!(
+        vue["cancellable"],
+        json!(true),
+        "au lendemain de la borne : {vue}"
+    );
+    let (s, b) = ctx
+        .app
+        .post_vide(&format!("/api/v1/reconciliation/transactions/{t}/cancel"))
+        .await;
+    assert_eq!(s, 200, "{b}");
+}
+
+/// AC-9 (candidates, L9) — **une écriture candidate sous la borne** : la liste
+/// des écritures à rattacher l'annonce comme obstacle (`PERIOD_LOCKED`, la
+/// borne en étiquette), par la même queue que la vue. Tue M6 (candidates).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s536a_ac9_une_candidate_sous_le_verrou_l_annonce(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+    let bank = ctx.compte_bancaire(IBAN_A, true, ctx.ledger).await;
+    let entry = ctx.versement(jour(2025, 12, 15)).await;
+    let t = ctx.transaction(bank, "42.00").await;
+    ctx.verrouiller(jour(2025, 12, 15)).await;
+    let (s, b) = ctx
+        .app
+        .get(&format!(
+            "/api/v1/reconciliation/transactions/{t}/entry-candidates"
+        ))
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let c = b["candidates"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{b}"))
+        .iter()
+        .find(|c| c["journalEntryId"] == json!(entry))
+        .unwrap_or_else(|| panic!("candidate absente : {b}"))
+        .clone();
+    assert_eq!(c["cancelBlockedBy"], json!("PERIOD_LOCKED"), "{b}");
+    assert_eq!(c["cancelBlockedLabel"], json!("2025-12-15"), "{b}");
+}
+
+/// AC-5, AC-9 (R2) — **un règlement client partiel rattaché**, l'écriture de
+/// règlement du 20 décembre 2025 : le jour de la borne, `400 PERIOD_LOCKED` du
+/// socle (le règlement partiel n'a pas de lettrage de pièce, D5) ; au
+/// lendemain, l'annulation passe, datée du règlement dans 2025, et le règlement
+/// est retiré. Tue M2.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s536a_ac5_un_reglement_client_rattache_se_contre_passe_a_sa_date(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+    let bank = ctx.compte_bancaire(IBAN_A, true, ctx.ledger).await;
+    let facture = ctx.facture_validee().await;
+    let (s, b) = ctx
+        .app
+        .post(
+            &format!("/api/v1/invoices/{facture}/settlements"),
+            json!({
+                "settlementType": "bank_transfer",
+                "bankAccountId": bank,
+                "amount": "42.00",
+                "settledOn": "2025-12-20",
+                "version": common::invoice_version(&pool, facture).await,
+            }),
+        )
+        .await;
+    assert!((200..300).contains(&s), "règlement partiel : {b}");
+    let (sid, reglement): (i64, i64) =
+        sqlx::query_as("SELECT id, journal_entry_id FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(facture)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let t = ctx.transaction(bank, "42.00").await;
+    let (s, b) = ctx
+        .app
+        .post(
+            &format!("/api/v1/reconciliation/transactions/{t}/link"),
+            json!({ "settlementId": sid }),
+        )
+        .await;
+    assert_eq!(s, 200, "rattachement au règlement : {b}");
+
+    ctx.verrouiller(jour(2025, 12, 20)).await;
+    let (_, vue) = ctx
+        .app
+        .get(&format!("/api/v1/reconciliation/transactions/{t}"))
+        .await;
+    assert_eq!(vue["kind"], json!("invoice_settlement"), "{vue}");
+    assert_eq!(vue["cancelBlockedBy"], json!("PERIOD_LOCKED"), "{vue}");
+    let (s, b) = ctx
+        .app
+        .post_vide(&format!("/api/v1/reconciliation/transactions/{t}/cancel"))
+        .await;
+    assert_eq!(s, 400, "{b}");
+    assert_eq!(b["error"]["code"], json!("PERIOD_LOCKED"), "{b}");
+    assert_eq!(
+        b["error"]["details"]["lockedThrough"],
+        json!("2025-12-20"),
+        "{b}"
+    );
+
+    ctx.verrouiller(jour(2025, 12, 19)).await;
+    let (s, b) = ctx
+        .app
+        .post_vide(&format!("/api/v1/reconciliation/transactions/{t}/cancel"))
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let inverse = ctx.inverse_de(reglement).await.expect("contre-passée");
+    assert_eq!(
+        ctx.date_et_exercice(inverse).await,
+        (jour(2025, 12, 20), ctx.fy_2025)
+    );
+    let restants: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(facture)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(restants, 0, "le règlement est retiré");
 }

@@ -1112,14 +1112,9 @@ async fn unreconciling_a_group_undoes_it_entirely(pool: MySqlPool) {
     };
     // Un groupe n'est jamais un retrait seul.
     let mut tx = pool.begin().await.unwrap();
-    let changed = reconciliation_cancel::cancel_in_tx(
-        &mut tx,
-        m.s.company_id,
-        bt,
-        acteur_cle,
-        Some(true),
-    )
-    .await;
+    let changed =
+        reconciliation_cancel::cancel_in_tx(&mut tx, m.s.company_id, bt, acteur_cle, Some(true))
+            .await;
     assert!(matches!(
         changed,
         Err(DbError::ReconciliationCancelChanged { unlink_only: false })
@@ -1688,13 +1683,7 @@ async fn a_concurrent_close_waits_for_the_group_unreconciliation(pool: MySqlPool
     let p = pool.clone();
     let (company_id, user_id) = (m.s.company_id, m.s.admin_user_id);
     let annulation = tokio::spawn(async move {
-        reconciliation_cancel::cancel(
-            &p,
-            company_id,
-            bt,
-            Acteur::utilisateur(user_id),
-        )
-        .await
+        reconciliation_cancel::cancel(&p, company_id, bt, Acteur::utilisateur(user_id)).await
     });
     // Synchronisation déterministe : la clôture n'est validée qu'une fois le
     // geste VU en attente du `FOR UPDATE` de l'exercice.
@@ -1912,14 +1901,18 @@ async fn s536a_group_unreconciliation_refuses_an_entry_under_the_period_lock(poo
     let undone = reconciliation_cancel::cancel(&pool, m.s.company_id, bt, acteur(&m))
         .await
         .expect("dé-rapproché au lendemain de la borne");
-    let date: NaiveDate =
-        sqlx::query_scalar("SELECT entry_date FROM journal_entries WHERE id = ?")
-            .bind(undone.reversal_journal_entry_id.expect("contre-passée"))
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let date: NaiveDate = sqlx::query_scalar("SELECT entry_date FROM journal_entries WHERE id = ?")
+        .bind(undone.reversal_journal_entry_id.expect("contre-passée"))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_ne!(crate::jour::aujourd_hui_test(), jour(6, 15));
-    assert_eq!(date, jour(6, 15), "datée de l'écriture {}", done.journal_entry_id);
+    assert_eq!(
+        date,
+        jour(6, 15),
+        "datée de l'écriture {}",
+        done.journal_entry_id
+    );
 }
 
 /// Story 53-6a (#1674, AC-7, R4) — **un groupe dont l'écriture est dans un
@@ -1935,13 +1928,12 @@ async fn s536a_group_unreconciliation_reverses_in_the_entry_year(pool: MySqlPool
     let b = facture(&pool, &m, "O-2", dec!(200.00), en_2019(6, 1), None).await;
     let bt = transaction(&pool, &m, dec!(300.00), en_2019(6, 15)).await;
     regler(&pool, &m, bt, &[a, b], None).await.expect("réglé");
-    let du_jour: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM journal_entries WHERE fiscal_year_id = ?",
-    )
-    .bind(m.s.fiscal_year_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let du_jour: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE fiscal_year_id = ?")
+            .bind(m.s.fiscal_year_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
 
     let undone = reconciliation_cancel::cancel(&pool, m.s.company_id, bt, acteur(&m))
         .await

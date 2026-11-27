@@ -3333,8 +3333,14 @@ pub async fn supplier_settlement_cancel_blocker(
     supplier_invoice_id: i64,
     dating: super::journal_entries::CancellationDating,
 ) -> Result<Option<super::settlement_cancellation::SettlementCancelHit>, DbError> {
-    supplier_settlement_cancel_blocker_unlinking(conn, company_id, supplier_invoice_id, None, dating)
-        .await
+    supplier_settlement_cancel_blocker_unlinking(
+        conn,
+        company_id,
+        supplier_invoice_id,
+        None,
+        dating,
+    )
+    .await
 }
 
 /// [`supplier_settlement_cancel_blocker`], avec l'**exemption étroite** du

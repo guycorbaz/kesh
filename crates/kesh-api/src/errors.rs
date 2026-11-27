@@ -6247,7 +6247,18 @@ impl IntoResponse for AppError {
                         // Tête du dé-rapprochement : jamais produite par
                         // l'annulation d'un règlement ; son texte est celui
                         // du dé-rapprochement.
-                        SettlementCancelBlocker::BankTransactionNotReconciled => {
+                        //
+                        // Story 53-6a (#1674, D5) — `PeriodLocked`,
+                        // inatteignable ici pour DEUX raisons : sous
+                        // `OriginDate` (le dé-rapprochement d'un règlement),
+                        // le `match` de refus du geste est une liste fermée et
+                        // le SOCLE refuse ce rang au clic, avec sa propre
+                        // erreur (`400 PERIOD_LOCKED`) ; sous `Today` (les
+                        // gestes depuis la fiche), la queue ne le produit pas.
+                        // Le texte est celui du dé-rapprochement, seul à
+                        // l'annoncer.
+                        SettlementCancelBlocker::BankTransactionNotReconciled
+                        | SettlementCancelBlocker::PeriodLocked => {
                             reconciliation_cancel_blocked_text(blocker)
                         }
                         // Motifs propres à l'annulation d'une FACTURE
@@ -6959,6 +6970,19 @@ fn reconciliation_cancel_blocked_text(
             "reconciliation-cancel-blocked-account-archived",
             "Un compte de l'écriture de ce rapprochement a été archivé : réactivez-le pour pouvoir annuler le rapprochement.",
         ),
+        // Story 53-6a (#1674, D5) — ATTEIGNABLE dans cette famille : les
+        // dé-rapprochements groupés (R4, R5) refusent eux-mêmes tout motif de la
+        // queue, celui-ci compris (`409 PERIOD_LOCKED`, sans `details`) ; pour
+        // les autres bras, c'est le socle qui le refuse au clic (`400`). Sans
+        // variable : l'écran ajoute la borne (`cancelBlockedLabel`).
+        SettlementCancelBlocker::PeriodLocked => (
+            "reconciliation-cancel-blocked-period-locked",
+            "L'écriture de ce rapprochement est dans une période verrouillée : pour pouvoir l'annuler, un administrateur doit faire reculer le verrou avant sa date.",
+        ),
+        // Inatteignable pour le dé-rapprochement depuis la Story 53-6a : la
+        // contre-passation est datée de l'écriture, dont l'exercice, ouvert,
+        // couvre la date. Clé et repli conservés, le `match` reste exhaustif
+        // (la variante sert encore les gestes depuis la fiche).
         SettlementCancelBlocker::NoOpenFiscalYearToday => (
             "reconciliation-cancel-blocked-no-fiscal-year",
             "Aucun exercice ouvert ne couvre la date du jour : créez-le pour pouvoir annuler ce rapprochement.",
@@ -7017,13 +7041,14 @@ fn supplier_invoice_cancel_blocked_text(
             "Cette facture figure dans un lot de paiement en cours : annulez d'abord le lot.",
         ),
         // Têtes d'autres gestes : jamais produites par l'annulation d'une
-        // facture fournisseur ; leurs textes sont les leurs.
+        // facture fournisseur ; leurs textes sont les leurs. `PeriodLocked`
+        // (Story 53-6a) : l'annulation d'une facture est datée du jour, sa queue
+        // ne produit pas ce rang.
         SettlementCancelBlocker::BankTransactionNotReconciled
         | SettlementCancelBlocker::InvoiceCredited
         | SettlementCancelBlocker::WriteOffExists
-        | SettlementCancelBlocker::SupplierInvoiceNotPaid => {
-            reconciliation_cancel_blocked_text(blocker)
-        }
+        | SettlementCancelBlocker::SupplierInvoiceNotPaid
+        | SettlementCancelBlocker::PeriodLocked => reconciliation_cancel_blocked_text(blocker),
     }
 }
 

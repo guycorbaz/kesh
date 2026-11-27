@@ -270,7 +270,7 @@ export interface SplitResponse {
 
 // Story 25-3-b (#418) — annuler un rapprochement.
 
-/** Les huit motifs qui refusent l'annulation, dans l'ordre de précédence du serveur. */
+/** Les neuf motifs qui refusent l'annulation, dans l'ordre de précédence du serveur. */
 export type ReconciliationCancelCode =
 	| 'BANK_TRANSACTION_NOT_RECONCILED'
 	| 'INVOICE_CREDITED'
@@ -281,6 +281,11 @@ export type ReconciliationCancelCode =
 	| 'LETTERING_ALL_LINES_IN_CLOSED_PERIODS'
 	| 'MATCHED_BANK_TRANSACTION'
 	| 'ACCOUNT_ARCHIVED'
+	// Story 53-6a (#1674) : l'écriture est sous la borne du verrou de période — la
+	// contre-passation, datée d'elle, serait refusée.
+	| 'PERIOD_LOCKED'
+	// Inatteignable pour le dé-rapprochement depuis la Story 53-6a (datée de l'écriture),
+	// gardé : le type reste celui des codes que le serveur peut rendre.
 	| 'FISCAL_YEAR_INVALID';
 
 /** `GET /api/v1/reconciliation/transactions/{id}` — lu au clic, pour une transaction. */
@@ -310,10 +315,21 @@ export interface ReconciliationTransactionResponse {
 	 */
 	unlinkOnly: boolean;
 	cancelBlockedBy: ReconciliationCancelCode | null;
-	/** Numéro du compte archivé (rang 4). */
+	/**
+	 * Numéro du compte archivé (rang 4), ou la borne du verrou de période (`AAAA-MM-JJ`, motif
+	 * `PERIOD_LOCKED`, Story 53-6a).
+	 */
 	cancelBlockedLabel: string | null;
 	/** L'AUTRE transaction qui pointe la même écriture (rang 3). */
 	cancelBlockedDocumentId: number | null;
+	/**
+	 * Story 53-6a (#1674, D4) — la date dont la contre-passation serait datée : celle de
+	 * l'écriture du rapprochement (`AAAA-MM-JJ`) ; `null` pour un retrait seul. Facultatif : une
+	 * vue rendue par un serveur antérieur ne le porte pas.
+	 */
+	reversalDate?: string | null;
+	/** Story 53-6a — l'exercice de cette écriture, où l'inverse serait passée. */
+	reversalFiscalYearName?: string | null;
 	// Story 43-3 (#823) — les champs d'un règlement groupé (43-2, « Vue et annulation »),
 	// facultatifs ici : une vue rendue par un serveur antérieur ne les porte pas.
 	/** Les factures du groupe, montant brut ; vide hors groupe. */
@@ -342,8 +358,9 @@ export interface GroupedInvoiceRef extends GroupedPieceRef {
 export interface CancelReconciliationResponse {
 	bankTransaction: { id: number; status: string; matchedEntryId: number | null };
 	/**
-	 * L'écriture inverse, datée du jour — `null` quand seul le lien a été retiré (Story 34-11b :
-	 * l'autre côté d'un virement reste rapproché de l'écriture).
+	 * L'écriture inverse, datée de l'écriture du rapprochement, dans son exercice (Story 53-6a)
+	 * — `null` quand seul le lien a été retiré (Story 34-11b : l'autre côté d'un virement reste
+	 * rapproché de l'écriture).
 	 */
 	reversalJournalEntryId: number | null;
 	invoiceId: number | null;
@@ -407,7 +424,7 @@ export interface EntryCandidate {
 	 * instantané —, ou `null`. Les codes fournisseur de tête ne sortent pas pour une candidate.
 	 */
 	cancelBlockedBy: ReconciliationCancelCode | null;
-	/** Numéro du compte archivé (rang 4). */
+	/** Numéro du compte archivé (rang 4), ou la borne du verrou (`PERIOD_LOCKED`, Story 53-6a). */
 	cancelBlockedLabel: string | null;
 	/**
 	 * Story 34-11b (#972, AC-4b) — l'écriture d'un virement déjà rapprochée de l'**autre côté**

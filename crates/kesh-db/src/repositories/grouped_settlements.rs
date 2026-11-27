@@ -1774,7 +1774,7 @@ pub async fn cancel_in_tx(
         // Story 43-1b (AC6) : sans règlement client, le groupe est fournisseur
         // (C-e431a-9 : l'`Invariant` d'avant est remplacé par ce bras).
         return supplier_cancel_in_tx(tx, company_id, bt, entry_id, acteur, expect_unlink_only)
-        .await;
+            .await;
     }
     // Les factures, par identifiant croissant.
     for (_, invoice_id) in &tenus {
