@@ -539,8 +539,21 @@
 		});
 	}
 
+	/**
+	 * Supprime la ligne `i`. Refusé comme un déplacement pendant un envoi, une modale de conflit
+	 * ou un rechargement : la charge envoyée et l'écran ne doivent pas diverger (revue P1 de la 49-2).
+	 */
 	function removeLine(i: number) {
+		if (submitting || conflictOpen || reloading) return;
 		lines.splice(i, 1);
+	}
+
+	/**
+	 * Entrée maintenue sur ↑ ou ↓ répète le clic : la ligne ferait l'aller-retour entre les deux
+	 * bornes quand le focus bascule (revue P1 de la 49-2, L8). Une répétition de touche n'active rien.
+	 */
+	function ignorerRepetition(e: KeyboardEvent) {
+		if (e.repeat) e.preventDefault();
 	}
 
 	/** Annonce aux lecteurs d'écran du dernier déplacement (zone `aria-live`, Story 49-2, D5). */
@@ -554,7 +567,7 @@
 	 * bouton de la ligne déplacée, ou sur l'autre si celui-ci est devenu désactivé.
 	 */
 	async function moveLine(i: number, sens: -1 | 1) {
-		if (submitting || conflictOpen) return;
+		if (submitting || conflictOpen || reloading) return;
 		const cible = i + sens;
 		if (i < 0 || i >= lines.length || cible < 0 || cible >= lines.length) return;
 		const key = lines[i]._uiKey;
@@ -1020,13 +1033,14 @@
 		<!-- Story 49-2 (D2) — la cellule d'actions d'une ligne, écrite une fois : monter, descendre,
 		     supprimer. Rendue par la rangée de texte comme par la rangée chiffrée. -->
 		{#snippet actionsDeLigne(line: LineState, i: number)}
-			{@const verrouille = submitting || conflictOpen}
+			{@const verrouille = submitting || conflictOpen || reloading}
 			<div class="flex gap-0.5">
 				<Button
 					type="button"
 					variant="ghost"
 					size="sm"
 					onclick={() => moveLine(i, -1)}
+					onkeydown={ignorerRepetition}
 					disabled={i === 0 || verrouille}
 					aria-label={i18nMsg('invoice-line-move-up', 'Monter la ligne { $n }', { n: i + 1 })}
 					title={i18nMsg('invoice-line-move-up', 'Monter la ligne { $n }', { n: i + 1 })}
@@ -1040,6 +1054,7 @@
 					variant="ghost"
 					size="sm"
 					onclick={() => moveLine(i, 1)}
+					onkeydown={ignorerRepetition}
 					disabled={i === lines.length - 1 || verrouille}
 					aria-label={i18nMsg('invoice-line-move-down', 'Descendre la ligne { $n }', { n: i + 1 })}
 					title={i18nMsg('invoice-line-move-down', 'Descendre la ligne { $n }', { n: i + 1 })}
@@ -1053,8 +1068,8 @@
 					variant="ghost"
 					size="sm"
 					onclick={() => removeLine(i)}
-					disabled={lines.length <= 1}
-					aria-label="Supprimer la ligne"
+					disabled={lines.length <= 1 || verrouille}
+					aria-label={i18nMsg('invoice-line-remove', 'Supprimer la ligne { $n }', { n: i + 1 })}
 				>
 					<Trash2 class="h-4 w-4" aria-hidden="true" />
 				</Button>

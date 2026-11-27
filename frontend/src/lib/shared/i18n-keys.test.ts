@@ -1290,8 +1290,10 @@ const ATTENDU = {
 	// Story 49-2 (#1756, réordonner les lignes d'une facture) : **3963** (« expected 3963 to be 3958 »,
 	// `$GATE_LOGS/e492/rouge-T7.log`) — `invoice-line-move-up` et `invoice-line-move-down` (chacune lue deux fois, `aria-label`
 	// et `title`, dans le snippet `actionsDeLigne`) et `invoice-lines-moved-status` : 3958 + 5.
-	// Fusion de origin/main (Epic 55, 3958 + 7 = 3965) dans la branche de la 49-2 (2026-11-27) : les deux côtés gardés, soit 3958 + 5 + 7.
-	sitesTotal: 3970,
+	// Fusion de origin/main (Epic 55, 3958 + 7 = 3965) dans la branche de la 49-2 (2026-11-27) : les deux côtés gardés, soit 3958 + 5 + 7 = 3970 (garde : `$GATE_LOGS/e492/remediation/garde-sites-1.log`).
+	// Remédiation de la revue P1 de la 49-2 : **3971** (« expected 3971 to be 3970 ») — `invoice-line-remove`, lue une fois
+	// (`aria-label` de la poubelle du snippet `actionsDeLigne`) : 3970 + 1.
+	sitesTotal: 3971,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

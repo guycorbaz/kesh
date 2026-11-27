@@ -4710,3 +4710,4 @@ fiscal-years-checks-k2-link-wise = Ouvrir la page Wise
 invoice-line-move-up = Monter la ligne { $n }
 invoice-line-move-down = Descendre la ligne { $n }
 invoice-lines-moved-status = Ligne déplacée en position { $position } sur { $total }
+invoice-line-remove = Supprimer la ligne { $n }

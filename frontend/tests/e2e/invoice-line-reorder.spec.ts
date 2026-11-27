@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import {
 	seedTestState,
 	clearAuthStorage,
@@ -17,7 +18,7 @@ import {
  * navigateur : on crée toutes les lignes à la suite (ligne libre A, commentaire C, article B),
  * puis on les remet dans l'ordre **au clavier** (↑ du commentaire, ↓ de A) ; le focus suit la
  * ligne, le déplacement est annoncé ; l'ordre se garde à l'enregistrement, se retrouve à la
- * réouverture du brouillon, à la fiche de la facture validée et à son PDF.
+ * réouverture du brouillon, à la fiche de la facture validée et à son PDF (texte extrait par `pdftotext`).
  *
  * Les captures de la recette visuelle (AC14, thème clair) sont prises quand
  * `KESH_E2E_CAPTURES_DIR` est posé ; le PDF de la facture y est aussi déposé.
@@ -48,7 +49,13 @@ async function capture(page: Page, name: string) {
 	const dossier = process.env.KESH_E2E_CAPTURES_DIR;
 	if (!dossier) return;
 	await fs.mkdir(dossier, { recursive: true });
-	await page.screenshot({ path: path.join(dossier, `${name}.png`), fullPage: true });
+	// `animations: 'disabled'` : les transitions finies (150 ms d'opacité des boutons) sont menées à leur
+	// terme avant la prise, pour qu'un bouton qui vient de s'activer ne soit pas capturé en plein fondu.
+	await page.screenshot({
+		path: path.join(dossier, `${name}.png`),
+		fullPage: true,
+		animations: 'disabled',
+	});
 }
 
 async function createProductViaApi(page: Page, name: string): Promise<void> {
@@ -83,10 +90,17 @@ async function ordreDuFormulaire(page: Page): Promise<string[]> {
 	});
 }
 
+/**
+ * Les boutons ↑ / ↓ de la ligne de rang `n` (à partir de 1) : visés par `data-move`, dans l'ordre du
+ * tableau, non par leur nom traduit (garde KF-043, `e2e-selecteurs-traduits.test.ts`).
+ */
+const monter = (page: Page, n: number) => page.locator('button[data-move="up"]').nth(n - 1);
+const descendre = (page: Page, n: number) => page.locator('button[data-move="down"]').nth(n - 1);
+
 test.describe('Factures — réordonner les lignes (49-2)', () => {
 	test('créer toutes les lignes, puis réordonner au clavier ; l’ordre tient jusqu’au PDF', async ({
 		page,
-	}) => {
+	}, testInfo) => {
 		await login(page);
 		await ensurePrimaryBankAccountViaApi(page);
 		const contactName = uniq('Ordre SA');
@@ -119,31 +133,34 @@ test.describe('Factures — réordonner les lignes (49-2)', () => {
 		await page.getByPlaceholder(/Rechercher un produit/).fill(produit);
 		await page.getByRole('dialog').getByRole('button').filter({ hasText: produit }).first().click();
 		await expect(page.locator('[data-testid="invoice-lines-table"] tbody > tr')).toHaveCount(3);
-		expect(await ordreDuFormulaire(page)).toEqual([LIGNE_A, COMMENTAIRE, produit]);
+		await expect.poll(() => ordreDuFormulaire(page)).toEqual([LIGNE_A, COMMENTAIRE, produit]);
 
 		// AC1 : bornes désactivées, deux boutons par ligne.
-		await expect(page.getByRole('button', { name: 'Monter la ligne 1' })).toBeDisabled();
-		await expect(page.getByRole('button', { name: 'Descendre la ligne 3' })).toBeDisabled();
-		await expect(page.getByRole('button', { name: 'Monter la ligne 2' })).toBeEnabled();
-		await expect(page.getByRole('button', { name: 'Descendre la ligne 1' })).toBeEnabled();
+		await expect(monter(page, 1)).toBeDisabled();
+		await expect(descendre(page, 3)).toBeDisabled();
+		await expect(monter(page, 2)).toBeEnabled();
+		await expect(descendre(page, 1)).toBeEnabled();
+		// Le nom accessible suit le rang (lu par `aria-label`, hors sélecteur).
+		await expect(monter(page, 2)).toHaveAttribute('aria-label', 'Monter la ligne 2');
 		await capture(page, 'C1-formulaire-trois-lignes');
 
 		// Au clavier : focus, puis Entrée. ↑ du commentaire : il passe en tête, ↑ devient
 		// désactivé, le focus passe à ↓ de la même ligne.
-		await page.getByRole('button', { name: 'Monter la ligne 2' }).focus();
+		await monter(page, 2).focus();
 		await page.keyboard.press('Enter');
-		expect(await ordreDuFormulaire(page)).toEqual([COMMENTAIRE, LIGNE_A, produit]);
-		await expect(page.getByRole('button', { name: 'Descendre la ligne 1' })).toBeFocused();
+		await expect.poll(() => ordreDuFormulaire(page)).toEqual([COMMENTAIRE, LIGNE_A, produit]);
+		await expect(descendre(page, 1)).toBeFocused();
 		await expect(page.getByTestId('invoice-lines-move-status')).toHaveText(
 			'Ligne déplacée en position 1 sur 3',
 		);
 		await capture(page, 'C2-commentaire-en-tete');
 
-		// ↓ de A (devenue 2e) : A passe en dernière, ↓ désactivé, le focus passe à ↑.
-		await page.getByRole('button', { name: 'Descendre la ligne 2' }).focus();
-		await page.keyboard.press('Enter');
-		expect(await ordreDuFormulaire(page)).toEqual([COMMENTAIRE, produit, LIGNE_A]);
-		await expect(page.getByRole('button', { name: 'Monter la ligne 3' })).toBeFocused();
+		// ↓ de A (devenue 2e), cette fois à la touche *Espace* (le manuel promet Entrée et Espace) :
+		// A passe en dernière, ↓ désactivé, le focus passe à ↑.
+		await descendre(page, 2).focus();
+		await page.keyboard.press('Space');
+		await expect.poll(() => ordreDuFormulaire(page)).toEqual([COMMENTAIRE, produit, LIGNE_A]);
+		await expect(monter(page, 3)).toBeFocused();
 		await expect(page.getByTestId('invoice-lines-move-status')).toHaveText(
 			'Ligne déplacée en position 3 sur 3',
 		);
@@ -158,7 +175,7 @@ test.describe('Factures — réordonner les lignes (49-2)', () => {
 		// Rouvrir : même ordre.
 		await page.goto(`/invoices/${invoiceId}/edit`);
 		await expect(page.locator('[data-testid="invoice-lines-table"] tbody > tr')).toHaveCount(3);
-		expect(await ordreDuFormulaire(page)).toEqual([COMMENTAIRE, produit, LIGNE_A]);
+		await expect.poll(() => ordreDuFormulaire(page)).toEqual([COMMENTAIRE, produit, LIGNE_A]);
 		await capture(page, 'C4-brouillon-rouvert');
 		await page.goto(`/invoices/${invoiceId}`);
 
@@ -166,7 +183,7 @@ test.describe('Factures — réordonner les lignes (49-2)', () => {
 		await page.getByRole('button', { name: /Valider/i }).first().click();
 		await page.getByTestId('invoice-validate-dialog').getByRole('button', { name: /Valider/i }).click();
 		await expect(page.getByTestId('invoice-unvalidate-button')).toBeVisible();
-		await expect(page.getByRole('button', { name: /Monter la ligne/ })).toHaveCount(0);
+		await expect(page.locator('button[data-move]')).toHaveCount(0);
 		await capture(page, 'C5-fiche-validee');
 
 		const ctx = await authedApiContext(page);
@@ -182,6 +199,16 @@ test.describe('Factures — réordonner les lignes (49-2)', () => {
 			expect(pdf.status()).toBe(200);
 			const octets = await pdf.body();
 			expect(octets.subarray(0, 5).toString('utf8')).toBe('%PDF-');
+			// L'ordre dans le PDF : le texte en est extrait par `pdftotext` (poppler, présent sur la
+			// station comme pour les manuels) ; les trois lignes s'y lisent dans l'ordre du brouillon.
+			const fichierPdf = testInfo.outputPath('facture.pdf');
+			await fs.mkdir(path.dirname(fichierPdf), { recursive: true });
+			await fs.writeFile(fichierPdf, octets);
+			const texte = execFileSync('pdftotext', ['-layout', fichierPdf, '-'], { encoding: 'utf8' });
+			const rangs = [COMMENTAIRE, produit, LIGNE_A].map((t) => texte.indexOf(t));
+			expect(rangs.every((r) => r >= 0), `lignes absentes du PDF : ${JSON.stringify(rangs)}`).toBe(true);
+			expect(rangs[0]).toBeLessThan(rangs[1]);
+			expect(rangs[1]).toBeLessThan(rangs[2]);
 			const dossier = process.env.KESH_E2E_CAPTURES_DIR;
 			if (dossier) {
 				await fs.mkdir(dossier, { recursive: true });

@@ -454,7 +454,7 @@ describe('InvoiceForm — cycle de vie des lignes (Story 16-1b, AC9 / AC9-bis)',
 
 		// Supprimer la ligne du MILIEU : c'est le cas où un keying par index
 		// ferait glisser les comptes d'un cran.
-		await fireEvent.click(getAllByLabelText('Supprimer la ligne')[1]);
+		await fireEvent.click(getAllByLabelText('Supprimer la ligne 2')[0]);
 		await settle();
 
 		const values = accountInputs(container).map((b) => b.value);
@@ -2027,5 +2027,93 @@ describe('InvoiceForm — réordonner les lignes (Story 49-2)', () => {
 		await settle();
 		expect(ordre(container)).toEqual(['Prestation A', 'Merci de votre confiance', 'Article B']);
 		expect(isDisabled(descendre(container, 1))).toBe(false);
+	});
+
+	it('AC4 (L7) — deux déplacements qui aboutissent au même texte : la zone est vidée entre les deux, donc ré-annoncée', async () => {
+		const { container, getByTestId } = render(InvoiceForm, { invoice: brouillonABC() });
+		await settle();
+		const zone = getByTestId('invoice-lines-move-status');
+		await cliquer(descendre(container, 1)); // A passe en 2e : « position 2 sur 3 »
+		const annonce = 'Ligne déplacée en position 2 sur 3';
+		expect(zone.textContent?.trim()).toBe(annonce);
+
+		// Les valeurs successives de la zone pendant le 2e déplacement (ancienne valeur de chaque mutation).
+		const anciennes: string[] = [];
+		const obs = new MutationObserver((records) => {
+			for (const r of records) anciennes.push((r.oldValue ?? '').trim());
+		});
+		obs.observe(zone, { subtree: true, childList: true, characterData: true, characterDataOldValue: true });
+		await cliquer(monter(container, 3)); // B passe en 2e : le MÊME texte
+		obs.disconnect();
+
+		expect(zone.textContent?.trim()).toBe(annonce);
+		// Texte → vide → texte : sans le vidage, la zone ne change pas et rien n'est ré-annoncé.
+		expect(anciennes).toEqual([annonce, '']);
+	});
+
+	it('AC4 (L8) — une répétition de touche sur ↑ ou ↓ est neutralisée, la première frappe ne l’est pas', async () => {
+		const { container } = render(InvoiceForm, { invoice: brouillonABC() });
+		await settle();
+		for (const bouton of [descendre(container, 1), monter(container, 3)]) {
+			// `fireEvent` rend `false` quand l'événement a été annulé (`preventDefault`).
+			expect(await fireEvent.keyDown(bouton, { key: 'Enter' })).toBe(true);
+			expect(await fireEvent.keyDown(bouton, { key: 'Enter', repeat: true })).toBe(false);
+		}
+	});
+
+	it('la poubelle est verrouillée pendant un envoi, et son nom porte le rang de la ligne', async () => {
+		updateInvoiceMock.mockReturnValue(new Promise(() => {}));
+		const { container, getByTestId } = render(InvoiceForm, { invoice: brouillonABC() });
+		await settle();
+		const poubelle = (n: number) =>
+			container.querySelector(`button[aria-label="Supprimer la ligne ${n}"]`) as HTMLButtonElement;
+		for (let n = 1; n <= 3; n++) expect(isDisabled(poubelle(n))).toBe(false);
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		for (let n = 1; n <= 3; n++) expect(isDisabled(poubelle(n))).toBe(true);
+		await fireEvent.click(poubelle(2));
+		await settle();
+		expect(ordre(container)).toEqual(['Prestation A', 'Merci de votre confiance', 'Article B']);
+	});
+
+	it('AC5 (L10) — « Annuler » pendant un rechargement : ↑, ↓ et poubelle restent verrouillés, la réponse rend l’ordre du serveur', async () => {
+		updateInvoiceMock.mockRejectedValue({
+			code: 'OPTIMISTIC_LOCK_CONFLICT',
+			status: 409,
+			message: 'conflit',
+		});
+		let repondre!: (v: InvoiceResponse) => void;
+		getInvoiceMock.mockReturnValue(
+			new Promise<InvoiceResponse>((r) => {
+				repondre = r;
+			}),
+		);
+		const { container, getByTestId, getByText } = render(InvoiceForm, {
+			invoice: brouillonABC(),
+		});
+		await settle();
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		await fireEvent.click(getByText('Recharger')); // la réponse tarde
+		await settle();
+		const dialogue = document.querySelector('[role="dialog"]') as HTMLElement;
+		const annuler = Array.from(dialogue.querySelectorAll('button')).find(
+			(b) => b.textContent?.trim() === 'Annuler',
+		) as HTMLButtonElement;
+		await fireEvent.click(annuler);
+		await settle();
+
+		const poubelle = (n: number) =>
+			container.querySelector(`button[aria-label="Supprimer la ligne ${n}"]`) as HTMLButtonElement;
+		for (let n = 1; n <= 3; n++) {
+			expect(isDisabled(monter(container, n))).toBe(true);
+			expect(isDisabled(descendre(container, n))).toBe(true);
+			expect(isDisabled(poubelle(n))).toBe(true);
+		}
+		repondre({ ...brouillonABC(), version: 2 });
+		await settle();
+		expect(ordre(container)).toEqual(['Prestation A', 'Merci de votre confiance', 'Article B']);
+		expect(isDisabled(descendre(container, 1))).toBe(false);
+		expect(isDisabled(poubelle(1))).toBe(false);
 	});
 });
