@@ -1258,7 +1258,7 @@ development_status:
   # Epic 52 : découpé de l'Epic 49 (2026-11-21), réduit le 2026-11-27 (décision du Project Lead) à la 49-2 et sa story de solde, pour la v0.21.0 (vendredi 2026-12-04) ;
   # la 49-3 et la 49-4b passent à l'Epic 62 (v0.22.0). Les stories gardent leur clé 49-x.
   epic-52: in-progress  # « Lignes de facture, suite : le réordonnancement » — v0.21.0 (vendredi 2026-12-04, coupure jeudi 2026-12-03 au soir) ; 49-2 (réordonnancement), 52-solde ; aucune migration ; fichier epic-52-lignes-de-facture-suite.md ; branche epic/52-lignes-de-facture-suite (main 0e99cd2db)
-  49-2-reordonnancement-lignes: backlog  # 2026-11-27 → Epic 52 réduit, v0.21.0 ; fiche en cours (Opus 5.5), branche story/49-2-reordonnancement-lignes. — #1242 ; ↑/↓ en brouillon (glisser-déposer si la fiche le juge sûr) ; après 49-1c
+  49-2-reordonnancement-lignes: ready-for-dev  # 2026-11-27 fiche (Opus 5.5) ; validation P1 à lancer (Sonnet) ; aucune migration ; deux modules ; glisser-déposer écarté (D3). 2026-11-27 → Epic 52 réduit, v0.21.0 ; branche story/49-2-reordonnancement-lignes. — #1242 ; ↑/↓ en brouillon (glisser-déposer si la fiche le juge sûr) ; après 49-1c
   52-solde-dette-epic: backlog  # story de solde : la seule dette de la 49-2 ; plafond PROPOSÉ de deux issues, à confirmer par le Project Lead
   epic-52-retrospective: optional
   # 2026-11-27 — Epic 62 « Lignes de facture : titres de section et désignation longue au PDF » (décision du Project Lead), v0.22.0 ;
