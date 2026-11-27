@@ -973,7 +973,10 @@ fn de_haut_en_bas(contexte: &str, pdf: &[u8], haut: &str, milieu: &str, bas: &st
         ordonnee(contexte, pdf, milieu),
         ordonnee(contexte, pdf, bas),
     );
-    assert!(h > m && m > b, "{contexte} : {haut} {h} / {milieu} {m} / {bas} {b}");
+    assert!(
+        h > m && m > b,
+        "{contexte} : {haut} {h} / {milieu} {m} / {bas} {b}"
+    );
 }
 
 /// **T4 (Story 49-2, AC3, AC8, AC9, AC10)** — réordonner un brouillon déplace le PDF et
@@ -1007,14 +1010,22 @@ async fn reordering_a_draft_moves_the_pdf_not_the_entry(pool: MySqlPool) {
     let mut put = m.corps(json!([b(), commentaire(MERCI), a()]));
     put["version"] = json!(version);
     let (status, modifiee) = m
-        .envoyer(reqwest::Method::PUT, &format!("/api/v1/invoices/{id1}"), &put)
+        .envoyer(
+            reqwest::Method::PUT,
+            &format!("/api/v1/invoices/{id1}"),
+            &put,
+        )
         .await;
     assert_eq!(status, 200, "{modifiee}");
     assert_eq!(modifiee["version"].as_i64().unwrap(), version + 1);
     assert_eq!(descriptions(&modifiee), [B, MERCI, A]);
     assert_eq!(positions(&modifiee), vec![0, 1, 2]);
     let lue = m.lire(&format!("/api/v1/invoices/{id1}")).await;
-    assert_eq!(descriptions(&lue), [B, MERCI, A], "GET relit l'ordre enregistré");
+    assert_eq!(
+        descriptions(&lue),
+        [B, MERCI, A],
+        "GET relit l'ordre enregistré"
+    );
     assert_eq!(positions(&lue), vec![0, 1, 2]);
 
     // AC10 : l'audit porte l'ancien et le nouvel ordre.
@@ -1057,7 +1068,10 @@ async fn reordering_a_draft_moves_the_pdf_not_the_entry(pool: MySqlPool) {
         ecriture(&pool, &validees[0]).await,
         ecriture(&pool, &validees[1]).await,
     );
-    assert!(e1.len() >= 3, "montage : écriture à plusieurs lignes : {e1:?}");
+    assert!(
+        e1.len() >= 3,
+        "montage : écriture à plusieurs lignes : {e1:?}"
+    );
     assert_eq!(e1, e2, "l'écriture ne dépend pas de l'ordre des lignes");
     assert_eq!(sommes(&validees[0]), sommes(&validees[1]));
     assert_ne!(validees[0]["totalAmount"], "0.0000");
@@ -1114,10 +1128,17 @@ async fn reordering_a_validated_invoice_is_refused_without_writing(pool: MySqlPo
     let mut put = m.corps(json!([b(), commentaire(MERCI), a()]));
     put["version"] = avant["version"].clone();
     let (status, refus) = m
-        .envoyer(reqwest::Method::PUT, &format!("/api/v1/invoices/{id}"), &put)
+        .envoyer(
+            reqwest::Method::PUT,
+            &format!("/api/v1/invoices/{id}"),
+            &put,
+        )
         .await;
     assert_eq!(status, 409, "{refus}");
-    assert_eq!(refus["error"]["code"], "ILLEGAL_STATE_TRANSITION", "{refus}");
+    assert_eq!(
+        refus["error"]["code"], "ILLEGAL_STATE_TRANSITION",
+        "{refus}"
+    );
 
     let apres = m.lire(&format!("/api/v1/invoices/{id}")).await;
     assert_eq!(descriptions(&apres), ["Loyer", MERCI, "Charges"]);
@@ -1129,7 +1150,11 @@ async fn reordering_a_validated_invoice_is_refused_without_writing(pool: MySqlPo
         pdf_fige,
         "le PDF figé est inchangé"
     );
-    assert_eq!(audit_updated(&pool, id).await, maj_avant, "aucune écriture d'audit neuve");
+    assert_eq!(
+        audit_updated(&pool, id).await,
+        maj_avant,
+        "aucune écriture d'audit neuve"
+    );
 }
 
 /// Le nombre d'actions `invoice.updated` écrites pour une facture.
