@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+	deplacerLigne,
 	estChiffree,
 	estLigneDeTexte,
 	ligneAEnvoyer,
@@ -163,5 +164,64 @@ describe('ligneAEnvoyer (D3, D5)', () => {
 			lineType: 'heading',
 			description: 'Travaux',
 		});
+	});
+});
+
+describe('deplacerLigne (Story 49-2, D4)', () => {
+	const a = { id: 'a' };
+	const b = { id: 'b' };
+	const c = { id: 'c' };
+
+	it('descend une ligne du milieu', () => {
+		const entree = [a, b, c];
+		const sortie = deplacerLigne(entree, 1, 1);
+		expect(sortie.map((x) => x.id)).toEqual(['a', 'c', 'b']);
+	});
+
+	it('monte une ligne du milieu', () => {
+		expect(deplacerLigne([a, b, c], 1, -1).map((x) => x.id)).toEqual(['b', 'a', 'c']);
+	});
+
+	it('monte la dernière et descend la première', () => {
+		expect(deplacerLigne([a, b, c], 2, -1).map((x) => x.id)).toEqual(['a', 'c', 'b']);
+		expect(deplacerLigne([a, b, c], 0, 1).map((x) => x.id)).toEqual(['b', 'a', 'c']);
+	});
+
+	it('rend une copie inchangée aux deux bornes', () => {
+		const entree = [a, b, c];
+		for (const [i, sens] of [
+			[0, -1],
+			[2, 1],
+		] as const) {
+			const sortie = deplacerLigne(entree, i, sens);
+			expect(sortie).not.toBe(entree);
+			expect(sortie.map((x) => x.id)).toEqual(['a', 'b', 'c']);
+		}
+	});
+
+	it('rend une copie inchangée pour un index hors bornes', () => {
+		for (const i of [-1, 3, 99, 1.5, Number.NaN]) {
+			const sortie = deplacerLigne([a, b, c], i, 1);
+			expect(sortie.map((x) => x.id)).toEqual(['a', 'b', 'c']);
+			expect(deplacerLigne([a, b, c], i, -1).map((x) => x.id)).toEqual(['a', 'b', 'c']);
+		}
+	});
+
+	it("traite un tableau d'une ligne et un tableau vide", () => {
+		expect(deplacerLigne([a], 0, 1)).toEqual([a]);
+		expect(deplacerLigne([a], 0, -1)).toEqual([a]);
+		expect(deplacerLigne([], 0, 1)).toEqual([]);
+	});
+
+	it('rend un tableau neuf des mêmes objets, sans modifier celui reçu', () => {
+		const entree = [a, b, c];
+		const sortie = deplacerLigne(entree, 0, 1);
+		expect(sortie).not.toBe(entree);
+		expect(entree).toEqual([a, b, c]);
+		expect(entree[0]).toBe(a);
+		expect(entree[1]).toBe(b);
+		expect(sortie[0]).toBe(b);
+		expect(sortie[1]).toBe(a);
+		expect(sortie[2]).toBe(c);
 	});
 });
