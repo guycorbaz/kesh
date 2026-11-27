@@ -1,13 +1,33 @@
 <script lang="ts">
 	// Story 11-2 — Vue Rapport TVA (TVA due / vente).
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { formatReportAmount, formatSwissDate, isReportEmpty } from './reports.api';
-	import type { VatReportDto } from './reports.types';
+	import { formatReportAmount, isReportEmpty } from './reports.api';
+	import AccountLink from './AccountLink.svelte';
+	import ReportPeriodHeading from './ReportPeriodHeading.svelte';
+	import type { ExerciceBornes } from './reports-url';
+	import type { AccountRef, VatReportDto } from './reports.types';
 
 	interface Props {
 		dto: VatReportDto;
+		/** Story 55-1a (AC-17) — les exercices de la société, pour l'en-tête de la période. */
+		fiscalYears?: readonly ExerciceBornes[];
+		/**
+		 * Story 55-2 (AC-6, D7) — les comptes désignés dans les réglages de facturation (TVA due, impôt
+		 * préalable), résolus par la page ; `null` : non désigné, absent de la liste des comptes, ou réglages en
+		 * échec — sa mention est omise. Aucun des deux : la ligne est omise.
+		 */
+		vatAccounts?: { payable: AccountRef | null; recoverable: AccountRef | null };
 	}
-	let { dto }: Props = $props();
+	let { dto, fiscalYears = [], vatAccounts = { payable: null, recoverable: null } }: Props = $props();
+
+	// L'étiquette de chaque compte reprend celle de la colonne ou de la ligne du décompte ; elle ne promet
+	// aucune égalité de montant (C-55-2-2 : la TVA due vient des factures, non du solde du compte).
+	const vatAccountPairs = $derived(
+		[
+			{ ref: vatAccounts.payable, label: i18nMsg('reports-vat-column-vat-due', 'TVA due') },
+			{ ref: vatAccounts.recoverable, label: i18nMsg('reports-vat-recoverable', 'TVA récupérable') },
+		].filter((p): p is { ref: AccountRef; label: string } => p.ref !== null),
+	);
 	let empty = $derived(isReportEmpty('vat', dto));
 
 	const fmt = formatReportAmount;
@@ -19,9 +39,9 @@
 </script>
 
 <section class="space-y-4">
-	<header class="text-sm text-gray-600">
-		<strong>{i18nMsg('reports-filter-period', 'Période')}:</strong>
-		{formatSwissDate(dto.period.startDate)} — {formatSwissDate(dto.period.endDate)}
+	<!-- Story 55-1a (AC-17) — la période réelle de la réponse, et l'exercice dont elle est l'entier ou une partie. -->
+	<header>
+		<ReportPeriodHeading from={dto.period.startDate} to={dto.period.endDate} {fiscalYears} />
 	</header>
 
 	<!-- Story 18-1e : bandeau de réconciliation (INFO non bloquant). Indépendant du
@@ -39,7 +59,7 @@
 
 	{#if empty}
 		<p class="rounded bg-blue-50 p-4 text-blue-900" role="status">
-			{i18nMsg('reports-error-no-entries-in-period', 'Aucune écriture dans la période sélectionnée.')}
+			{i18nMsg('reports-error-no-entries-in-period', 'Aucune écriture sur cette période.')}
 		</p>
 	{:else}
 		<table class="mt-2 w-full border-collapse">
@@ -116,5 +136,26 @@
 				</tr>
 			</tfoot>
 		</table>
+	{/if}
+
+	<!-- Story 55-2 (AC-6, D7) — les comptes de TVA au grand livre, après le contenu du décompte (tableau, ou
+	     message d'un décompte vide), sur la période du décompte. -->
+	{#if vatAccountPairs.length > 0}
+		<p class="flex flex-wrap items-baseline gap-x-2 text-sm text-gray-700" data-testid="vat-accounts">
+			<span>{i18nMsg('reports-nav-vat-accounts', 'Comptes au grand livre :')}</span>
+			{#each vatAccountPairs as p, i (p.label)}
+				{#if i > 0}{' '}<span aria-hidden="true">·</span>{/if}{' '}<span
+					>{p.label}
+					<span class="font-mono"
+						><AccountLink
+							accountId={p.ref.id}
+							number={p.ref.number}
+							from={dto.period.startDate}
+							to={dto.period.endDate}
+						/></span
+					></span
+				>
+			{/each}
+		</p>
 	{/if}
 </section>

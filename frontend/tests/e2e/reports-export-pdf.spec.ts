@@ -42,10 +42,7 @@ test('export PDF balance-sheet via UI (AC #35, T12.1)', async ({ page }) => {
 	await page.goto('/reports');
 	await page.waitForLoadState('networkidle');
 
-	// Étape 1 : générer le bilan (déclenche l'apparition du tabpanel avec un DTO)
-	const generateButton = page.getByRole('button', { name: /générer/i });
-	await expect(generateButton).toBeEnabled();
-	await generateButton.click();
+	// Étape 1 : le bilan se charge seul à l'ouverture de la page (Story 55-1a, D16 : plus de *Générer*).
 
 	// Attendre que le rapport soit prêt — le tabpanel doit afficher un contenu.
 	const tabpanel = page.getByRole('tabpanel');
