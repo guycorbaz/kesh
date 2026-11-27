@@ -6,7 +6,8 @@
  *
  * Représentant d'une valeur : d'abord un taux qui porte un libellé (non vide, distinct de sa
  * catégorie, que le serveur pose à défaut), puis la catégorie, puis l'`id`. L'ordre de sortie
- * est celui de la première apparition de chaque valeur.
+ * est celui de la première apparition de chaque valeur. À `id` égal ou absent (données de test
+ * seulement : en base, l'`id` est la clé primaire), le premier reçu reste le représentant.
  */
 import type { VatRateResponse } from "./vat-rates.types";
 

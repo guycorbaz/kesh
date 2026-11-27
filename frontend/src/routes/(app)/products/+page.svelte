@@ -62,10 +62,10 @@
 					// Revue 64-1 (R1-1, L2-1) : une valeur n'est proposée qu'une fois (clé du
 					// `{#each}` unique) ; le taux libellé donne le libellé, quel que soit l'ordre.
 					vatOptions = distinctVatRates(rates).map((r) => ({
-							value: r.rate,
-							labelKey: r.label,
-							fallback: `${r.rate} % — ${r.label.replace('product-vat-', '')}`,
-						}));
+						value: r.rate,
+						labelKey: r.label,
+						fallback: `${r.rate} % — ${r.label.replace('product-vat-', '')}`,
+					}));
 					vatLoadState = 'ready';
 				}
 			} catch {
