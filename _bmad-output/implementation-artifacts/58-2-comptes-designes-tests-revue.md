@@ -1,6 +1,6 @@
 # Story 58-2 : Comptes désignés et tests Rust de revue — neuf trous de couverture (#592, #732, #736, #1060, #1062, #1063, #1064, #1066, #1433)
 
-Status: ready-for-dev (validation P1 remédiée : 0/0/6/7 ; P2 remédiée : 0/0/1/3 ; P3 ciblée : 0/0/1/2, remédiée par la sortie de #1127 ; P4 ciblée (Sonnet) : 0/0/0/5, remédiée)
+Status: review (développement terminé ; validation P1 remédiée : 0/0/6/7 ; P2 remédiée : 0/0/1/3 ; P3 ciblée : 0/0/1/2, remédiée par la sortie de #1127 ; P4 ciblée (Sonnet) : 0/0/0/5, remédiée)
 
 *Fiche rédigée le 2026-11-27 (Sonnet 5.5, en autonomie), workflow `bmad-create-story`. Worktree `/home/gcorbaz/devel/kesh-58-2`, branche
 `story/58-2-comptes-designes-tests-revue` partie de `epic/58-nettoyage` à `90192c7b3` (qui contient la v0.20.0, la 58-1 et la 58-3). Fichier d'epic :
@@ -287,16 +287,54 @@ Moins d'une journée : neuf issues, dont huit courtes (S) et un M (#592 : 14 mut
 ## Dev Agent Record
 
 ### Agent Model Used
-*(à remplir)*
+Opus 5.5, workflow `bmad-dev-story`, en autonomie (2026-11-27). Tests seulement : aucun fichier de `crates/*/src/*`, aucun catalogue, aucun manuel.
 
 ### Debug Log References
-*(journaux `kesh-gate-logs/e58/s582-*` et `kesh-gate-logs/idefix/<id>/`)*
+`$GATE_LOGS/e58/s582-mutations.md` (journal des mutations : 31 lignes Rust, 30 lignes frontend, recomptées par `grep -c '^| AC'` du fichier, `AC1` à part), `s582-cible1.log` (gate ciblé local), `s582-clippy.log`, `s582-front-check.log`, `s582-front-lint.log`, `s582-mut-run.log`, `s582-fmut-run.log` ; journaux idefix : voir § *Gates exécutés*. Scripts de mutation : `/tmp/s582/mut.py`, `/tmp/s582/fmut.py` (hors dépôt).
+
+### Étape 0 (relectures, ligne lue citée)
+- **D6** : la validation lit le réglage, non le rôle — le test `ac7_sale_validation_names_the_same_account_wrong_for_two_settings` passe avec un même compte de charge posé par SQL aux deux réglages (`rejected` = deux entrées, même numéro, `receivable` puis `vatPayable`).
+- **D7 / Q4** : l'avoir sur la TVA due `2000` retypée en actif rend 201 (test `ac10_credit_note_stays_possible_…`, vert) ; code et manuel concordent, aucune issue à ouvrir.
+- **D5 / V1-1** : `chart_designated_accounts` écrit les natures en dur (`WriteOffNature::Discount`, `BankFees`, `BadDebt`, `company_invoice_settings.rs` l. 703-723 de `90192c7b3`) ; la séquence des dix numéros du plan PME et `WriteOffNature::ALL` sont tenues, et le test lit le plan par `load_chart("Pme")` et les rôles en base.
+- **AC4** : la `version` de A est inchangée par la désignation (doc-comment « N'incrémente pas `version` » confirmé à l'exécution).
+- **V1-2** : sonde positive de la garde `git status --porcelain` à liste blanche, jouée avant la première restauration : `pme.json` muté rend ` M crates/kesh-core/assets/charts/pme.json`, vide après restauration par copie puis `touch`.
+- **V1-3** : la survivante attendue de l'AC8 (retrait de `.then(a.setting.cmp(&b.setting))`) survit bien, ligne du journal ; renvoyée à #1059.
+- **V1-4** : `ParentChange` a trois variantes (`Unchanged`, `Root`, `Under(i64)`) ; la mutation (b) `.bind(match changes.parent { ParentChange::Unchanged => None, _ => parent_id })` compile ; la mutation (a) (bloc de garde déplacé avant le `match`) compile.
+- **V1-7** : `JournalEntryForm.svelte` importe `i18nMsg` d'`onboarding.svelte` ; l'espion `i18nSpy` y est posé et la mutation du site (clé du toast remplacée) rougit.
+- **V1-6** (état de l'Epic 53 dans `main`) : non relu à cette étape ; l'ordre d'entrée décidé par l'orchestrateur (58-2 d'abord) tient.
 
 ### Completion Notes List
-*(à remplir : par AC, ligne lue citée, mutation jouée, test qui la tue)*
+Mutation = copie de travail du worktree, sauvegarde dans `$GATE_LOGS/e58/s582-mut/`, restauration par copie puis `touch`, garde `git status --porcelain` à liste blanche vide après chacune (toutes vides au journal). « Avant » = le fichier de test remplacé par sa version de `3c5d0d6d6`.
+- **AC1 (#592)** — `frontend/src/lib/features/journal-entries/blocker-messages-keys.test.ts` : table littérale de 13 + 8 lignes, 14 clés distinctes, quatre catalogues lus à la source ; espion `i18nSpy` dans `JournalEntryForm.edit.test.ts` (cas `FISCAL_YEAR_CLOSED`, aucun autre attendu changé). **15 mutations F2** (14 bras + le site du formulaire) : survivent « avant » (15/15 VERT), rougissent « après » (15/15 ROUGE).
+- **AC2 (#732-1)** — cinq négatifs, six positifs. Quatre mutations (`0\d` au jour, `1[02]`, `1[12]`, retrait de `(\D|$)`) : survivent avant, rougissent après (8 lignes).
+- **AC3 (#732-2)** — `pme_chart_lock_sequence_matches_the_documented_numbers`. (i) `VatPayable` de 2200 vers 2201 dans `pme.json`, (ii) `bankFees` de 6900 vers 6800, (iii) `WriteOffNature::ALL` réordonné : ROUGE. **Survivante attendue** (escompte et frais bancaires permutés dans `chart_designated_accounts`) : VERT, l'angle mort de D5/Q3, écrit au doc-comment du test. Pas de « avant » : le test n'existait pas.
+- **AC4 (#732-3)** — `designate_vat_is_bounded_to_its_own_company` ; mutation `OR TRUE` : survit avant, rougit après.
+- **AC6 (#736)** — `grep -c 'get_i18n_lock().await' crates/kesh-api/tests/i18n_e2e.rs` : 6 (4 avant) ; en-têtes des six tests `#[sqlx::test]` : `i18n_messages_endpoint_returns_locale_and_messages`, `i18n_messages_requires_auth`, `error_messages_are_in_french_by_default`, `error_messages_in_german_when_locale_de`, `backup_schedule_out_of_domain_refusal_in_german`, `mcp_settings_host_bits_refusal_in_german` : chacun prend `let _guard = get_i18n_lock().await;` avant son premier `spawn_app*`. Pas de preuve du rouge (flake de course).
+- **AC7 (#1060)** — quatre messages entiers en littéraux dans la boucle de `ac9_…` plus le cinquième cas (arrondi, « charge ou produit »). Mutations `Liability => "actif"`, `Expense => "produit"`, `Revenue => "charge"` : survivent avant, rougissent après. `grep -c 'type de compte incompatible (attendu : ' designated_account_type_e2e.rs` : 6 (1 avant, dont le littéral de l'ancien assert).
+- **AC8 (#1062)** — `ac7_sale_validation_names_the_same_account_wrong_for_two_settings` ; mutation de la clé de `dedup_by` : ROUGE ; **survivante attendue** (retrait de `.then(setting)`) : VERT, renvoyée à #1059 (hors story, ni absorbée ni fermée).
+- **AC9 (#1063)** — `GET` de la facture fournisseur après le 400 (`status` brouillon, `internalNumber` nul, `version` inchangée). Mutation (attribution du numéro déplacée avant `check_written`) : **survit**, comme la fiche le prédisait (le `rollback` de la transaction commune défait l'attribution) ; le test tient le contrat à travers la route, sans prétendre au rouge. Pas de variante « avant » jouée.
+- **AC10 (#1064)** — `ac10_credit_note_stays_possible_on_a_retyped_receivable_and_vat_payable`. Mutations (contrôle de type de la créance, puis de la TVA due, ajouté à `create_credit_note`) : ROUGE toutes deux (« après » seulement : le test n'existait pas « avant »).
+- **AC11 (#1066)** — rôle `Payable` et type `Liability` assertés entre les deux `update_account` ; `grep -c 'role, Some(AccountRole::Payable)'` : 2 (1 avant). Aucune mutation (comptage).
+- **AC13 (#1433)** — `put_version_perimee_precede_la_garde_du_parent` et `put_sans_parent_mais_avec_un_autre_champ_conserve_le_parent`. (a) garde de parent déplacée avant le contrôle de version : survit avant, rougit après ; (b) `.bind(parent_id)` : survit avant, rougit après. Le retrait du bras `a.version != version` : survit « avant » côté `kesh-api` et rougit « après » dans `accounts_e2e` (le test `kesh-db` de l'ordre du retypage le tue aussi, comme la fiche le dit ; non compté comme preuve d'(a)).
+- **AC14** — voir § *Gates exécutés* pour les commandes de contrôle du diff.
+
+### Hors périmètre / pour l'orchestrateur
+Aucun défaut de production révélé : aucune issue à ouvrir. Les survivantes attendues (AC3 champs permutés ; AC8 `.then(setting)`, déjà tracée par #1059 ; AC9 `rollback`) ne s'ouvrent pas en issue nouvelle (§ *Issues à ouvrir*). Mutations non rejouées au passage en `review` : aucune des listées par la fiche n'a été omise, hors les « avant » absents cités ci-dessus.
+
+### Gates exécutés
+- `cargo clippy --workspace --all-targets -- -D warnings` : `$GATE_LOGS/e58/s582-clippy.log`, au commit `051ba0183` (la fiche et le journal des mutations s'ajoutent après).
+- `cargo fmt --all -- --check` : propre.
+- Gate ciblé local, six binaires (`textes_coherents`, `i18n_e2e`, `designated_account_type_e2e`, `accounts_e2e`, `company_invoice_settings_repository`, `supplier_invoices_repository`) : `$GATE_LOGS/e58/s582-cible1.log`, commit `051ba0183`, **188 tests, 188 réussis**.
+- Vitest ciblé (`blocker-messages-keys`, `blocker-messages`, `JournalEntryForm.edit`, `fiscal-years-page`) : 4 fichiers, 97 tests verts (avant `051ba0183`, mêmes contenus).
+- `npm run check` : `$GATE_LOGS/e58/s582-front-check.log`, 0 erreur, 32 avertissements (préexistants, aucun dans les fichiers de la story). `npm run lint-i18n-ownership` : PASS (`s582-front-lint.log`).
+- Gates idefix (`test-fast`, `gate-ci`, `front`) : voir la ligne finale ci-dessous.
 
 ### File List
-*(à remplir)*
+- `crates/kesh-api/tests/accounts_e2e.rs`, `designated_account_type_e2e.rs`, `i18n_e2e.rs`, `textes_coherents.rs`
+- `crates/kesh-db/tests/company_invoice_settings_repository.rs`, `supplier_invoices_repository.rs`
+- `frontend/src/lib/features/journal-entries/blocker-messages-keys.test.ts` (nouveau), `JournalEntryForm.edit.test.ts`
+- `frontend/src/routes/(app)/settings/fiscal-years/fiscal-years-page.test.ts`
+- `_bmad-output/implementation-artifacts/58-2-comptes-designes-tests-revue.md`, `sprint-status.yaml`
 
 ## Change Log
 
@@ -320,3 +358,4 @@ Moins d'une journée : neuf issues, dont huit courtes (S) et un M (#592 : 14 mut
   la story garde **neuf** issues (#592, #732, #736, #1060, #1062, #1063, #1064, #1066, #1433) et ne touche toujours que des tests (`jour_suisse_nuit_e2e.rs` sort du périmètre). F3-1 (décompte 25/41/54, 19 sites non classés) : repris au point de départ de la future story ;
   F3-2 (Epic 53 : trois hunks, +24 lignes, dans `errors.rs` ; `accounts.rs` dès la l. 461) et F3-3 (`sprint-status.yaml`) : corrigés. Les entrées ci-dessus gardent la numérotation d'AC d'alors (AC12 vacante). Passe P4 (ciblée, Sonnet ; une première P4 Haiku, non conforme à la règle d'alternance, est écartée, `$GATE_LOGS/e58/58-2-validation-p4-ciblee.md`) :
   `58-2-comptes-designes-tests-revue-validation-prompt-p4.md`.
+- 2026-11-27 — **Développement** (Opus 5.5, `bmad-dev-story`) : neuf issues couvertes par des tests (31 mutations Rust et 30 frontend jouées au journal `$GATE_LOGS/e58/s582-mutations.md`) ; trois survivantes attendues et écrites (AC3 champs permutés, AC8 `.then(setting)`, AC9 `rollback`) ; aucun code de production, aucune issue à ouvrir. Statut `review`.
