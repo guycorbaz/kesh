@@ -1,6 +1,6 @@
 # Story 63-1 : Les annulations depuis la fiche contre-passent dans l'exercice de l'écriture, à sa date (#1752, #1753, #1754)
 
-Status: ready-for-dev  <!-- sous réserve de la validation (P1 Sonnet à lancer : 63-1-annulations-datees-origine-validation-prompt-p1.md) -->
+Status: ready-for-dev  <!-- sous réserve de la validation : P1 (Sonnet) faite le 2026-11-27, deux MEDIUM corrigés ; P2 (Opus) à lancer : 63-1-annulations-datees-origine-validation-prompt-p2.md -->
 
 *Fiche rédigée le 2026-11-27 (Opus 5.5, `bmad-create-story`), worktree `kesh-63-1`, branche `story/63-1-annulations-datees-origine`, partie
 de `story/53-6-annulation-rapprochement-exercice` à `6b71d4c21` (la 53-6a en développement). Epic 63 « Annulations datées de l'origine »
@@ -54,7 +54,12 @@ Les trois têtes passent la datation : `invoice_settlements_write::settlement_ca
 ⛔ « Une seule fonction pour lire et pour écrire » (doc de `settlement_cancel_blocker`, `invoice_settlements_write.rs:867-870`) : un lecteur
 resté sous `Today` afficherait un bouton que le clic refuse (`PERIOD_LOCKED`), ou un refus (`FISCAL_YEAR_INVALID`) que le clic ne ferait plus.
 
-**P4 — la date du jour n'a plus d'autre usage sur ces chemins (à confirmer à T0, fichier par fichier).** Dans `get_settlement_view_in_tx`,
+**P4 — la date du jour n'a plus d'autre usage sur ces chemins (confirmée à la validation P1 pour les routes et les enveloppes ; T0 la relit).** ⚠️ Retirer
+`aujourd_hui` de `commit_with_view` le retire **aussi** de **toutes** ses enveloppes, qui ne le font que suivre : `supplier_invoices::validate`
+(`supplier_invoices.rs:1478`), `unvalidate` (`:1498`), `unvalidate_with_policy` (`:1521`), `pay` (`:2463`), en plus de `cancel` et `cancel_settlement` ;
+côté routes, `update_supplier_invoice` et son `_once` (`routes/supplier_invoices.rs:799`, `:826`), `validate` (`:920`), `unvalidate` (`:956`), `pay` (`:992`),
+`cancel` (`:1025`), `cancel_settlement` (`:1064`) et les trois routes de `imported_supplier_invoices.rs` avec leurs `_once` (`:139`/`:173`, `:599`/`:625`,
+`:710`/`:734`) : partout la lecture `state.horloge.aujourd_hui()` ne sert qu'à ce transit et tombe (D3). Dans `get_settlement_view_in_tx`,
 `aujourd_hui` ne sert qu'aux deux bloqueurs (`:3734-3744`) ; dans `commit_with_view`, qu'à `get_settlement_view_in_tx` (`:3800`) ; dans
 `supplier_invoices::cancel` et `cancel_settlement`, qu'à la datation et à `commit_with_view` ; dans `services::factures::reglements`, qu'au
 bloqueur (`:582-591`). La route client garde **une** lecture de l'horloge : `InvoiceResponse::from_parts(…, aujourd_hui)` (`invoices.rs:1637`,
@@ -95,7 +100,7 @@ cumul … deux périodes ») ne vaut plus que pour les annulations faites avant 
 
 | # | Site | Geste | Datation après la story |
 |---|---|---|---|
-| R1–R6 | `reconciliation_cancel.rs:973`, `:936`, `:954` ; `grouped_settlements.rs:1844`, `:2033` | dé-rapprochement (53-6a) | origine (inchangé) |
+| R1–R6 | `reconciliation_cancel.rs:973` (`reverse_in_tx`) ; `:936`, `:954` (appels de `cancel_settlement_in_tx`, que la commande ci-dessus ne rend pas : ils atteignent `reverse_owned_in_tx` par R7 et R8) ; `grouped_settlements.rs:1844`, `:2033` | dé-rapprochement (53-6a) | origine (inchangé) |
 | **R7** | `invoice_settlements_write.rs:1134` par `cancel_settlement` (`:1249`) | règlement **et** solde depuis la fiche (#1752) | **origine** |
 | **R8** | `supplier_invoices.rs:3531` par `cancel_settlement` (`:3628`) | paiement fournisseur depuis la fiche (#1753) | **origine** |
 | **R9** | `supplier_invoices.rs:3211` (`cancel_in_tx`) | annulation de facture fournisseur (#1754) | **origine** |
@@ -104,8 +109,10 @@ cumul … deux périodes ») ne vaut plus que pour les annulations faites avant 
 
 Hors inventaire, vérifiés : les **avoirs** (`credit_notes.rs`) ne contre-passent pas par le socle — ils passent leur propre écriture, datée de
 l'avoir (sujet de la 53-2, #525) ; l'annulation d'un **lot de paiement** ne passe aucune écriture (à relire à T0) ; le **repassage en
-brouillon** supprime, il ne contre-passe pas (P9). Après la story, la **seule** production de `CancellationDating::Today` est R10 : une garde
-lexicale le fige (AC-10).
+brouillon** supprime, il ne contre-passe pas (P9). Après la story, la **seule construction** de `CancellationDating::Today(…)` en production est R10 : une garde
+lexicale le fige (AC-10). ⚠️ « Construction » : le jeton figure aussi, **sans construire**, à la définition de l'énumération (`journal_entries.rs:3192`),
+à la conversion `From<CancellationDating> for ReversalDating` (`:3208`, `CancellationDating::Today(today) => Self::Today(today)`) et au bras du `match`
+de la queue (`settlement_cancellation.rs:228`) : ce sont des motifs, conservés (D7).
 
 ## Décisions du Project Lead appliquées (Q1 à Q6 de la 53-6a, du 2026-11-27)
 
@@ -137,12 +144,15 @@ La décision de lancer la 63-1 (Project Lead, 2026-11-27) applique aux trois ges
   (`FISCAL_YEAR_INVALID`) n'y est plus produit.
 - **D3 — La date du jour sort de ces chemins** (patron D6 de la 53-6a : « un paramètre inutilisé masque la règle »). Perdent leur paramètre
   `aujourd_hui` : `invoice_settlements_write::cancel_settlement`, `supplier_invoices::{cancel, cancel_in_tx, cancel_settlement,
-  supplier_invoice_cancel_blocker, get_settlement_view, get_settlement_view_in_tx, commit_with_view}` ; `services::factures::reglements`
+  supplier_invoice_cancel_blocker, get_settlement_view, get_settlement_view_in_tx, commit_with_view, validate, unvalidate,
+unvalidate_with_policy, pay}` (les quatre derniers ne font que passer le paramètre à `commit_with_view`, P4) — **226 sites d'appel dans 34 fichiers de
+`crates/*/tests/`** (`git grep -c "supplier_invoices::\(validate\|unvalidate\|unvalidate_with_policy\|pay\|cancel\|cancel_settlement\|get_settlement_view\|commit_with_view\)(\|invoice_settlements_write::cancel_settlement(\|supplier_invoice_cancel_blocker(" -- '*/tests/*'`,
+à `6b71d4c21`, dont 97 pour `validate|unvalidate|unvalidate_with_policy|pay` ; à recompter à T0) changent de signature : un changement mécanique, trouvé par le compilateur ; `services::factures::reglements`
   cesse de lire `lecture.aujourd_hui()` ; `services::factures_fournisseur.rs:206` de même. Routes : `cancel_invoice_settlement_handler` garde
   sa lecture de l'horloge pour `InvoiceResponse::from_parts` seulement (commentaire `:1618-1619` réécrit : le bloqueur et la contre-passation
-  ne la partagent plus) ; `cancel_supplier_invoice` et `cancel_supplier_invoice_settlement` ne la lisent plus ; les autres appelants de
-  `commit_with_view` (`supplier_invoices.rs:878` de la route, `imported_supplier_invoices.rs:251`, `:671`, `:762`) ne la passent plus et ne la
-  lisent plus **si** rien d'autre ne s'en sert (P4, T0). `crates/kesh-api/tests/date_du_jour_garde.rs` se relit (la 53-6a a établi qu'il
+  ne la partagent plus) ; `cancel_supplier_invoice` et `cancel_supplier_invoice_settlement` ne la lisent plus ; tous les autres appelants de
+  `commit_with_view` et de ses enveloppes (liste de P4 : routes `supplier_invoices.rs` `update`, `validate`, `unvalidate`, `pay` et leurs
+  `_once`, `imported_supplier_invoices.rs:251`, `:671`, `:762` et leurs `_once`) ne la passent plus et ne la lisent plus (P4 : elle ne sert qu'à ce transit). `crates/kesh-api/tests/date_du_jour_garde.rs` se relit (la 53-6a a établi qu'il
   inventorie les dates tirées **hors** de l'horloge, non les lectures de `state.horloge` : à confirmer, non à supposer) ; la garde du périmètre
   « lecture seule » des services (`services/mod.rs:159-187`, `kesh-api/tests/services_rollout.rs`) se relit : la vue lit désormais
   `companies.books_locked_through` (rang `PeriodLocked`) au lieu de `fiscal_years` (rang 5).
@@ -159,7 +169,7 @@ La décision de lancer la 63-1 (Project Lead, 2026-11-27) applique aux trois ges
     couvre d'ordinaire toutes les lignes du groupe → **rang 2 bis**, non `PERIOD_LOCKED`. `PERIOD_LOCKED` ne s'atteint que dans l'état hérité
     (groupe absent, SQL de test) ; le test d'AC-3 du solde porte sur la **date**, le test de `PERIOD_LOCKED` sur le règlement partiel ;
   - **#1753** : le paiement solde toujours la facture (groupe {achat, paiement}) ; `PERIOD_LOCKED` s'atteint quand la borne couvre le paiement
-    mais pas l'achat (paiement **antérieur** à la date de la facture, si `pay` l'accepte — à relire à T0), sinon par l'état hérité (SQL) —
+    mais pas l'achat (paiement **antérieur** à la date de la facture : `pay` l'accepte — lu à la validation P1, `pay_in_tx_as` n'exige qu'un exercice ouvert qui couvre `payment_date`, `supplier_invoices.rs:2686`, et aucune comparaison à `invoice_date` ; montage : valider la facture au `d2`, payer au `d1 < d2`, **puis** poser le verrou jusqu'à `d1` — le poser avant refuserait le paiement lui-même), sinon par l'état hérité (SQL) —
     patron du montage de repli de la 53-6a (R3) ;
   - **#1754** : facture **validée, non payée** (aucun groupe) sous la borne → `PERIOD_LOCKED` d'ordinaire ; facture payée, achat sous la
     borne, paiement après → groupe non figé → `PERIOD_LOCKED`. C'est **le cas courant** : annuler une facture fournisseur d'un trimestre TVA
@@ -201,7 +211,7 @@ La décision de lancer la 63-1 (Project Lead, 2026-11-27) applique aux trois ges
     bras `FISCAL_YEAR_INVALID` des unions TS), comme la 53-6a a conservé `reconciliation-cancel-blocked-no-fiscal-year` : la variante reste
     (D7). Leur commentaire dit qu'elles ne sont plus produites par la fiche.
 - **D6 — Ce qui distingue les trois gestes, tranché.**
-  - **#1752, règlement** : inverse datée du règlement (`settled_on`, qui est la date de son écriture par construction :
+  - **#1752, règlement** (lu à la validation P1 : `entry_date: settled_on` aux deux créations) : inverse datée du règlement (`settled_on`, qui est la date de son écriture par construction :
     `invoice_settlements_write.rs:370`, `:751`) ; ligne retirée, `paid_at` reprojeté, lettrage dissous puis `reversal` — inchangés.
   - **#1752, solde** (même route, `settlement_type = 'write_off'`) : inverse datée du solde ; la correction de TVA de l'escompte ou de la
     perte est contre-passée **dans la période du solde**, où le décompte (fondé sur les pièces, P8) ne retient plus le solde : grand livre et
@@ -211,8 +221,8 @@ La décision de lancer la 63-1 (Project Lead, 2026-11-27) applique aux trois ges
     distinctes du même fichier.
   - **#1753** : inverse datée du paiement (`payment_date`, `supplier_invoices.rs:2728`) ; la facture redevient `open` ; le lot de paiement
     confirmé qui l'a réglée n'est pas modifié ; l'avertissement du lot (`supplier-invoices-settlement-cancel-batch-warning`) reste.
-  - **#1754** : inverse de l'achat datée de l'écriture d'achat (`entry_date: invoice_date` à la validation, `supplier_invoices.rs:2315` —
-    T0 relit l'autre création `:1831`, `entry_date: Some(entry_date)`, et la fiche ne dit pas « date de la facture » sans cette lecture) ;
+  - **#1754** : inverse de l'achat datée de l'écriture d'achat (`entry_date: invoice_date` à la validation, `supplier_invoices.rs:2308-2315`, **seule** création d'une écriture d'achat : lu à la validation P1,
+    `:1831` n'est pas une création mais l'indice d'un « paiement détaché » (`Hint { entry_date: Some(entry_date) }`), et `:2720` crée le règlement) ;
     charge et impôt préalable reviennent à zéro **dans la période de l'achat** ; la facture passe `cancelled` (inchangé : elle n'est **pas**
     remise à `open`, l'annulation reste le geste « la facture n'était pas due », et le repassage en brouillon reste la voie d'une faute de
     saisie, P9) ; payée, son règlement reste détaché, à sa date, ouvert au lettrage (inchangé, P7).
@@ -260,10 +270,14 @@ patron.
 - **AC-9 — Le rang 5 ne s'annonce plus depuis la fiche** : sans exercice ouvert au jour mais avec l'exercice de l'origine ouvert, la liste des
   règlements ne rend plus `FISCAL_YEAR_INVALID` et l'annulation **passe** (l'ancien test
   `jour_suisse_nuit_e2e::ac3_sans_exercice_au_jour_suisse_l_annulation_est_refusee`, `:749`, change d'attendu : il devient le test de cet AC).
-- **AC-10 — Inventaire clos, figé** : une garde lexicale (`kesh-db/tests/`, motif des inventaires existants, par exemple
-  `bank_account_closed_inventory.rs` ou `opening_types_sous_verrou_lexical.rs`) établit que `CancellationDating::Today` n'apparaît, dans
-  `crates/*/src/`, hors `#[cfg(test)]` et doc-comments, **qu'à** `journal_entries::reverse` (R10) ; un site neuf la rougit. Sonde positive
-  écrite au test (mémoire « pathspec git muet »).
+- **AC-10 — Inventaire clos, figé** : une garde lexicale (`kesh-db/tests/`, motif des inventaires existants : `kesh-api/tests/bank_account_closed_inventory.rs`
+  ou `kesh-db/tests/opening_types_sous_verrou_lexical.rs`) établit que **`CancellationDating::Today(` en position de construction** (expression, non
+  motif : sont écartés la ligne `=>` du `match` `:228` de `settlement_cancellation.rs`, la conversion `:3208` et la définition `:3192` de
+  `journal_entries.rs`, listés ci-dessus) n'apparaît, dans `crates/*/src/`, hors `#[cfg(test)]` et doc-comments, **qu'à** `journal_entries::reverse`
+  (R10) ; un site neuf la rougit. ⚠️ **Retrait des tests par bloc, non par troncature à la première ligne `#[cfg(test)]`** : `journal_entries.rs` en
+  porte une dès `:3322` (module `verdict_de_datation`), avant `reverse` (`:3994`) : une troncature ne verrait pas R10 et la garde passerait à vide. Sonde positive
+  écrite au test : R10 **doit** être trouvé (le test échoue s'il ne trouve aucune construction), plus un échantillon synthétique rougissant (mémoire
+  « pathspec git muet »).
 - **AC-11 — Le test de non-régression AC-11 de la 53-6a S'INVERSE.** La 53-6a figeait « les annulations depuis la fiche restent datées du
   jour » par `jour_suisse_nuit_e2e::ac3_annulation_d_un_reglement_client_la_nuit` (`:635`), `ac3_annulation_d_un_reglement_fournisseur_la_nuit`
   (`:668`), `ac3_annulation_d_une_facture_fournisseur_la_nuit` (`:653`) et `ac3_sans_exercice_au_jour_suisse_l_annulation_est_refusee`
@@ -329,7 +343,8 @@ patron.
   espacées).
 - [ ] **T1 — Tests rouges d'abord** (AC-1 à AC-5, AC-8, AC-9, AC-10 ; AC-11 : changer les attendus des quatre tests `ac3_*`) ; commit, push.
 - [ ] **T2 — Gestes et lecteurs** (D1, D2, D3) : les trois datations, les trois lecteurs, le retrait d'`aujourd_hui` de la chaîne de vue
-  fournisseur et de ses appelants ; doc-comments « datée du jour » (`SettlementCancellation`, `CancelledSettlement` `:1233`,
+  fournisseur, de ses **sept** enveloppes (dont `validate`, `unvalidate(_with_policy)`, `pay`) et de **tous** leurs appelants (routes, `_once`, 226 sites
+  de tests, P4/D3) ; doc-comments « datée du jour » (`SettlementCancellation`, `CancelledSettlement` `:1233`,
   `SupplierSettlementCancellation` `:3413`, `SupplierSettlementCancelled` `:3620`, doc de `cancel_settlement_in_tx` `:3417-3438`,
   `supplier_invoice_cancel_blocker`, routes `invoices.rs:1601-1610`, `supplier_invoices.rs:1007-1016`, `:1046-1055`) ; commit, push.
 - [ ] **T3 — Textes serveur** (D5, D7) : `kesh-api/src/errors.rs` (deux bras `PeriodLocked`, commentaires des rangs 5) ; quatre locales
@@ -398,7 +413,7 @@ préférée : les trois gestes partagent la queue, les textes et le manuel, et l
   de la 53-6a fusionnée, sans conflit attendu.
 - **53-2** (#525, #1198, migration probable) : `invoice_settlements_write.rs` (correction de TVA du solde) et `credit_notes.rs` — fonctions
   distinctes ; la seconde fusionnée reprend la première ; la 63-1 ne change pas les lignes du solde, seulement la date de leur inverse.
-- **53-6b** (détection, `backlog`, hors Epic 53 proposée) : voir Q-B.
+- **53-6b** (détection, `backlog`) : **élargie** par la décision Q-B du 2026-11-27 (critère `reverses_entry_id`, tout geste d'annulation dont l'origine et l'inverse sont dans deux exercices) ; l'orchestrateur met sa fiche à jour, la 63-1 n'y touche pas.
 - **Epic 38** (contributeur, contre-passation à date choisie de `/reverse`) : touche le socle (`CancellationDating`/`ReversalDating`) ; la 63-1
   n'y change rien ; à contrôler à la revue du code d'intégration.
 
@@ -425,7 +440,7 @@ préférée : les trois gestes partagent la queue, les textes et le manuel, et l
 
 ### Issues à ouvrir (par l'orchestrateur, une par problème, ≥ 5 s d'écart)
 
-- **Q-C, si le Project Lead l'accepte** — `technical-debt`, `P3` : « La queue commune des annulations garde un rang « aucun exercice ouvert au
+- **Q-C, acceptée le 2026-11-27** — `technical-debt`, `P3` : « La queue commune des annulations garde un rang « aucun exercice ouvert au
   jour » et une datation `Today` que plus aucune annulation n'emploie » — corps : D7 de cette fiche ; retrait de
   `SettlementCancelBlocker::NoOpenFiscalYearToday`, du bras `Today` de `settlement_entry_cancel_blocker` et du paramètre `dating` des formes
   qui ne reçoivent plus qu'`OriginDate`, des clés `*-blocked-no-fiscal-year` (trois familles, quatre locales) et des bras `FISCAL_YEAR_INVALID`
@@ -442,7 +457,19 @@ préférée : les trois gestes partagent la queue, les textes et le manuel, et l
   (repassage en brouillon d'une annulée), 53-6a.
 - `docs/testing.md` (Playwright local), `docs/agents-orchestration.md` (consignes des agents).
 
-## Questions pour le Project Lead (recommandation de la fiche entre parenthèses)
+## Questions pour le Project Lead — tranchées le 2026-11-27
+
+**Décisions du Project Lead du 2026-11-27**, toutes selon la recommandation de la fiche (ne se rouvrent pas) :
+
+- **Q-A — tranchée** : le refus en période verrouillée s'applique **tel quel** aussi à l'annulation d'une facture fournisseur et d'un solde. Une demande de
+  changement pourra proposer plus tard une annulation volontairement datée du jour (choisie et journalisée).
+- **Q-B — tranchée** : la détection de la **53-6b** s'élargit à toute contre-passation d'annulation dont l'origine et l'inverse sont dans deux exercices,
+  quel que soit le geste (critère `reverses_entry_id`). **La fiche de la 53-6b n'est pas touchée ici** : l'orchestrateur la met à jour.
+- **Q-C — tranchée** : le retrait du rang « aucun exercice ouvert au jour » et de `Today` dans la queue va en issue `technical-debt` P3, **hors de la
+  v0.21.0** ; l'orchestrateur l'ouvre (texte au § *Issues à ouvrir*).
+- **Q-D — tranchée** : la dette de l'Epic 63 se verse à la story de solde de l'Epic 53 (**53-5**) ; l'orchestrateur l'écrit au fichier d'epic.
+
+*Questions posées, avec la recommandation de la fiche entre parenthèses :*
 
 - **Q-A — Q2 appliquée à l'annulation d'une facture fournisseur et d'un solde.** Pour le dé-rapprochement, le refus en période verrouillée
   touchait surtout un paiement récent ; ici, il touche **le cas courant** de l'annulation d'une facture fournisseur reçue d'un trimestre TVA
@@ -477,3 +504,9 @@ préférée : les trois gestes partagent la queue, les textes et le manuel, et l
   différences entre gestes (D6), le retrait de la date du jour de la chaîne de vue fournisseur (D3), les textes sans variable (D5) et le maintien
   du rang 5 inatteignable (D7) ; l'AC-11 de la 53-6a s'inverse (AC-11). Cinq modules, sous la borne ; découpage de repli écrit. Questions Q-A à
   Q-D au Project Lead. Validation P1 (Sonnet) à lancer : `63-1-annulations-datees-origine-validation-prompt-p1.md`.
+- 2026-11-27 — **Validation P1** (Sonnet, `bmad-create-story` validate ; rapport `kesh-gate-logs/e63/63-1-validation-p1.md`) : 0 CRITICAL, 0 HIGH, **2 MEDIUM
+  corrigés** (V1 : D3/P4/T2 omettaient quatre enveloppes de `commit_with_view` — `validate`, `unvalidate`, `unvalidate_with_policy`, `pay` — et leurs routes,
+  `_once` et 226 sites de tests ; V2 : la garde d'AC-10 n'était pas constructible telle qu'écrite — jeton présent à la définition, à la conversion `:3208` et au
+  `match` `:228`, et troncature à la première `#[cfg(test)]` (`journal_entries.rs:3322`) aveugle à R10), **4 LOW corrigés** (`:1831` n'est pas une création
+  d'écriture d'achat ; `pay` accepte un paiement antérieur à la facture, montage précisé ; renvois R1–R6 ; chemin de `bank_account_closed_inventory.rs`).
+  Q1 à Q6 de la 53-6a contrôlées appliquées. Décisions Q-A à Q-D du Project Lead portées (2026-11-27). Passe P2 (Opus) requise : MEDIUM corrigé.
