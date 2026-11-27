@@ -1,13 +1,14 @@
 name: CodeQL
 
-# Disabled: CodeQL analysis disabled (too slow, not needed for this stage)
-# on:
-#   push:
-#     branches: [main, story/**]
-#   pull_request:
-#     branches: [main]
+# Analyse de sécurité CodeQL, une fois par semaine (décision de Guy du 2026-11-26).
+# Hors du chemin des PR : elle ne retarde aucune fusion. Lancement manuel possible
+# (workflow_dispatch). Rust s'analyse sans compilation (`build-mode: none`, le mode
+# que CodeQL prend en charge pour Rust) : l'ancienne compilation `cargo build --release`
+# faisait échouer l'analyse (« unsuccessful execution », avril 2026).
 on:
-  workflow_dispatch:  # Manual trigger only
+  schedule:
+    - cron: '17 3 * * 1'   # lundi, 03:17 UTC
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,33 +16,31 @@ permissions:
 
 jobs:
   analyze:
-    name: Analyze
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        language: ['javascript', 'rust']
+        include:
+          - language: rust
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+          - language: actions
+            build-mode: none
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
-      with:
-        languages: ${{ matrix.language }}
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
 
-    # Build using the standard Rust toolchain for better control
-    - name: Build (Rust)
-      if: matrix.language == 'rust'
-      run: cargo build --release
-
-    - name: Autobuild (non-Rust)
-      if: matrix.language != 'rust'
-      uses: github/codeql-action/autobuild@v3
-
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
-      with:
-        category: "/language:${{ matrix.language }}"
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
