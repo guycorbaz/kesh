@@ -2,8 +2,14 @@
 	// Story 9-1 — Vue Balance des comptes.
 	// Story 25-5-b (#385) — ouverture, mouvements, clôture, et la ligne calculée du
 	// résultat reporté : la clôture d'un compte de bilan est son solde au bilan.
+	// Story 46-6b — avec `groupedRows` (réponse demandée avec `detailLevel`), le corps
+	// rend les lignes groupées par le composant partagé du bilan (quatre colonnes,
+	// seconde ligne en devise d'un compte ou d'un groupe en devise unique) ; sans, la
+	// vue à plat d'avant, inchangée. En-tête, ligne du résultat reporté (après les
+	// groupes, hors d'eux), totaux et contrôles restent ceux de la vue à plat.
 	import Big from 'big.js';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import GroupedReportRows, { TRIAL_BALANCE_COLUMNS } from './GroupedReportRows.svelte';
 	import {
 		formatCurrencyFigure,
 		formatReportAmount,
@@ -11,13 +17,39 @@
 		isReportEmpty,
 		ledgerHref,
 	} from './reports.api';
-	import type { TrialBalanceDto } from './reports.types';
+	import type { TrialBalanceDto, TrialBalanceGroupedRow } from './reports.types';
+
+	/** Ce que la seconde ligne en devise affiche : une ligne de compte ou de groupe. */
+	type CurrencyAmounts = Pick<
+		TrialBalanceGroupedRow,
+		'openingCurrency' | 'totalDebitCurrency' | 'totalCreditCurrency' | 'closingCurrency'
+	>;
 
 	interface Props {
 		dto: TrialBalanceDto;
+		/** Story 46-6b — clic sur l'accordéon d'un groupe (vue groupée seulement). */
+		onToggleGroup?: (row: TrialBalanceGroupedRow) => void;
 	}
-	let { dto }: Props = $props();
+	let { dto, onToggleGroup = () => {} }: Props = $props();
 	let empty = $derived(isReportEmpty('trial-balance', dto));
+
+	// Story 46-6b — vue groupée si la réponse en porte les lignes.
+	let grouped = $derived(dto.groupedRows && dto.grouping ? dto.groupedRows : null);
+	let subtotalPosition = $derived(dto.grouping?.subtotalPosition ?? 'header');
+
+	/** Le texte de la seconde ligne en devise, après le code de la devise (Story 37-4). */
+	function fxText(r: CurrencyAmounts): string {
+		return i18nMsg(
+			'reports-fx-trial-balance',
+			'ouverture { $opening } · débit { $debit } · crédit { $credit } · clôture { $closing }',
+			{
+				opening: formatCurrencyFigure(r.openingCurrency),
+				debit: formatCurrencyFigure(r.totalDebitCurrency),
+				credit: formatCurrencyFigure(r.totalCreditCurrency),
+				closing: formatCurrencyFigure(r.closingCurrency),
+			},
+		);
+	}
 
 	// « Perte reportée » si négatif, comme au bilan — l'écran seul bascule.
 	let retainedLabel = $derived.by(() => {
@@ -61,6 +93,33 @@
 				</tr>
 			</thead>
 			<tbody>
+				{#if grouped}
+					<GroupedReportRows
+						rows={grouped}
+						{subtotalPosition}
+						columns={TRIAL_BALANCE_COLUMNS}
+						period={dto.period}
+						onToggle={onToggleGroup}
+						archivedBadge
+					>
+						{#snippet currencyRow(row: TrialBalanceGroupedRow)}
+							<!-- Même seconde ligne qu'un compte de la vue à plat ; celle d'un groupe
+							     en devise unique se distingue par son identifiant de test. -->
+							<tr
+								class="text-xs text-gray-600"
+								data-testid={row.kind === 'account' || row.kind === 'own'
+									? `tb-fx-row-${row.accountNumber}`
+									: `tb-group-fx-row-${row.kind}-${row.accountNumber}`}
+							>
+								<td></td>
+								<td class="px-2 pb-1 font-mono" colspan="5"
+									>{row.currency}
+									{fxText(row)}</td
+								>
+							</tr>
+						{/snippet}
+					</GroupedReportRows>
+				{:else}
 				{#each dto.rows as r (r.accountId)}
 					<tr class:opacity-60={!r.active} data-testid="tb-row">
 						<td class="px-2 py-1 font-mono">
@@ -89,20 +148,12 @@
 							<td></td>
 							<td class="px-2 pb-1 font-mono" colspan="5"
 								>{r.currency}
-								{i18nMsg(
-									'reports-fx-trial-balance',
-									'ouverture { $opening } · débit { $debit } · crédit { $credit } · clôture { $closing }',
-									{
-										opening: formatCurrencyFigure(r.openingCurrency),
-										debit: formatCurrencyFigure(r.totalDebitCurrency),
-										credit: formatCurrencyFigure(r.totalCreditCurrency),
-										closing: formatCurrencyFigure(r.closingCurrency),
-									},
-								)}</td
+								{fxText(r)}</td
 							>
 						</tr>
 					{/if}
 				{/each}
+				{/if}
 				<tr class="italic" data-testid="tb-retained">
 					<td></td>
 					<td class="px-2 py-1">{retainedLabel}</td>

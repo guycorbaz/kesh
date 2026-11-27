@@ -717,6 +717,25 @@ async fn quatre_mois_ventiles_par_devise(pool: MySqlPool) {
     );
     assert_eq!(details["windows"], 5);
     assert_eq!(details["currencies"].as_array().unwrap().len(), 3);
+    // Story 39-14 (validation P2, M1) : aucune clé de plus au compte rendu
+    // d'une devise téléchargée, réponse et trace (`warnings` : relevés seuls).
+    for compte_rendu in [r, &details] {
+        for d in compte_rendu["currencies"].as_array().unwrap() {
+            let mut cles: Vec<&String> = d.as_object().unwrap().keys().collect();
+            cles.sort();
+            assert_eq!(
+                cles,
+                [
+                    "bankAccountId",
+                    "currency",
+                    "duplicates",
+                    "importId",
+                    "inserted"
+                ],
+                "{d}"
+            );
+        }
+    }
     let noms: Vec<String> = sqlx::query_scalar("SELECT DISTINCT filename FROM bank_imports")
         .fetch_all(&pool)
         .await

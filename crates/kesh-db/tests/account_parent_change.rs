@@ -554,3 +554,65 @@ async fn course_un_cycle_ferme_par_un_ancetre_concurrent_est_vu(pool: MySqlPool)
     }
     assert_eq!(lire(&pool, b).await.parent_id, None);
 }
+
+/// Revue ciblée des correctifs de la revue d'intégration de la PR de l'Epic 46
+/// (M-A) : la réactivation passe le parent non imputable ; un parent de bilan en
+/// devise qui porte des écritures est refusé, comme à la création —
+/// `AccountForeignParentHasEntries` —, le sous-compte reste archivé et le parent
+/// imputable. Un parent en CHF mouvementé reste accepté (écart #1431, celui de
+/// la création).
+#[sqlx::test(migrations = "./test-schema")]
+async fn reactivation_sous_un_parent_en_devise_mouvemente_refusee(pool: MySqlPool) {
+    let s = seed_accounting_company(&pool).await.unwrap();
+    sqlx::query("UPDATE companies SET multi_currency_enabled = TRUE WHERE id = ?")
+        .bind(s.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // L'état atteignable (enfant archivé, parent repassé imputable puis
+    // mouvementé), posé en SQL direct.
+    let usd = compte(&pool, &s, "1021", None).await;
+    let enfant = compte(&pool, &s, "10211", None).await;
+    sqlx::query("UPDATE accounts SET parent_id = ?, active = FALSE WHERE id = ?")
+        .bind(usd)
+        .bind(enfant)
+        .execute(&pool)
+        .await
+        .unwrap();
+    ligne(&pool, &s, usd).await;
+    sqlx::query("UPDATE accounts SET currency = 'USD' WHERE id = ?")
+        .bind(usd)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let v = lire(&pool, enfant).await.version;
+    let err = accounts::reactivate(&pool, enfant, v, s.admin_user_id, false)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            DbError::AccountForeignParentHasEntries { parent_account_id, .. } if parent_account_id == usd
+        ),
+        "{err:?}"
+    );
+    assert!(
+        !lire(&pool, enfant).await.active,
+        "le sous-compte reste archivé"
+    );
+    assert!(lire(&pool, usd).await.postable, "rien n'est écrit");
+
+    // En CHF, mouvementé : accepté, le parent passe non imputable.
+    sqlx::query("UPDATE accounts SET currency = NULL WHERE id = ?")
+        .bind(usd)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        accounts::reactivate(&pool, enfant, v, s.admin_user_id, false)
+            .await
+            .unwrap()
+            .active
+    );
+    assert!(!lire(&pool, usd).await.postable);
+}

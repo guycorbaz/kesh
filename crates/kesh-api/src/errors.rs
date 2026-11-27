@@ -11,8 +11,9 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use kesh_db::errors::{
-    DbError, FxAccountField, FxAccountReason, ModificationGuard, RejectedRevenueAccount,
-    RevenueAccountRejection, ReversalBlocker, SettlementCancelBlocker, UnvalidationBlocker,
+    AccountGroupReason, DbError, FxAccountField, FxAccountReason, ModificationGuard,
+    RejectedRevenueAccount, RevenueAccountRejection, ReversalBlocker, SettlementCancelBlocker,
+    UnvalidationBlocker,
 };
 use kesh_i18n::{FluentArgs, I18nBundle, Locale};
 use serde::Serialize;
@@ -264,7 +265,12 @@ pub enum AppError {
     /// bancaire (`DELETE /api/v1/bank-imports/{id}`, décision du Project Lead
     /// du 2026-10-12, C-27-1-16), qui se fait à l'interface web, et le
     /// changement de mot de passe (`PUT /api/v1/auth/password`, Story 33-7,
-    /// décision du 2026-11-06), qui n'a pas encore d'écran. D'où un message
+    /// décision du 2026-11-06), qui n'a pas encore d'écran, et la création de
+    /// groupes du plan (`POST /api/v1/accounts/groups`, Story 46-5a, décision
+    /// du 2026-11-22, Q9), qui se fait à l'écran du plan ; et le téléchargement
+    /// par l'API des transactions PayPal (`/api/v1/paypal-downloads*`, Epic 38)
+    /// et des versements Stripe (`/api/v1/stripe-downloads*`, Epic 40), qui
+    /// servent un secret de l'Administrateur à sa seule session. D'où un message
     /// qui ne renvoie pas à l'interface web (revue P2 de la 33-7, M1).
     ///
     /// **Distincte des deux précédentes à dessein** (doctrine D2 de la 22-4a) :
@@ -672,6 +678,23 @@ pub enum AppError {
         error: Box<AppError>,
     },
 
+    /// Story 46-5a (AC-3) — un refus de l'étape `group_index` (et du compte
+    /// `account_id`, quand l'étape en vise un) de la route groupée du plan
+    /// (`POST /api/v1/accounts/groups`). La réponse est celle de `error`, à
+    /// laquelle le handler ajoute `details.groupStep: { groupIndex, accountId? }`
+    /// après le rejeu (`routes::accounts::group_step_refusal`, par
+    /// [`refus_avec_detail`]) ; rendue seule, elle est celle de `error`,
+    /// inchangée — même mécanique que [`AppError::ConversionEntry`].
+    #[error("Proposition {group_index} des groupes du plan : {error}")]
+    AccountGroupStep {
+        /// Rang de la proposition dans `groups` (à partir de 0).
+        group_index: usize,
+        /// Le compte de l'étape, s'il y en a un.
+        account_id: Option<i64>,
+        /// Le refus de cette étape.
+        error: Box<AppError>,
+    },
+
     /// Story 17-4b — échec d'envoi d'un email transactionnel via SMTP
     /// (connexion SMTP, auth, build du message, panne réseau). HTTP 500, i18n
     /// key `error-smtp-send-failed`. Détail loggé `tracing::error!`, jamais
@@ -1010,6 +1033,22 @@ pub enum AppError {
         details: serde_json::Value,
     },
 
+    // ----- Story 39-11b (Epic 39) — l'import des relevés Wise -----
+    /// Import Wise : un fichier est refusé par le lecteur (39-11a) → `422
+    /// WISE_CSV_INVALID`, `details: { filename, archive, reason, … }` —
+    /// `archive` = le zip d'où vient le fichier, `null` pour un fichier envoyé
+    /// à part (Story 39-11d, revue P1, M2) ; `reason` est le
+    /// code fermé du lecteur (`WISE_CSV_MISSING_COLUMNS`, `WISE_CSV_LINES`, …),
+    /// avec `columns`, `lines` (forme `{ line, field, code, value }`),
+    /// `currencies`, `id` et `lines`, ou `line`, `expected`, `found` selon le
+    /// motif. Rien n'est importé, d'aucun fichier.
+    #[error("Fichier Wise {filename} refusé : {reason}")]
+    WiseCsvInvalid {
+        filename: String,
+        reason: &'static str,
+        details: serde_json::Value,
+    },
+
     /// Import Stripe : le fichier est refusé par le lecteur (40-7a) → `422
     /// STRIPE_CSV_INVALID`, `details: { reason, … }` — `reason` est le code du
     /// lecteur, avec `columns` (colonnes manquantes ; `source_id|charge_id`
@@ -1019,6 +1058,43 @@ pub enum AppError {
     StripeCsvInvalid {
         reason: &'static str,
         details: serde_json::Value,
+    },
+
+    /// Import Wise : un relevé a été exporté sans l'option « frais indiqués
+    /// séparément » (Story 39-11e, D5) → `422 WISE_CSV_FEES_NOT_SEPARATED`,
+    /// `details: { filename, archive, lines, count }` — `archive` = le zip
+    /// d'où vient le fichier, `null` pour un fichier envoyé à part ; `lines` =
+    /// les lignes à frais sans leur ligne `FEE-` (au plus 100), `count` = leur
+    /// nombre. Code propre, et non `WISE_CSV_INVALID`, pour que le message
+    /// soit une consigne. Rien n'est importé.
+    #[error("Fichier Wise {filename} exporté sans les frais séparés")]
+    WiseCsvFeesNotSeparated {
+        filename: String,
+        archive: Option<String>,
+        lines: Vec<usize>,
+        count: usize,
+    },
+
+    /// Import Wise : un zip du formulaire est refusé (Story 39-11e, D3 et D4)
+    /// → `422 WISE_ZIP_INVALID`, `details: { filename, reason, entry? }` et,
+    /// selon la raison, `max` (`TOO_MANY_ENTRIES`) ou `maxBytes`
+    /// (`TOO_LARGE`) ; `reason` ∈ `UNREADABLE`, `TOO_MANY_ENTRIES`,
+    /// `TOO_LARGE`, `UNSAFE_PATH`, `ENCRYPTED`, `UNSUPPORTED_COMPRESSION`,
+    /// `NO_CSV`. Rien n'est importé.
+    #[error("Archive Wise {filename} refusée : {reason}")]
+    WiseZipInvalid {
+        filename: String,
+        reason: &'static str,
+        entry: Option<String>,
+        extra: serde_json::Value,
+    },
+
+    /// Import Wise : deux fichiers portent la même devise → `422
+    /// WISE_DUPLICATE_CURRENCY_FILE`, `details: { currency, filenames }`.
+    #[error("Deux fichiers Wise en {currency}")]
+    WiseDuplicateCurrencyFile {
+        currency: String,
+        filenames: Vec<String>,
     },
 
     /// Compte de versement d'un compte Stripe refusé → `400
@@ -1909,6 +1985,57 @@ pub(crate) fn conversion_validation_message(
     }
 }
 
+/// La clé i18n et le message de repli (`{position}` : rang 1-based de la
+/// proposition) d'un motif `ACCOUNT_GROUP_INVALID` (Story 46-5a, AC-3).
+fn account_group_invalid_message(reason: AccountGroupReason) -> (&'static str, &'static str) {
+    match reason {
+        AccountGroupReason::MixedTypes => (
+            "error-account-group-invalid-mixed-types",
+            "Proposition {position} : les comptes à ranger sont de types différents ; un groupe ne réunit que des comptes d'un même type.",
+        ),
+        AccountGroupReason::GroupTypeMismatch => (
+            "error-account-group-invalid-group-type-mismatch",
+            "Proposition {position} : le compte de groupe est d'un autre type que les comptes à y ranger.",
+        ),
+        AccountGroupReason::NumberTaken => (
+            "error-account-group-invalid-number-taken",
+            "Proposition {position} : ce numéro est déjà porté par un compte, archivé compris, ou demandé deux fois ; choisissez un autre numéro.",
+        ),
+        AccountGroupReason::NotAGroup => (
+            "error-account-group-invalid-not-a-group",
+            "Proposition {position} : ce compte n'est pas un compte de groupe (il est archivé ou n'a aucun sous-compte actif).",
+        ),
+        AccountGroupReason::NotReusable => (
+            "error-account-group-invalid-not-reusable",
+            "Proposition {position} : ce compte ne peut pas devenir un groupe (il est archivé ou a déjà des sous-comptes actifs).",
+        ),
+        AccountGroupReason::AccountInTwoGroups => (
+            "error-account-group-invalid-account-in-two-groups",
+            "Proposition {position} : un compte figure deux fois dans la demande ; un compte ne se range que sous un seul groupe.",
+        ),
+        AccountGroupReason::GroupIsMember => (
+            "error-account-group-invalid-group-is-member",
+            "Proposition {position} : le compte de groupe est aussi un compte à ranger dans la demande ; rangez un niveau à la fois.",
+        ),
+        AccountGroupReason::GroupInTwoProposals => (
+            "error-account-group-invalid-group-in-two-proposals",
+            "Proposition {position} : ce compte de groupe est déjà visé par une autre proposition de la demande ; réunissez ses comptes en une seule proposition.",
+        ),
+        AccountGroupReason::MemberIsOwnGroup => (
+            "error-account-group-invalid-member-is-own-group",
+            "Proposition {position} : un compte ne peut pas être rangé sous lui-même.",
+        ),
+        AccountGroupReason::Empty => (
+            "error-account-group-invalid-empty",
+            "Proposition {position} : aucun compte à ranger.",
+        ),
+        AccountGroupReason::TooMany => (
+            "error-account-group-invalid-too-many",
+            "Demande trop grande : au plus 100 propositions et 1000 comptes à ranger.",
+        ),
+    }
+}
+
 /// Une `Response` JSON structurée **avec** `details` :
 /// `{ "error": { code, message, details } }` (Story 37-1, refus de la devise
 /// d'un compte).
@@ -2559,6 +2686,7 @@ impl IntoResponse for AppError {
                 )
             }
             AppError::ConversionEntry { error, .. } => error.into_response(),
+            AppError::AccountGroupStep { error, .. } => error.into_response(),
 
             // Story 16-2a (#144) — D10. Le sujet désigne **l'article**, jamais
             // le réglage société : réutiliser le formateur de 16-1a ferait lire,
@@ -3818,6 +3946,116 @@ impl IntoResponse for AppError {
                             "Ce fichier n'est pas un relevé PayPal « Balance affecting transactions » lisible. Rien n'a été importé.",
                         ),
                         "details": details,
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+            AppError::WiseCsvInvalid {
+                filename,
+                reason,
+                details,
+            } => {
+                let mut details = details.clone();
+                if let serde_json::Value::Object(map) = &mut details {
+                    map.insert("filename".into(), serde_json::json!(filename));
+                    map.insert("reason".into(), serde_json::json!(reason));
+                }
+                let mut args = FluentArgs::new();
+                args.set("filename", filename.clone());
+                let fallback = format!(
+                    "Le fichier « {filename} » n'est pas un relevé CSV de Wise lisible. Rien n'a été importé."
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "WISE_CSV_INVALID",
+                        "message": t_args("error-wise-csv-invalid", &fallback, &args),
+                        "details": details,
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+            AppError::WiseZipInvalid {
+                filename,
+                reason,
+                entry,
+                extra,
+            } => {
+                let mut details = serde_json::json!({ "filename": filename, "reason": reason });
+                if let serde_json::Value::Object(map) = &mut details {
+                    if let Some(entry) = entry {
+                        map.insert("entry".into(), serde_json::json!(entry));
+                    }
+                    if let serde_json::Value::Object(more) = extra {
+                        map.extend(more.clone());
+                    }
+                }
+                let mut args = FluentArgs::new();
+                args.set("filename", filename.clone());
+                let message = if reason == "NO_CSV" {
+                    t_args(
+                        "error-wise-zip-no-csv",
+                        &format!(
+                            "L'archive « {filename} » ne contient aucun relevé CSV : exportez de Wise le relevé au format CSV. Rien n'a été importé."
+                        ),
+                        &args,
+                    )
+                } else {
+                    t_args(
+                        "error-wise-zip-invalid",
+                        &format!(
+                            "L'archive « {filename} » n'est pas un zip de relevés Wise que Kesh peut lire. Rien n'a été importé."
+                        ),
+                        &args,
+                    )
+                };
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "WISE_ZIP_INVALID",
+                        "message": message,
+                        "details": details,
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+            AppError::WiseCsvFeesNotSeparated {
+                filename,
+                archive,
+                lines,
+                count,
+            } => {
+                let mut args = FluentArgs::new();
+                args.set("filename", filename.clone());
+                let fallback = format!(
+                    "Le relevé « {filename} » a été exporté sans l'option « Afficher les transactions dont les frais sont indiqués séparément » : ses montants comprennent les frais. Exportez-le de nouveau depuis Wise en cochant cette option. Rien n'a été importé."
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "WISE_CSV_FEES_NOT_SEPARATED",
+                        "message": t_args("error-wise-csv-fees-not-separated", &fallback, &args),
+                        "details": {
+                            "filename": filename,
+                            "archive": archive,
+                            "lines": lines,
+                            "count": count,
+                        },
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+            AppError::WiseDuplicateCurrencyFile {
+                currency,
+                filenames,
+            } => {
+                let mut args = FluentArgs::new();
+                args.set("currency", currency.clone());
+                let fallback = format!(
+                    "Plusieurs fichiers portent le relevé en {currency} : un seul fichier par devise. Rien n'a été importé."
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "WISE_DUPLICATE_CURRENCY_FILE",
+                        "message": t_args("error-wise-duplicate-currency-file", &fallback, &args),
+                        "details": { "currency": currency, "filenames": filenames },
                     }
                 });
                 (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
@@ -5117,6 +5355,79 @@ impl IntoResponse for AppError {
                             "parentAccountId": parent_account_id,
                             "parentNumber": parent_number,
                         }),
+                    )
+                }
+                // Epic 46, décision du mainteneur du 2026-11-26 : un compte
+                // désigné par un compte bancaire ne devient pas parent.
+                DbError::AccountParentBankLinked {
+                    parent_account_id,
+                    parent_number,
+                    bank_account_id,
+                    bank_name,
+                    reactivated_number,
+                } => {
+                    let mut args = FluentArgs::new();
+                    args.set("number", parent_number.clone());
+                    args.set("bank", bank_name.clone());
+                    // Revue d'intégration de la PR de l'Epic 46 (H1) : à la
+                    // réactivation, il n'y a pas d'autre groupe à choisir — le
+                    // message dit ce qui est refusé, mêmes code et `details`.
+                    let message = match reactivated_number {
+                        Some(child) => {
+                            args.set("child", child.clone());
+                            t_args(
+                                "error-account-reactivate-parent-bank-linked",
+                                &format!(
+                                    "Le compte {child} ne peut pas être réactivé : son compte parent {parent_number} est désigné par le compte bancaire « {bank_name} » et reçoit des écritures automatiques ; il ne peut pas redevenir un compte de groupe. Le compte {child} reste archivé."
+                                ),
+                                &args,
+                            )
+                        }
+                        None => t_args(
+                            "error-account-parent-bank-linked",
+                            &format!(
+                                "Le compte {parent_number} est désigné par le compte bancaire « {bank_name} » : il reçoit des écritures automatiques et ne peut pas devenir un compte de groupe. Choisissez un autre compte de groupe."
+                            ),
+                            &args,
+                        ),
+                    };
+                    coded_response(
+                        StatusCode::CONFLICT,
+                        "ACCOUNT_PARENT_BANK_LINKED",
+                        message,
+                        serde_json::json!({
+                            "parentAccountId": parent_account_id,
+                            "parentNumber": parent_number,
+                            "bankAccountId": bank_account_id,
+                            "bankName": bank_name,
+                        }),
+                    )
+                }
+                // Story 46-5a (AC-3) — un refus propre à la route groupée du plan.
+                DbError::AccountGroupInvalid {
+                    group_index,
+                    reason,
+                    account_id,
+                } => {
+                    let (key, fallback) = account_group_invalid_message(reason);
+                    let mut args = FluentArgs::new();
+                    args.set("position", (group_index + 1) as i64);
+                    let mut details = serde_json::json!({
+                        "groupIndex": group_index,
+                        "reason": reason.as_str(),
+                    });
+                    if let Some(id) = account_id {
+                        details["accountId"] = serde_json::json!(id);
+                    }
+                    coded_response(
+                        StatusCode::BAD_REQUEST,
+                        "ACCOUNT_GROUP_INVALID",
+                        t_args(
+                            key,
+                            &fallback.replace("{position}", &(group_index + 1).to_string()),
+                            &args,
+                        ),
+                        details,
                     )
                 }
                 DbError::AccountParentNotFound => build_response(
@@ -8246,6 +8557,44 @@ mod tests {
             let m = body["error"]["message"].as_str().unwrap();
             assert!(!m.contains("{ $"), "M13 : gabarit littéral : {m}");
             assert_eq!(m, attendu, "{blocker:?}");
+        }
+    }
+
+    /// Revue P2 de la 46-5a (L1) — chaque motif de la liste close
+    /// `AccountGroupReason::ALL` a un code d'API distinct, et sa clé i18n est
+    /// présente dans les quatre catalogues, avec `{ $position }` partout sauf
+    /// pour `tooMany` (qui vise la demande, non une proposition). Sans ce test,
+    /// une clé fautive dans une locale retomberait sans bruit sur le repli
+    /// français de `I18nBundle::format`.
+    #[test]
+    fn motifs_de_groupe_ont_leur_cle_dans_les_quatre_catalogues() {
+        let codes: std::collections::HashSet<&str> =
+            AccountGroupReason::ALL.iter().map(|r| r.as_str()).collect();
+        assert_eq!(codes.len(), 11, "codes d'API en double");
+        for locale in ["fr-CH", "de-CH", "en-CH", "it-CH"] {
+            let chemin = format!(
+                "{}/../kesh-i18n/locales/{locale}/messages.ftl",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let catalogue = std::fs::read_to_string(&chemin).expect("catalogue");
+            for reason in AccountGroupReason::ALL {
+                let (key, fallback) = account_group_invalid_message(reason);
+                let texte = catalogue
+                    .lines()
+                    .find_map(|l| l.strip_prefix(&format!("{key} = ")))
+                    .unwrap_or_else(|| panic!("{locale} : clé {key} absente"));
+                let attendu = reason != AccountGroupReason::TooMany;
+                assert_eq!(
+                    texte.contains("{ $position }"),
+                    attendu,
+                    "{locale} : {key} et {{ $position }}"
+                );
+                assert_eq!(
+                    fallback.contains("{position}"),
+                    attendu,
+                    "repli de {key} et {{position}}"
+                );
+            }
         }
     }
 }

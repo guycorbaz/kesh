@@ -142,12 +142,19 @@ pub async fn settlement_entry_cancel_blocker(
             .iter()
             .find(|(b, _, _)| *b == ReversalBlocker::MatchedBankTransaction)
             .map(|(_, bank_transaction_id, _)| *bank_transaction_id),
-        Some(unlinked) => sqlx::query_scalar::<_, i64>(
-            "SELECT id FROM bank_transactions \
-             WHERE company_id = ? AND matched_entry_id = ? AND id <> ? ORDER BY id LIMIT 1",
-        )
+        // Story 39-11c (amendement A-2) : une autre ligne du même paiement de
+        // prestataire (paiement par carte Wise groupé) n'empêche pas — elle
+        // revient en attente avec celle qu'on défait (`cancel_in_tx`, 5 bis).
+        Some(unlinked) => sqlx::query_scalar::<_, i64>(&format!(
+            "SELECT bt.id FROM bank_transactions bt \
+             JOIN bank_accounts ba ON ba.id = bt.bank_account_id \
+             WHERE bt.company_id = ? AND bt.matched_entry_id = ? AND bt.id <> ? \
+               AND NOT (bt.status = 'reconciled' AND {}) ORDER BY bt.id LIMIT 1",
+            super::reconciliation_cancel::PROVIDER_GROUP_SIBLING
+        ))
         .bind(company_id)
         .bind(entry_id)
+        .bind(unlinked)
         .bind(unlinked)
         .fetch_optional(&mut *conn)
         .await
