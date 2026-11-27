@@ -79,9 +79,13 @@ l'écriture est **sous la borne** sera refusée. Aujourd'hui, la queue commune n
 **du jour** (24-4c) n'est pas évalué ici — il se contrôle au clic » (`settlement_cancellation.rs:50-52`). Ce qui était un angle mort
 improbable devient un refus fréquent (une période TVA déclarée est typiquement verrouillée : `admin-manual.tex:3559`) : l'écran doit
 l'annoncer (D5). ⚠️ Le **re-rapprochement** de la transaction écrit une écriture datée de la transaction, donc sous la même borne : il serait
-refusé lui aussi. Kesh ne permet donc de toute façon pas de « refaire » un rapprochement dans une période verrouillée sans la déverrouiller
-(à **confirmer au code à T0** : la date de l'écriture que crée chaque acceptation — `routes/reconciliation.rs:3044` `entry_date:
-paid_at_candidate`, manuel, éclatement, règle, rattachement — est-elle toujours la date de la transaction ?).
+refusé lui aussi. Kesh ne permet donc pas de « refaire » un rapprochement **qui crée une écriture** dans une période verrouillée sans la déverrouiller.
+⚠️ **Établi à la validation P1 (M4), et plus étroit que la fiche ne le disait** : `routes/reconciliation.rs:3044` (`entry_date: paid_at_candidate`)
+et `invoice_settlements_write.rs:370`, `:751` (`entry_date: settled_on`) datent l'écriture d'une acceptation de facture à la date de la transaction ;
+mais le **rattachement à une écriture existante** (`reconciliation_link.rs:588-679`, `days_apart` : « trie, ne filtre pas ») **ne crée aucune
+écriture** et garde celle de l'écriture rattachée (manuel, `user-manual.tex:369-370`) : il n'est donc **pas** refusé par la borne. La phrase
+« le re-rapprochement serait refusé de toute façon » vaut pour l'acceptation (facture, règle, rapprochement manuel, éclatement — à relire à T0
+pour règle, manuel et éclatement, seule l'acceptation de facture l'est ici), non pour le rattachement.
 
 **P8 — Kesh ne tient aucun décompte de TVA déposé (vérifié).** `git grep -i "submitted\|declared\|vat_returns\|vat_declarations"` sur
 `crates/kesh-db/src/repositories/` et `routes/vat.rs` : rien ; migrations TVA : taux et comptes seulement. Le décompte se calcule des
@@ -163,19 +167,43 @@ Le Project Lead a tranché le 2026-11-26 le cœur du correctif (origine ouverte 
   re-rapprochement qui suit passe la bonne écriture à la date de la transaction, donc dans la période de l'erreur : dater l'inverse du jour
   laisse cette période comptée deux fois (l'erreur et la bonne écriture) et la période courante avec l'inverse seul ; (3) une période déjà
   déclarée doit être verrouillée (P8), et le verrou fait alors refuser (Q2). Conséquence à accepter : dans une période déclarée **non**
-  verrouillée, le décompte change ; le dialogue de confirmation le dit (AC-10).
+  verrouillée, le décompte change ; le dialogue de confirmation le dit (AC-10). Autre conséquence, à dire (validation P1, L8) : l'inverse
+  datée de l'origine reçoit le **prochain numéro** du compteur de l'exercice (`next_number_for`, `journal_entries.rs:670-671`), donc un numéro
+  postérieur à des écritures de date postérieure : l'ordre des numéros ne suit plus celui des dates (déjà vrai d'une saisie manuelle antidatée ;
+  le manuel du § *Annuler un rapprochement* le dit en une phrase).
 - **Q2 — Période verrouillée : refuser, ou dater au premier jour libre ?** L'écriture d'origine est sous la borne du verrou (P7). (a)
   **Refus** `PERIOD_LOCKED`, annoncé d'avance par l'écran, rien n'est écrit ; un administrateur recule la borne (motif obligatoire), on
   annule, on refait le rapprochement, il repose la borne. (b) Dater au lendemain de la borne, s'il est dans l'exercice de l'origine
-  (sinon refus). **Recommandation : (a), refus.** Raisons : le re-rapprochement serait refusé de toute façon sous la même borne (P7, à
-  confirmer à T0) — avec (b) on aurait une inverse hors de la période de l'erreur **et** une transaction qu'on ne peut pas rapprocher à sa
-  date ; et c'est déjà la règle de la contre-passation au début de l'exercice suivant (`journal_entries.rs:612-615`). ⚠️ **Effet** : une
+  (sinon refus). (c) **Garder la date du jour quand l'origine est sous la borne** (inverse dans la période courante, comme aujourd'hui) — c'est le
+  principe que le manuel énonce pour toute écriture d'une période verrouillée : « Une écriture d'une période verrouillée reste corrigeable
+  par contre-passation. La contre-passation est datée du jour, donc après le verrou : elle passe. […] Le verrou arrête ce qui entre dans le
+  passé, jamais ce qui corrige depuis le présent. C'est cette distinction qui empêche le verrou de rendre vos livres incorrigibles »
+  (`user-manual.tex:826-836`, encadré « Ce que le verrou n'empêche pas, et c'est voulu »). Elle rétablit l'asymétrie que (a) supprime, mais
+  refait le défaut de #1674 dans une période verrouillée (l'inverse tombe dans un autre exercice si l'origine est d'un exercice antérieur) :
+  à écarter si le Project Lead tient #1674 pour premier, à retenir si c'est le principe du manuel. **Recommandation : (a), refus,** en
+  disant à Guy qu'elle **contredit ce principe du manuel pour le seul dé-rapprochement** (l'AC-15 corrige l'encadré en conséquence : la
+  contre-passation depuis la fiche d'une écriture **non rapprochée** reste datée du jour et passe ; l'écriture rapprochée est refusée par
+  la contre-passation directe, `MATCHED_BANK_TRANSACTION`). Raisons : le re-rapprochement **par acceptation** serait refusé de toute façon
+  sous la même borne (P7, corrigé) — avec (b) on aurait une inverse hors de la période de l'erreur **et** une transaction qu'on ne peut pas
+  accepter à sa date ; et c'est déjà la règle de la contre-passation au début de l'exercice suivant (`journal_entries.rs:612-615`). Contre-
+  argument à peser : le rattachement à une écriture existante, lui, reste possible sous la borne. ⚠️ **Effet** : une
   annulation qui passe aujourd'hui (datée du jour, hors période verrouillée) sera refusée après la story. Annoncé ⚠️ aux notes de version.
 - **Q3 — Les autres annulations qui datent du jour (R7 à R9) : même défaut, hors de cette story ?** Annuler depuis la fiche le règlement
   d'une facture client, le paiement d'une facture fournisseur, ou annuler une facture fournisseur, après la fin de l'exercice de l'écriture,
-  fausse deux exercices de la même façon. Les inclure ajoute les domaines `frontend/…/invoices` et `…/supplier-invoices` (textes « datée
+  date l'inverse dans un autre exercice que l'origine. **Établi au code à la validation P1 (M6), ligne lue, les trois affirmations sont vraies** :
+  R7 `routes/invoices.rs:1619` `let aujourd_hui = state.horloge.aujourd_hui();` → `cancel_settlement(…, aujourd_hui)` (`:1624-1631`) →
+  `invoice_settlements_write.rs:1128-1136` `reverse_owned_in_tx(…, ClientSettlement { settlement_id }, aujourd_hui)` ; R8
+  `routes/supplier_invoices.rs:1064-1069` → `supplier_invoices.rs:3558` ; R9 `routes/supplier_invoices.rs:1025-1032` → `supplier_invoices.rs:3243`
+  (`SupplierPurchase`) — tous trois aboutissent à `ReversalDating::Today` (`journal_entries.rs:2930`) et à `find_open_covering_date(today)`
+  (`:3254-3257`). **L'effet sur les comptes n'est pas le même partout**, ce qui commande la priorité des issues : R9 contre-passe l'écriture d'**achat**
+  (charges, TVA récupérable, créanciers) : la charge et l'impôt préalable restent dans N, l'inverse crédite l'exercice courant — résultat et
+  décompte de TVA faux dans **deux** exercices (P1). R7 et R8 contre-passent une écriture de **règlement** : banque et débiteurs (ou créanciers)
+  seulement, des comptes de bilan dont le solde se cumule — les soldes cumulés sont justes, mais le bilan de N montre un paiement que l'annulation
+  défait en N+1, et **le résultat est faux dès que l'écriture porte un écart** (escompte, perte, correction de TVA : le « solde » d'une facture
+  s'annule par la même route, `invoices-write-off-cancel-confirm`, TVA comprise) — P1 pour le règlement client avec écart ou TVA, **P2 pour le
+  règlement simple** (bilan seul, aucun résultat ni total de TVA faux). Aucune de ces trois annulations n'est atteinte par le dé-rapprochement. Les inclure ajoute les domaines `frontend/…/invoices` et `…/supplier-invoices` (textes « datée
   d'aujourd'hui ») et les routes des factures : la story passerait de quatre à six modules (découpage obligatoire) et l'epic a déjà six
-  stories. **Recommandation : trois issues, une par geste, P1** (elles écrivent faux), ouvertes par l'orchestrateur dès la décision, pour
+  stories. **Recommandation : trois issues, une par geste, priorité selon l'effet ci-dessus (R9 P1 ; R7 P1 s'il y a écart ou TVA, sinon P2 ; R8 P2 sauf écart)**, ouvertes par l'orchestrateur dès la décision, pour
   une release suivante ; la story pose le paramètre de datation qui les rend triviales. *(Une seule exception à discuter : si Guy juge que
   l'annulation depuis la fiche doit rester datée du jour — correction de l'exercice courant d'une erreur d'un exercice clos, ce qui se
   défend —, les issues deviennent sans objet ; la story ne préjuge rien.)*
@@ -187,12 +215,23 @@ Le Project Lead a tranché le 2026-11-26 le cœur du correctif (origine ouverte 
   seulement.** Raisons : Guy n'est pas le seul utilisateur (contributeurs, futures installations) et une requête SQL n'est pas un outil
   d'utilisateur ; un décalage de période dans le même exercice ne fausse pas les comptes annuels, et la concordance annuelle de la TVA
   l'absorbe ; l'élargir listerait comme « à corriger » des annulations que rien n'oblige à corriger. *(Si (b) est retenu : AC-14 et AC-15
-  se réduisent au manuel, la story perd le panneau et sa route, et reste à trois modules.)*
+  se réduisent au manuel, la story perd le panneau et sa route, et reste à trois modules.)* ⚠️ **À trancher aussi (validation P1, M8)** : rien
+  ne dit quand un cas **quitte** le panneau — la correction du manuel (D8) pose deux écritures OD que ni l'audit ni le journal ne relient au cas ;
+  le panneau listerait le même cas à jamais. Options : (a1) un **acquittement** par cas, tracé au journal d'audit (action neuve, entité
+  `bank_transaction`, route `POST` mutante à inscrire à `audit_route_registry.rs`, aucune migration) et exclu par la requête ; (a2) aucun
+  acquittement, le panneau est **une aide à la correction** et le dit (« tant que l'inverse reste dans un autre exercice que l'écriture ») ;
+  (a3) le cas disparaît quand l'origine et l'inverse sont l'un et l'autre **contre-passés ou lettrés avec une écriture de correction**, ce que
+  Kesh ne sait pas lire. **Recommandation : (a2) pour cette story**, l'acquittement (a1) en issue si Guy le veut — il ajoute une route et un
+  geste d'écriture à une story de lecture.
 - **Q5 — Le changement de date au regard des versions de l'API.** `docs/api-external.md:992` documente « datée du jour ». La forme de la
   réponse ne change pas ; la vue gagne deux champs (ajout) et `cancelBlockedBy` une valeur (`PERIOD_LOCKED`, ajout) ; la **date écrite**
   change, et des annulations jusqu'ici acceptées sont refusées (Q2). **Recommandation : pas de `/api/v2`** — c'est la correction d'un
-  défaut qui écrivait faux, annoncée ⚠️ en tête des notes de version, comme le Project Lead l'a demandé ; la release monte `b` de toute
-  façon (migration de la 53-2). Décision à écrire au Change Log.
+  défaut qui écrivait faux, annoncée ⚠️ en tête des notes de version, comme le Project Lead l'a demandé. ⚠️ **Deux précisions (validation P1,
+  L4)** : (1) `docs/api-external.md:992` **documente** « datée du jour » : le contrat écrit change, il n'est pas rétabli — le cas « correction d'un
+  comportement contraire au contrat documenté » de § *Versions de l'API* ne s'applique qu'une fois le texte du contrat dit faux par le Project
+  Lead (décision du 2026-11-26), à écrire comme tel ; (2) la fiche disait « la release monte `b` de toute façon (migration de la 53-2) » : la 53-2
+  est `backlog` (« migration probable »), donc **rien n'assure** cette migration ; c'est la **modification du contrat** (date écrite, refus
+  neuf) qui porte `b` par § *Numérotation des versions*. Décision à écrire au Change Log.
 - **Q6 — Exercice d'origine clos et comptes déposés : la correction (D8) se fait-elle quand même ?** Pour un cas déjà dans les livres dont
   l'exercice d'origine a été **clôturé et ses comptes approuvés**, rouvrir pour corriger change des comptes déposés. **Recommandation :
   le manuel dit de ne pas rouvrir** — l'inverse tombée dans l'exercice suivant y vaut alors correction d'un exercice antérieur, à laisser,
@@ -204,11 +243,20 @@ Le Project Lead a tranché le 2026-11-26 le cœur du correctif (origine ouverte 
 - **D1 — La datation du dé-rapprochement.** Exercice de l'écriture d'origine **ouvert** (rouvert compris) : la contre-passation est datée
   de la **date de l'écriture d'origine**, dans **son** exercice. Exercice **clos** : refus, motif `FISCAL_YEAR_CLOSED` existant (rang 2),
   inchangé. **Période verrouillée** (date de l'origine ≤ borne) : refus `PERIOD_LOCKED` (Q2 a). Vaut pour les cinq bras R1 à R6. Le
-  retrait seul d'un côté de virement (`unlink_only`) n'écrit rien et ne change pas. *Écartées* : variante de Q1, variante (b) de Q2.
+  retrait seul d'un côté de virement (`unlink_only`) n'écrit rien et ne change pas ; le rang `PeriodLocked` ne s'évalue donc pas pour lui
+  (AC-8). **Devises** (validation P1, L5) : l'inverse recopie montant, cours et provenance de l'origine (`journal_entries.rs:3216-3234`) et se
+  juge désormais dans l'exercice **de l'origine** : `controler_lignes` rang 2 (`journal_entry_fx.rs:90`, compte en devise dans un exercice
+  mono-devise) ne peut plus refuser ce que l'origine a déjà passé ; une **réévaluation de fin d'exercice déjà passée** dans l'exercice de
+  l'origine ne se recalcule pas — l'inverse change le solde en devise sur lequel elle portait : le manuel (§ *Annuler un rapprochement*) dit de
+  la rejouer après l'annulation (aucune garde ne l'y oblige, aucun refus nouveau). *Écartées* : variante de Q1, variante (b) de Q2.
 - **D2 — Une datation, nommée, dans le socle — jamais une seconde contre-passation.** `ReversalDating` gagne une troisième valeur,
-  `OriginDate`, et devient visible des dépôts (`pub(crate)` suffit si tous les appelants sont dans `kesh-db` ; c'est le cas : la route ne
-  passe rien). Étape (1) de `reverse_in_tx_inner` : la requête verrouillante existante lit **aussi** `je.entry_date` (aucune ligne de plus,
-  patron 29-1b AC11). Étape (4), bras `OriginDate` : `fy = find_open_covering_date(tx, company_id, origin_date)` — lecture **verrouillante**
+  `OriginDate`, et devient **`pub`** (validation P1, M2 : `pub(crate)` ne suffit pas — `kesh-api/src/services/factures.rs:585` appelle
+  `settlement_cancel_blocker`, les tests d'intégration de `kesh-db` (`crates/kesh-db/tests/`, crates distincts) et de `kesh-api` appellent
+  `reverse_in_tx`, `cancel_settlement_in_tx` ou leurs blocages, et une `pub fn` ne peut porter un type `pub(crate)` dans sa signature —
+  `private_interfaces`, rouge sous `-D warnings` ; la valeur `NextFiscalYearStart` devient atteignable de ces appelants, sans conséquence :
+  l'étape (1-bis) ne s'y exécute pas faute d'autorité, comme pour son entrée publique). Étape (1) de `reverse_in_tx_inner` : la requête
+  verrouillante existante lit **aussi** `je.entry_date` **et `je.fiscal_year_id`** (celui-ci pour la confirmation `fy.id == origin_fy_id` ;
+  aucune ligne de plus, patron 29-1b AC11 — la requête actuelle ne lit ni l'un ni l'autre, `journal_entries.rs:3110`). Étape (4), bras `OriginDate` : `fy = find_open_covering_date(tx, company_id, origin_date)` — lecture **verrouillante**
   qui **confirme** l'exercice ouvert —, `None` → `DbError::FiscalYearClosed` (l'origine est dans un exercice clos : le rang 2 l'a déjà
   refusé ; filet), et `fy.id != origin_fy_id` → `DbError::Invariant` (les exercices ne se chevauchent pas : patron de `NextFiscalYearStart`,
   `:3280-3287`). Date de l'inverse : `origin_date`. Le reste — `create_in_tx_inner` et ses refus (dont `PeriodLocked`), lettrage `reversal`
@@ -222,6 +270,12 @@ Le Project Lead a tranché le 2026-11-26 le cœur du correctif (origine ouverte 
   `reverse_at_origin_date_in_tx` à côté des deux autres — le socle a été unifié (25-3-zero, 29-1b) précisément pour ne pas avoir de second
   chemin. *Écartée 2* : la route calcule la date et la passe en `Today(date_origine)` — `Today` irait alors chercher l'exercice par la date
   sans savoir qu'elle doit être celle de l'origine ; la confirmation `fy.id == origin_fy_id` disparaîtrait.
+  ⚠️ **Limite à écrire d'avance (validation P1, M5)** : sur le chemin du dé-rapprochement, l'exercice de l'origine est déjà verrouillé par
+  l'étape (3) de `cancel_in_tx` (et (2-bis) des gestes de règlement) **avant** toute lecture non verrouillante ; une clôture concurrente
+  attend ce verrou, et l'instantané ne se fige qu'après lui. Une lecture **ordinaire** de l'étape (4) verrait donc le même état que la
+  lecture verrouillante : la mutation M7 ne se tue vraisemblablement par aucun entrelacement jouable. La confirmation reste (patron de la
+  29-1b, défense de tout appelant futur qui n'aurait pas verrouillé avant) ; M7 est écrite **angle mort assumé** dès la fiche, sauf si le
+  développement établit un entrelacement qui la tue.
 - **D3 — Verrous : l'ordre ne change pas, l'ensemble diminue.** Le dé-rapprochement tient déjà, dans l'ordre, la transaction bancaire, la
   ligne de règlement et la facture, l'écriture **et son exercice** (étape 3, `reconciliation_cancel.rs:756-768`) ; `reverse_in_tx_inner`
   re-verrouille l'origine et son exercice (même ligne, déjà tenue), puis le parcours de `find_open_covering_date` part du premier exercice
@@ -244,17 +298,25 @@ Le Project Lead a tranché le 2026-11-26 le cœur du correctif (origine ouverte 
   `SettlementCancelBlocker::PeriodLocked` (code `PERIOD_LOCKED`, celui de `DbError::PeriodLocked`, « même état du monde », patron du rang
   2 bis) ; `SettlementCancelHit` porte la borne en étiquette (`Some(locked_through.to_string())`, patron du compte archivé au rang 4).
   **Place** : celle de l'ordre réel du socle — après `AccountArchived` (étape 3 du socle) et à la place du rang 5 (`NoOpenFiscalYearToday`),
-  qui devient **inatteignable** pour `OriginDate` (l'exercice de l'origine, ouvert au rang 2, couvre sa date) et reste celui de `Today`.
+  qui devient **inatteignable** pour `OriginDate` (l'exercice de l'origine, ouvert au rang 2, couvre sa date) et reste celui de `Today`. Son code
+  est **`FISCAL_YEAR_INVALID`** (`kesh-db/src/errors.rs:800` ; la fiche l'écrivait `NO_OPEN_FISCAL_YEAR_TODAY`, qui n'existe nulle part :
+  `git grep -n NO_OPEN_FISCAL_YEAR_TODAY origin/main` rend vide, validation P1, M1).
   Lecture **non verrouillante** de `companies.books_locked_through` (même tolérance que l'étape 0-bis du socle, `journal_entries.rs:517-
   536`). **Qui refuse au clic** : le socle (`create_in_tx_inner`, 400 `PERIOD_LOCKED`), « une seule garde par motif » (`errors.rs:672-675`) ;
   le geste ne le refuse pas lui-même. Écran : clé `reconciliation-cancel-blocked-period-locked` (« L'écriture de ce rapprochement est datée
   du { $date }, dans une période verrouillée jusqu'au { $lockedThrough } : pour pouvoir l'annuler, un administrateur doit faire reculer le
   verrou avant cette date. »), quatre locales ; `reconciliation-cancel-blocked-no-fiscal-year` (`messages.ftl:961`), son fallback
-  `errors.rs:6958` et son entrée dans `frontend/src/lib/features/reconciliation/reconciliation-cancel.ts` deviennent sans usage : **retirés**
-  (inventaire par grep du symptôme, quatre locales, `i18n-keys.test.ts`) — le motif `NO_OPEN_FISCAL_YEAR_TODAY` reste pour les gestes de la
-  fiche (`settlement-cancel-blocked-no-fiscal-year`, `supplier-invoices-cancel-blocked-no-fiscal-year`).
-- **D6 — Le dé-rapprochement ne lit plus la date du jour.** `cancel_in_tx`, `get_view`, `entry_cancel_outlook`, `group_cancel_blocker`,
-  `supplier_group_cancel_blocker`, `grouped_settlements::{cancel_in_tx, supplier_cancel_in_tx}` perdent leur paramètre `aujourd_hui` ; la
+  `errors.rs:6958` et son entrée `FISCAL_YEAR_INVALID` de `frontend/src/lib/features/reconciliation/reconciliation-cancel.ts` (« huit motifs »,
+  type exhaustif par `never`) deviennent **inatteignables** pour le dé-rapprochement et **ne se retirent pas** (validation P1, M1) : la variante
+  `NoOpenFiscalYearToday` reste dans l'enum (gestes de la fiche, R7 à R9), donc les trois `match` exhaustifs de `kesh-api/src/errors.rs`
+  (`:6243`, `:6956`, `:7005`) gardent leur bras ; le patron est celui du bras `SupplierInvoiceNotPaid` de `reconciliation_cancel_blocked_text`
+  (« Inatteignable … le `match` reste exhaustif », clé et repli conservés). On y ajoute, dans **chacun des trois** `match`, le bras
+  `PeriodLocked` (clé du dé-rapprochement pour `reconciliation_cancel_blocked_text`, repli de même) ; un commentaire dit « inatteignable » sur
+  les bras `FISCAL_YEAR_INVALID` et `PERIOD_LOCKED` des deux familles de la fiche (`Today` ne produit jamais `PeriodLocked`). Un grep du symptôme
+  (quatre locales, `i18n-keys.test.ts`) confirme qu'aucune clé n'est orpheline.
+- **D6 — Le dé-rapprochement ne lit plus la date du jour.** `cancel_in_tx`, **`cancel`** (l'enveloppe du pool, `reconciliation_cancel.rs:1104`), **`cancel_blocker`** (`:292`), `get_view`,
+  `entry_cancel_outlook`, `group_cancel_blocker`, `supplier_group_cancel_blocker`,
+  `grouped_settlements::{cancel_in_tx, supplier_cancel_in_tx}` perdent leur paramètre `aujourd_hui` ; la
   route `post_cancel_reconciliation` (`:6268-6270`), la vue (`:6149`) et les candidates (`:6974`) cessent de lire l'horloge pour ce geste.
   L'inventaire des lectures de l'horloge `crates/kesh-api/tests/date_du_jour_garde.rs` se met à jour en conséquence (lire ce qu'il compte
   avant de l'éditer). *Écartée* : garder `aujourd_hui` « au cas où » — un paramètre inutilisé masque la règle.
@@ -263,7 +325,12 @@ Le Project Lead a tranché le 2026-11-26 le cœur du correctif (origine ouverte 
   paiement Wise groupé écrit une entrée d'audit par transaction, P10), pour les entrées `reconciliation.cancelled` dont
   `reversalJournalEntryId` n'est pas nul et dont l'inverse et l'origine (`reverses_entry_id`) sont dans deux exercices différents ; champs :
   transaction bancaire, instant de l'annulation, genre, origine (id, numéro, date, exercice id/nom/statut), inverse (idem), total des
-  débits de l'origine. **Lecture seule** : une transaction de lecture, aucun verrou, aucune écriture (pas même d'audit). Route
+  débits de l'origine. **Portée par société lue sur l'écriture, non sur l'audit** (validation P1, M7) : `audit_log.company_id` est nullable (« NULL = société
+  indéterminable, état permanent », `crates/kesh-db/test-schema/0001_schema_squash.sql:192`) — filtrer dessus **omettrait en silence** des cas ;
+  la requête joint `journal_entries` (origine, `company_id = ?`) et ne lit l'audit que pour la nature du geste (`details_json`, colonne de
+  `audit_log`, non `details`). Index de `audit_log` : `(entity_type, entity_id)`, `(user_id, created_at)`, `(company_id, created_at)` — aucun
+  sur `action` : le plan filtre `entity_type = 'bank_transaction'` puis `action` ; à mesurer par `EXPLAIN` comme dit plus bas.
+  **Lecture seule** : une transaction de lecture, aucun verrou, aucune écriture (pas même d'audit). Route
   `GET /api/v1/reconciliation/cancellations/cross-fiscal-year` (Comptable+ comme la vue ; clés `read` admises), tri par instant. Écran : un
   panneau dans `frontend/src/lib/features/reconciliation/` (`CrossFiscalYearCancellations.svelte`), monté sur la page des imports
   (`routes/(app)/bank-import/+page.svelte`), **absent** quand la liste est vide, qui dit pour chaque cas « L'écriture n° { $n } du { $date }
@@ -293,7 +360,9 @@ horloge de test posée (`state.horloge`) pour que **le jour diffère toujours de
 l'origine passe à vide sous `Today`.
 
 - **AC-1 — Écriture seule, exercice de l'origine ouvert, annulation dans le même exercice** : origine du 14.03 en N, horloge au 20.11 de N ;
-  l'inverse est datée du 14.03, exercice N, libellé « Contre-passation écriture n° … » sans suffixe ; `journal_entry.reversed` porte
+  l'inverse est datée du 14.03, exercice N, libellé « Contre-passation écriture n° … » sans suffixe ; **la date de la transaction bancaire diffère
+  de celle de l'écriture** (rattachement à une écriture existante d'une autre date : sans cela, une date lue sur la transaction passerait,
+  M10) ; `journal_entry.reversed` porte
   `"dating": "originDate"` ; `reconciliation.cancelled` garde sa forme.
 - **AC-2 — Écriture seule, origine dans un exercice antérieur encore ouvert (jamais clôturé), horloge en N+1** : inverse datée de la date de
   l'origine, dans N ; **aucune** ligne n'est écrite dans N+1 (compte des `journal_entries` de N+1 avant et après).
@@ -312,16 +381,19 @@ l'origine passe à vide sous `Today`.
 - **AC-9 — Période verrouillée** (date de l'origine ≤ `books_locked_through`, seuil inclusif testé au jour de la borne **et** au lendemain) :
   la vue rend `cancelBlockedBy: "PERIOD_LOCKED"` et la borne ; l'écran masque *Confirmer* et affiche `reconciliation-cancel-blocked-period-
   locked` ; au clic forcé par l'API, `400 PERIOD_LOCKED`, rien n'est écrit, le lien reste. Pour R1, R2, R4 au moins ; R3, R5 par le même
-  rang (test de la queue commune). *(Sous réserve de Q2.)*
+  rang (test de la queue commune). **Les candidates** (`GET …/entry-candidates`, `entry_cancel_outlook`) rendent le même motif pour une écriture
+  sous la borne : le dialogue de rattachement l'annonce comme obstacle (case à cocher, `LinkSettlementModal.svelte:160`, `:401-415`) — test API et
+  test unitaire du composant (validation P1, L9). *(Sous réserve de Q2.)*
 - **AC-10 — La vue et le dialogue disent la date** : `reversalDate`, `reversalFiscalYearName` dans `GET …/transactions/{id}` (nuls pour un
   retrait seul) ; les cinq messages de confirmation, aux quatre locales, ne disent plus « aujourd'hui » et nomment la date et l'exercice ;
   la phrase TVA suit D4.
 - **AC-11 — Les annulations depuis la fiche ne changent pas (R7, R8)** : annuler un règlement client depuis la fiche, et un paiement
   fournisseur depuis la fiche, origine en N ouvert, horloge en N+1 : l'inverse reste datée du jour, dans N+1, rang 5
-  `NO_OPEN_FISCAL_YEAR_TODAY` inchangé. *(Test de non-régression qui fige la portée ; il changera avec les issues de Q3.)*
+  `FISCAL_YEAR_INVALID` inchangé (sans exercice ouvert au jour : refus ; avec N+1 ouvert : inverse du jour dans N+1). *(Test de non-régression qui fige la portée ; il changera avec les issues de Q3.)*
 - **AC-12 — Verrous et concurrence** : (a) l'exercice de l'inverse est **confirmé** par une lecture verrouillante (mutation M7) et un
   exercice différent de celui de l'origine rend `Invariant` (test unitaire du socle, état forgé) ; (b) entrelacement `close(N)` concurrent
-  d'une annulation dont l'origine est en N, patron du test d'entrelacement du dé-rapprochement (`reconciliation_cancel.rs` doc, étape 2) :
+  d'une annulation dont l'origine est en N (il établit l'ordre des verrous, **non** la confirmation de l'étape (4) : M7 est angle mort assumé,
+  voir D2), patron du test d'entrelacement du dé-rapprochement (`reconciliation_cancel.rs` doc, étape 2) :
   ou la clôture attend et l'annulation passe dans N ouvert, ou la clôture passe d'abord et l'annulation est refusée `FISCAL_YEAR_CLOSED` —
   jamais une inverse dans un exercice clos ; un interblocage est rejoué par la route ; (c) mesure des verrous (D3) écrite au Dev Agent Record.
 - **AC-13 — Règle de datation, tests unitaires** : le verdict « date et exercice de l'inverse » selon la datation (`Today`, `OriginDate`,
@@ -336,7 +408,16 @@ l'origine passe à vide sous `Today`.
 - **AC-15 — Manuel et API** (`.tex` et `docs/api-external.md` ; les PDF ne se commitent pas dans `story/…`, CLAUDE.md § *Fusions et fichiers
   communs* — ils se régénèrent à la release) : `user-manual.tex` — § *Annuler un rapprochement* (`:4064-4145` : la puce « datée du jour »,
   la puce « aucun exercice ouvert ne couvre la date du jour » remplacée par la période verrouillée, l'alinéa D8), encadré
-  `sec:date-du-jour` (`:863-866`, le rapprochement sort de la liste), `:3967` et `:3878` relus (exercice clôturé : toujours vrai) ; `docs/
+  `sec:date-du-jour` (`:863-866`, le rapprochement sort de la liste), `:3967` et `:3878` relus (exercice clôturé : toujours vrai) ; **sites que la fiche ne nommait pas (validation P1, M9)** :
+  `user-manual.tex:384-386` (l'« écart fictif » après annulation : l'inverse n'est plus « datée du jour de l'annulation » — la cause décrite
+  disparaît, la phrase se réécrit ou se retire), `:826-836` (encadré « Ce que le verrou n'empêche pas » : « La contre-passation est datée du
+  jour, donc après le verrou : elle passe » devient faux **pour l'annulation d'un rapprochement** — Q2), `:3971` (« la fenêtre dit ce qu'il en
+  serait aujourd'hui » : la période verrouillée devient un obstacle **annoncé**, non plus seulement possible), l'alinéa « Quand l'annulation n'est
+  pas possible » (`:4144`, la puce « aucun exercice ouvert ne couvre la date du jour » **sort** de la liste du dé-rapprochement) ;
+  `admin-manual.tex:3559` (le verrou de période est aussi le remède du refus d'annuler un **rapprochement** dont l'écriture est sous la borne) ;
+  `docs/api-external.md:1005` et `:1007` (lignes de la table des refus du dé-rapprochement : « Aucun exercice ouvert ne couvre la date du jour —
+  `FISCAL_YEAR_INVALID` » sort, « Date du jour dans une période verrouillée — `PERIOD_LOCKED` » devient « date de l'écriture ») et `:1065` (champs
+  des candidates) ; `docs/
   api-external.md:992` (date de l'origine, refus `PERIOD_LOCKED`, champs `reversalDate` et `reversalFiscalYearName`, route de détection) et
   `:717` relu. Recherche du symptôme dans les `.tex` **et** dans les PDF aplatis (`pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' '
   | tr -s ' ' | grep -o -i '.\{100\}datée du jour.\{100\}'`, puis `date du jour`, `aujourd'hui`) : chaque phrase qui parle du
@@ -348,7 +429,7 @@ l'origine passe à vide sous `Today`.
   dialogue (date d'origine, phrase TVA), du motif « période verrouillée » et du panneau, sur une base de démonstration, dans
   `kesh-gate-logs/`.
 - **AC-17 — Gates et mutations** : gate complet (`scripts/test-fast.sh`, puis `scripts/gate-ci.sh`), frontend (`check`,
-  `lint-i18n-ownership`, `test:unit`, `build`), E2E complet au dernier commit de code ; mutations M1 à M9 tuées, chacune par le test annoncé.
+  `lint-i18n-ownership`, `test:unit`, `build`), E2E complet au dernier commit de code ; mutations M1 à M11 tuées, chacune par le test annoncé.
 - **AC-18 — Aucune migration** : `git diff --stat <base>..HEAD -- crates/kesh-db/migrations/` vide ; le schéma de test
   (`crates/kesh-db/test-schema/`) inchangé.
 
@@ -362,9 +443,11 @@ l'origine passe à vide sous `Today`.
 | M4 | groupe client : `OriginDate` → `Today` | AC-7 (client) |
 | M5 | groupe fournisseur : `OriginDate` → `Today` | AC-7 (fournisseur) |
 | M6 | rang `PeriodLocked` retiré de la queue commune | AC-9 (vue) — le clic reste refusé par le socle : la mutation ne doit tuer **que** le test de la vue |
-| M7 | confirmation de l'étape (4) remplacée par une lecture ordinaire | AC-12 b (entrelacement) — si elle survit, l'écrire en angle mort assumé, comme M-b3 de la 29-1b |
+| M7 | confirmation de l'étape (4) remplacée par une lecture ordinaire | **angle mort assumé d'avance** (D2 : le verrou de l'étape (3) précède toute lecture) ; à tuer seulement si un entrelacement le permet |
 | M8 | gestes de la fiche (R7) passés en `OriginDate` | AC-11 |
 | M9 | détection : dédoublonnage retiré | AC-14 (Wise groupé → deux cas) |
+| M10 | date de l'inverse lue sur la **transaction bancaire** au lieu de l'écriture (bras `Entry`, rattachement d'une autre date) | AC-1 (date de la transaction ≠ date de l'écriture) |
+| M11 | seuil du rang `PeriodLocked` de la queue : `<=` → `<` | AC-9 au **jour de la borne** (la vue doit refuser ; le socle, lui, garde `<=`) |
 
 ## Tâches
 
@@ -387,7 +470,7 @@ l'origine passe à vide sous `Today`.
   (`CancelReconciliationDialog.test.ts`) ; i18n aux quatre locales, `sitesTotal` de `i18n-keys.test.ts` recompté ; vérification D8 (candidates
   de rattachement) ; commit.
 - [ ] **T7 — Manuel et API** (AC-15) ; commit.
-- [ ] **T8 — E2E** (AC-16), recette visuelle, gates, mutations M1 à M9 (AC-17) ; Dev Agent Record ; commit et push de la seule branche
+- [ ] **T8 — E2E** (AC-16), recette visuelle, gates, mutations M1 à M11 (AC-17) ; Dev Agent Record ; commit et push de la seule branche
   `story/…` à chaque étape.
 
 ## Dev Notes
@@ -413,6 +496,18 @@ l'origine passe à vide sous `Today`.
   tests existants qui assertent une inverse **datée du jour** sur le dé-rapprochement (`git grep -n "entry_date\|entryDate"` dans ces
   fichiers : 9 sites dans `reconciliation_e2e.rs`, 2 dans `reconciliation_group_e2e.rs`, 3 dans `reconciliation_cancel.rs` à `main`) se
   relisent un par un : ceux qui portent sur le dé-rapprochement changent d'attendu, ceux des gestes de la fiche ne changent pas.
+  **Tests que la fiche ne nommait pas (validation P1, M3)**, qui appellent le dé-rapprochement, ses blocages ou les signatures changées
+  (`git grep -n "reconciliation/transactions/{}/cancel\|reverse_in_tx(\|cancel_settlement_in_tx(\|cancel_in_tx(\|settlement_cancel_blocker(\|entry_cancel_outlook" -- 'crates/*/tests/*'`) :
+  `kesh-api/tests/jour_suisse_nuit_e2e.rs` — **deux tests changent d'attendu** : `ac3_annulation_d_un_rapprochement_la_nuit` (`:699-727`,
+  l'inverse n'est plus datée du 1er janvier mais de l'origine, `assert_contre_passee_le_1er_janvier`) et `ac7_les_services_jugent_au_jour_suisse`
+  (`:876-940`, la candidate `entry-candidates` ne rend plus `FISCAL_YEAR_INVALID` pour le dé-rapprochement : plus de rang 5) ; ses tests de R7
+  à R9 (`:635-695`) ne changent pas — `kesh-api/tests/bank_accounts_closed_e2e.rs:1709` (appelle `cancel_in_tx`), `bank_account_closed_inventory.rs`
+  (18 sites, inventaire lexical), `audit_acteur_garde.rs`, `reconciliation_link_e2e.rs`, `reconciliation_link_entry_e2e.rs`,
+  `paypal_reconciliation_e2e.rs`, `stripe_reconciliation_e2e.rs`, `rejeu_interblocage_e2e.rs` ; `kesh-db/tests/grouped_settlements.rs`,
+  `grouped_settlements_supplier.rs`, `supplier_invoices_repository.rs` (12), `invoice_settlement.rs` (7), `invoice_write_off.rs` (4),
+  `letterings_lexical.rs` (11), `lettering_documents.rs`, `journal_entries_modification.rs`, `filet_bilan_clos.rs` (signatures :
+  `ReversalDating::Today(…)`). Doc-comments et types à relire pour « datée du jour » : `reconciliation_cancel.rs:616`,
+  `reconciliation.types.ts:345`, `reconciliation.api.ts:141`.
 - Documentation : `docs/manual/fr/user-manual.tex`, `docs/api-external.md`. Pas de CHANGELOG (assemblé à l'intégration), pas de PDF.
 
 ### Ce qui doit être préservé
@@ -494,3 +589,19 @@ production*).
 
 - 2026-11-27 — Fiche rédigée (Opus 5.5) contre `origin/main` `56d47b2cc`, statut `ready-for-dev` ; Q1 à Q6 ouvertes pour Guy ; validation
   P1 à lancer (Sonnet, passe complète : prompt `53-6-annulation-rapprochement-exercice-validation-prompt-p1.md`).
+- 2026-11-27 — **Validation P1 (Sonnet 5.5, passe complète) : 0 CRITICAL, 0 HIGH, 9 MEDIUM, 9 LOW.** Les trois points majeurs du prompt tiennent
+  au code : D2 (la date de l'origine se lit dans la requête verrouillante de l'étape (1), `journal_entries.rs:3110`, sans verrou de plus ; la
+  confirmation `find_open_covering_date` rend bien l'exercice de l'origine, `fiscal_years.rs:1008-1019`) ; D5 et P7 (`create_in_tx_inner`
+  refuse `PeriodLocked` en 1-bis, `:610-625`, après `FiscalYearClosed` et `LATER_FISCAL_YEAR_CLOSED`, avant la validation des comptes ; la queue
+  ne l'évalue pas, `settlement_cancellation.rs:50-52` ; l'ordre `AccountArchived` puis `PeriodLocked` est celui du socle, étape (3) de
+  `reverse_in_tx_inner` puis création) ; R1 à R11 (aucune autre contre-passation n'est atteinte par `POST …/cancel` ; sonde positive du
+  symptôme `ReversalDating::Today` / `aujourd_hui` passé à un `reverse`/`cancel` : le site de la 53-6 sort, avec R7 à R10, rien d'autre). Q3 :
+  les trois affirmations sont vraies, effets distincts (voir Q3). Remédiés dans la fiche : M1 code `FISCAL_YEAR_INVALID` (non
+  `NO_OPEN_FISCAL_YEAR_TODAY`, inexistant) et bras exhaustifs conservés ; M2 `ReversalDating` `pub` ; M3 inventaire des tests (dont deux de
+  `jour_suisse_nuit_e2e.rs`) ; M4 P7 corrigée (le rattachement ne crée pas d'écriture) et Q2 complétée par l'option (c) et le principe du
+  manuel `:826-836` ; M5 M7 angle mort d'avance ; M6 Q3 (effet et priorité par geste) ; M7 portée de D7 lue sur l'écriture
+  (`audit_log.company_id` nullable) ; M8 sortie d'un cas du panneau (Q4) ; M9 sites de manuel et d'API non nommés ; L1 à L9 : colonnes lues à
+  l'étape (1), bras des trois `match` d'erreurs, mutations M10 et M11, Q5 (b dépend d'une migration non acquise), devises et réévaluation,
+  noms de D6, candidates (AC-9), numérotation (Q1). Questions de produit : **toujours ouvertes pour Guy** (Q1 à Q6, Q4 enrichie). Passe
+  suivante : P2, Opus (prompt `53-6-annulation-rapprochement-exercice-validation-prompt-p2.md`) ; rapport P1 :
+  `kesh-gate-logs/e53/53-6-validation-p1.md`.
