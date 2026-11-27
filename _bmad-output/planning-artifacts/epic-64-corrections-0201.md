@@ -20,7 +20,7 @@ Une seule story : trois correctifs indépendants, sans migration, sur **cinq mod
 fiche : écran des taux de TVA, écran des factures, cadre de l'application `(app)/+layout.svelte`, `kesh-api`, `kesh-i18n`) ;
 la règle de splitting préventif (plus de cinq modules) ne s'appliquait pas alors. *Revue de code P1 (R1-1), 2026-11-27 : deux
 correctifs d'une ligne ajoutent `InvoiceForm.svelte` (composant de facture) et `products/+page.svelte` (catalogue) : **sept
-modules** ; ni découpage ni dérogation écrits, les défauts n'étant pas recyclés — à déclarer au Project Lead.* Pas de story de solde : l'epic ne laisse pas
+modules** ; ni découpage ni dérogation écrits, les défauts n'étant pas recyclés — à déclarer au Project Lead.* *Revue de code P2 (L2-1, L2-4), 2026-11-27 : le lot des LOW de code ajoute `features/supplier-invoices` (`SupplierInvoiceForm.svelte`) et une fonction partagée dans `features/vat-rates` (déjà compté par l'écran des taux) : **huit modules**, recomptés — écran des taux, écran des factures, cadre `(app)`, composant de facture, catalogue, facture fournisseur, `kesh-api`, `kesh-i18n` ; même motif, défauts neufs non recyclés, déclaration au Project Lead inchangée.* Pas de story de solde : l'epic ne laisse pas
 de dette propre (toute dette découverte s'ouvre en issue, § *On trace toujours*).
 
 ## Dépendances
@@ -38,6 +38,7 @@ de dette propre (toute dette découverte s'ouvre en issue, § *On trace toujours
 
 - `frontend/src/routes/(app)/settings/vat-rates/` (+ son test) ;
 - `frontend/src/routes/(app)/invoices/[id]/edit/+page.svelte` (+ test) ;
+- *Ajouts de la revue de code* : `frontend/src/lib/components/invoices/InvoiceForm.svelte`, `frontend/src/routes/(app)/products/+page.svelte`, `frontend/src/lib/features/supplier-invoices/SupplierInvoiceForm.svelte`, `frontend/src/lib/features/vat-rates/vat-rates.distinct.ts` (+ tests) ;
 - `frontend/src/routes/(app)/+layout.svelte` et `frontend/src/lib/app/stores/mode.svelte.ts` (menu utilisateur : bascule du mode) ;
 - `crates/kesh-api/src/lib.rs` (déplacement de la route `PUT /api/v1/profile/mode` dans le bloc `admin_routes`), tests
   `profile_e2e.rs`, `rbac_e2e.rs`, `admin_pat_denied_e2e.rs`, `audit_route_registry.rs` ; commentaire de `src/routes/profile.rs` ;
