@@ -3,8 +3,8 @@
 Status: in-progress
 
 *Fiche rédigée le 2026-11-27 (Opus 5.5) par le workflow `bmad-create-story`, sur décision du Project Lead du 2026-11-27 :
-la 49-2 est la fonctionnalité de la **v0.21.0** (milestone `v0.21.0`, vendredi 2026-12-04, coupure le jeudi 2026-12-03 au
-soir), seule story de l'**Epic 52** réduit avec sa story de solde (`epic-52-lignes-de-facture-suite.md`). **Aucune
+la 49-2 est la fonctionnalité de la **v0.20.1** (milestone `v0.20.1`, échéance lundi 2026-11-30 ; la fiche disait d'abord
+v0.21.0, vendredi 2026-12-04 : corrigé à la remédiation de la revue P1, décision du Project Lead sur #1756), seule story de l'**Epic 52** réduit avec sa story de solde (`epic-52-lignes-de-facture-suite.md`). **Aucune
 migration.** Code lu à la tête de la branche `story/49-2-reordonnancement-lignes` = `main` **`0e99cd2db`** (la v0.20.0 :
 types de lignes `priced`, `comment`, `heading` de l'Epic 49 ; `heading` encore fermé à l'API). Sources :
 `epic-49-types-de-lignes-facture.md` (§ 49-2, § « Ce qui se lit au code », tableau des fichiers), #1242 (section
@@ -13,7 +13,7 @@ types de lignes `priced`, `comment`, `heading` de l'Epic 49 ; `heading` encore f
 des bases et journaux : **`e492`**.*
 
 **Issues** (décisions du Project Lead du 2026-11-27) : la story **ferme #1756** (« Facture client : réordonner les lignes
-d'un brouillon (↑/↓) », milestone `v0.21.0`), issue propre au réordonnancement, et cite **#1242** en `refs` seulement.
+d'un brouillon (↑/↓) », milestone `v0.20.1`), issue propre au réordonnancement, et cite **#1242** en `refs` seulement.
 Chaque commit porte `refs #1756 refs #1242`, **sans aucun mot-clé de fermeture**, ni dans un commit ni en prose ; le
 `closes #1756` ne s'écrit que dans le titre ou le corps de la **PR qui entre dans `main`** (celle de l'epic ou de la
 release : une PR vers `epic/52-…` ne ferme rien, GitHub ne fermant une issue qu'à la fusion dans la branche par défaut).
@@ -357,7 +357,7 @@ copié au journal. Une mutation de code de production (T3, T4, T5) n'existe **qu
   `KESH_TEST_MODE=true` des deux côtés, `LANG=fr_CH.UTF-8` installée) ; « vert » = les seuls échecs attendus, jugés
   fichier par fichier (`docs/testing.md` § *Les échecs attendus*). Tout sous `scripts/mem-guard.sh` et
   `flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock` ; une commande lourde à la fois.
-- [x] **Étapes de coordination** (V1-8, V1-9) : la ligne de la v0.21.0 de la « Feuille de route » de `README.md` (E52, réordonnancement, [#1756](https://github.com/guycorbaz/kesh/issues/1756)) se pose au commit qui la change ; l'issue du réordonnancement est **#1756** (milestone `v0.21.0`, décision du Project Lead du 2026-11-27) : la story la ferme par la PR qui entre dans `main` (`closes #1756` dans son titre ou son corps, jamais dans un commit), et ne fait que citer #1242 (`refs`), qui reste ouverte jusqu'à la 49-3. Le **compte rendu de la PR** nomme #1757 (glisser-déposer) et #1758 (page de modification d'une facture validée), qui restent ouvertes.
+- [x] **Étapes de coordination** (V1-8, V1-9) : la ligne de la v0.20.1 de la « Feuille de route » de `README.md` (E52, réordonnancement, [#1756](https://github.com/guycorbaz/kesh/issues/1756)) se pose au commit qui la change ; l'issue du réordonnancement est **#1756** (milestone `v0.20.1`, décision du Project Lead du 2026-11-27) : la story la ferme par la PR qui entre dans `main` (`closes #1756` dans son titre ou son corps, jamais dans un commit), et ne fait que citer #1242 (`refs`), qui reste ouverte jusqu'à la 49-3. Le **compte rendu de la PR** nomme #1757 (glisser-déposer) et #1758 (page de modification d'une facture validée), qui restent ouvertes.
 - [x] **Contrôle des mots-clés** : `git log origin/epic/52-lignes-de-facture-suite..HEAD --format=%B | grep -niE
   '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'` **vide**.
 
@@ -385,11 +385,11 @@ copié au journal. Une mutation de code de production (T3, T4, T5) n'existe **qu
   `invoices` du frontend (`lib/components/invoices/InvoiceForm.svelte` et `lib/features/invoices/invoice-lines.ts`, un seul
   domaine) et `kesh-i18n` (catalogues) : **deux modules**. `kesh-db` et `kesh-api` ne changent que par leurs tests, qui ne
   comptent pas. Loin du plafond de cinq : pas de découpage, pas de section « Dérogation ».
-- **Migration : aucune** (D10). À dire en tête des notes de la v0.21.0 si elle n'en porte pas d'autre.
+- **Migration : aucune** (D10). À dire en tête des notes de la v0.20.1 si elle n'en porte pas d'autre.
 - **Story de solde de l'Epic 52** (`52-solde-dette-epic`) : plafond de **deux issues** (décision du Project Lead du
   2026-11-27) ; elle ne prend que la dette de la 49-2 (LOW de revue renvoyés en issue).
 - **Fichiers communs** : `InvoiceForm.svelte` et `docs/manual/fr/user-manual.tex` avec la **49-3** (Epic 62, v0.22.0), qui
-  reprendra `main` après la v0.21.0 et vérifiera qu'un titre se déplace comme un commentaire (le snippet D2 l'y aide) ;
+  reprendra `main` après la v0.20.1 et vérifiera qu'un titre se déplace comme un commentaire (le snippet D2 l'y aide) ;
   catalogues i18n ×4 et `sitesTotal` avec tous les epics de la release (blocs par epic, compteur recompté après fusion) ;
   `docs/api-external.md` avec la 49-3 (ouverture de `heading`) et la 49-4b.
 - **Ce qui doit rester vrai** : (1) aucune facture ni aucun avoir existants ne change (AC11) ; (2) aucun code de production
@@ -451,7 +451,7 @@ Journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e492/` : `vert-T1.log`, `rouge
   `invoices` et le reste de la suite n'ont donc pas été rejoués ici.
 - **Documents** (AC12) : `user-manual.tex` (réordonnancement, ordre du PDF et de l'avoir, aucun effet sur total, TVA, écriture ; facture
   validée : dévalidation non recommandée, renvoi à l'encadré *Avoir ou dévalidation ?*) ; `docs/api-external.md` (§ des lignes d'une
-  facture client) ; `README.md` (ligne de la v0.21.0). **Écart à la fiche** : la sous-section de l'encadré **porte déjà un label**,
+  facture client) ; `README.md` (ligne de la v0.20.1). **Écart à la fiche** : la sous-section de l'encadré **porte déjà un label**,
   `sec:suppression-facture` (`user-manual.tex:2092`, la fiche V2-1 le disait sans label) ; le renvoi l'utilise (« §11.12 » au PDF), aucun
   second label n'a été posé. PDF régénéré **pour relecture** (`make fr`, `make-fr.log`), aplati, phrases neuves et renvoi relevés
   (`manuel-grep.log`), puis les trois PDF **restaurés** (`git checkout`) : rien de commité. Propagation : `git grep -n -E "ordre des ajouts|fin de
