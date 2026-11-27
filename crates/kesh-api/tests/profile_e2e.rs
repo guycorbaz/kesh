@@ -118,8 +118,8 @@ async fn set_mode_updates_onboarding_state(pool: MySqlPool) {
 
     // Story 25-1b (AC 5) — la trace porte sur l'INSTALLATION, pas sur
     // l'utilisateur : `ui_mode` vit dans `onboarding_state`, table mono-ligne et
-    // GLOBALE, sans `company_id`. Un utilisateur bascule l'installation entière
-    // en mode Expert, ce qui ouvre à tous l'écriture directe au journal.
+    // GLOBALE, sans `company_id`. L'Administrateur règle donc la présentation de
+    // l'installation entière (le mode n'ouvre aucun droit).
     // ⚠️ Écrire `entity_type = "user"` ici serait mentir sur la portée — et c'est
     // précisément ce que ce test empêche de faire par mégarde.
     assert_eq!(
@@ -215,4 +215,105 @@ async fn set_mode_requires_auth(pool: MySqlPool) {
         .unwrap();
 
     assert_eq!(resp.status(), 401);
+}
+
+// ---------------------------------------------------------------------------
+// Story 64-1 (#1712) — le mode d'interface est un réglage de l'installation :
+// seul l'Administrateur le change (`admin_routes`).
+// ---------------------------------------------------------------------------
+
+/// Crée un utilisateur du rôle donné (par l'API, en Administrateur) et rend son jeton.
+async fn login_as_role(app: &TestApp, admin_token: &str, username: &str, role: &str) -> String {
+    let resp = app
+        .client
+        .post(app.url("/api/v1/users"))
+        .bearer_auth(admin_token)
+        .json(&json!({"username": username, "password": "secure-password-12chars", "role": role}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "création de {username}");
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/login"))
+        .json(&json!({ "username": username, "password": "secure-password-12chars" }))
+        .send()
+        .await
+        .unwrap();
+    let body: serde_json::Value = resp.json().await.unwrap();
+    body["accessToken"].as_str().unwrap().to_string()
+}
+
+/// Un refus ne change rien : ni `ui_mode`, ni `version`, ni ligne d'audit.
+async fn assert_mode_untouched(pool: &MySqlPool, before: &kesh_db::entities::onboarding::OnboardingState) {
+    let after = onboarding::get_state(pool).await.unwrap().unwrap();
+    assert_eq!(after.ui_mode, before.ui_mode, "ui_mode inchangé");
+    assert_eq!(after.version, before.version, "version inchangée");
+    assert!(
+        audit_actions(pool, "installation", 0).await.is_empty(),
+        "aucune ligne installation.ui_mode_changed"
+    );
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn set_mode_refused_to_comptable_and_consultation(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let admin = login(&app).await;
+    onboarding::init_state(&pool).await.unwrap();
+    let comptable = login_as_role(&app, &admin, "compta", "Comptable").await;
+    let consultation = login_as_role(&app, &admin, "lecteur", "Consultation").await;
+    let before = onboarding::get_state(&pool).await.unwrap().unwrap();
+
+    for (who, token) in [("Comptable", comptable), ("Consultation", consultation)] {
+        let resp = app
+            .client
+            .put(app.url("/api/v1/profile/mode"))
+            .bearer_auth(&token)
+            .json(&json!({ "mode": "expert" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 403, "{who} → 403");
+        let body: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(body["error"]["code"], "FORBIDDEN", "{who}");
+    }
+    assert_mode_untouched(&pool, &before).await;
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn set_mode_refused_to_api_key_even_created_by_admin(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let admin = login(&app).await;
+    onboarding::init_state(&pool).await.unwrap();
+    let create = app
+        .client
+        .post(app.url("/api/v1/settings/api-keys"))
+        .bearer_auth(&admin)
+        .json(&json!({ "name": "ci-pat", "scope": "read-write" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(create.status(), 201, "création de la clé");
+    let key = create.json::<serde_json::Value>().await.unwrap()["key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let before = onboarding::get_state(&pool).await.unwrap().unwrap();
+
+    let resp = app
+        .client
+        .put(app.url("/api/v1/profile/mode"))
+        .bearer_auth(&key)
+        .json(&json!({ "mode": "expert" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 403);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "API_KEY_ADMIN_FORBIDDEN");
+    assert_mode_untouched(&pool, &before).await;
 }
