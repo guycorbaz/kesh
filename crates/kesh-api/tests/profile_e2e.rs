@@ -245,7 +245,10 @@ async fn login_as_role(app: &TestApp, admin_token: &str, username: &str, role: &
 }
 
 /// Un refus ne change rien : ni `ui_mode`, ni `version`, ni ligne d'audit.
-async fn assert_mode_untouched(pool: &MySqlPool, before: &kesh_db::entities::onboarding::OnboardingState) {
+async fn assert_mode_untouched(
+    pool: &MySqlPool,
+    before: &kesh_db::entities::onboarding::OnboardingState,
+) {
     let after = onboarding::get_state(pool).await.unwrap().unwrap();
     assert_eq!(after.ui_mode, before.ui_mode, "ui_mode inchangé");
     assert_eq!(after.version, before.version, "version inchangée");

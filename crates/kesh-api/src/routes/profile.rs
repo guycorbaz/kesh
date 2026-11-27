@@ -40,8 +40,9 @@ pub async fn set_mode(
 
     // Story 25-1b (AC 5, 9) — la trace porte sur l'INSTALLATION, pas sur
     // l'utilisateur : `ui_mode` vit dans `onboarding_state`, table mono-ligne et
-    // globale, sans `company_id`. Un utilisateur bascule donc l'installation
-    // entière en mode Expert, ce qui ouvre à tous l'écriture directe au journal.
+    // globale, sans `company_id`. L'Administrateur (seul admis, `admin_routes`)
+    // règle donc la présentation de l'installation entière ; le mode n'ouvre aucun
+    // droit (la saisie au journal dépend du rôle, jamais du mode).
     // Écrire `entity_type = "user"` ici serait mentir sur la portée.
     //
     // ⚠️ L'audit se pose DANS LE HANDLER, jamais dans `update_step` : dix

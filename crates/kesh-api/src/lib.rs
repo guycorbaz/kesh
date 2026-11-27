@@ -304,7 +304,7 @@ pub fn build_router_avec_registre(
     // KESH-ADMIN-ROUTES-BEGIN
     // ⚠️ Bloc borné — Story 22-4a (#167). Le test `admin_pat_denied_e2e` lit CE
     // fichier par `include_str!`, compte les constructeurs de méthode entre les
-    // deux marqueurs, et exige exactement 54 (v0190-nom-societe ; 53 à la 33-5). Toute route ajoutée ici sans son
+    // deux marqueurs, et exige exactement 55 (64-1 ; 54 à la v0190-nom-societe). Toute route ajoutée ici sans son
     // couple dans la liste du test fait ROUGIR le test : c'est le rappel qui
     // manquait, et qui a laissé 16 routes sur 19 sans garde anti-PAT.
     // Ne pas déplacer ni reformuler les marqueurs sans ajuster le test.
@@ -561,6 +561,11 @@ pub fn build_router_avec_registre(
             "/api/v1/invoices/{id}/pdf/refreeze",
             post(routes::invoice_pdf::refreeze_invoice_pdf),
         )
+        // Story 64-1 (#1712) : le mode d'interface (Guidé/Expert) est un réglage de
+        // l'INSTALLATION (table mono-ligne `onboarding_state`), qui s'impose à tous
+        // les utilisateurs : qui administre l'installation le règle, ni un rôle de
+        // lecture, ni une clé d'API. Le mode n'ouvre aucun droit (présentation seule).
+        .route("/api/v1/profile/mode", put(routes::profile::set_mode))
         // ⚠️⚠️ TOUTE ROUTE S'AJOUTE AU-DESSUS DE CETTE LIGNE. ⚠️⚠️
         //
         // `route_layer` n'enveloppe que les routes DÉJÀ enregistrées au moment
@@ -1377,7 +1382,6 @@ pub fn build_router_avec_registre(
             "/api/v1/companies/current",
             get(routes::companies::get_current),
         )
-        .route("/api/v1/profile/mode", put(routes::profile::set_mode))
         .route(
             "/api/v1/onboarding/state",
             get(routes::onboarding::get_state),
