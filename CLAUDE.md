@@ -25,7 +25,7 @@ Règles et décisions en vigueur pour travailler sur Kesh. Ce fichier ne porte n
 
 Guy travaille en **français** : conversation et documents en français, sauf indication contraire.
 
-**Une question à Guy ne bloque pas le travail** (décision de Guy du 2026-11-26). L'orchestrateur qui attend une réponse de Guy pose la question, puis passe à un travail qui n'en dépend pas — une autre story, un autre epic, un lot d'issues — et reprend le sujet suspendu dès la réponse. Il ne contourne jamais la question en tranchant à la place de Guy : ce qui lui revient (fusion, tag, image, priorité, périmètre, effacement) attend. *Motif : avancer même quand Guy est occupé ailleurs.*
+**Une attente ne bloque pas le travail** (décisions de Guy des 2026-11-26 et 2026-11-27). L'orchestrateur qui attend — une réponse de Guy, un gate sur le serveur d'exécution, la CI ou une revue de GitHub — passe à un travail qui n'en dépend pas — une autre story, un autre epic, un lot d'issues — et reprend le sujet suspendu dès que l'attente se lève. Il ne contourne jamais une question en tranchant à la place de Guy : ce qui lui revient (fusion, tag, image, priorité, périmètre, effacement) attend. Il ne lance pas plus de travaux qu'il ne peut finir avant la coupure de la release : les P1 d'abord, puis l'ordre des priorités. *Motif : avancer même quand Guy ou les machines sont occupés ailleurs.*
 
 ## Structure du dépôt
 
@@ -343,7 +343,7 @@ Les anciennes rétrospectives classent la dette en **A** (vraie dette), **B** (l
 
 ## Travailler à plusieurs développeurs
 
-Kesh a plusieurs développeurs depuis le 2026-11-15 : le Project Lead, l'orchestrateur qui travaille sur son mandat, et des contributeurs à qui des epics sont réservés (37 à 40, 46, 47) ; les epics internes ouverts sont le 41 (pièces justificatives), le 45 (note interne), le 49 (types de lignes de la facture), le 50 (corrections), le 51 (réimputation), le 52 (lignes de facture, suite), le 53 (écritures justes) et le 54 (totaux du décompte de TVA) ; les stories 48-3 à 48-9 forment une liste d'attente, hors epic ; le prochain epic interne neuf est le 55. Décisions du Project Lead des 2026-11-15, 2026-11-16, 2026-11-18 et 2026-11-21 ; `docs/guide-developpeur.md` les explique à un contributeur, mais **elles font foi ici**.
+Kesh a plusieurs développeurs depuis le 2026-11-15 : le Project Lead, l'orchestrateur qui travaille sur son mandat, et des contributeurs à qui des epics sont réservés (37 à 40, 46, 47, 55, 56) ; les epics internes ouverts sont le 41 (pièces justificatives), le 45 (note interne), le 51 (réimputation), le 52 (réordonnancement des lignes de facture), le 53 (écritures justes), le 54 (totaux du décompte de TVA), le 58 (nettoyage), les 59 à 61 (corrections), le 62 (titres de section et désignations longues) et le 63 (annulations datées de l'origine) ; les stories 48-3 à 48-9 forment une liste d'attente, hors epic ; le prochain epic interne neuf est le 64. Décisions du Project Lead des 2026-11-15, 2026-11-16, 2026-11-18, 2026-11-21 et 2026-11-27 ; `docs/guide-developpeur.md` les explique à un contributeur, mais **elles font foi ici**.
 
 ### Planification — GitHub Projects
 
