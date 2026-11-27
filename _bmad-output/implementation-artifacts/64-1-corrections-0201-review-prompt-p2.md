@@ -19,6 +19,10 @@ Cadre de la passe :
 - Worktree `kesh-64-1`, branche `story/64-1-corrections-0201`. Base `0e99cd2db` ; reprise de `main` : `e1ca14e76` (diff combiné à
   relire si la remédiation reprend `main` une nouvelle fois). Le diff propre à la story se lit par `git diff e1ca14e76 HEAD` ; la
   remédiation de la P1 par `git log --oneline cf78911c7..HEAD`.
+- **Commits de la remédiation de la P1** : `c1d280981` (R1-1 : valeurs de taux dédoublonnées dans `InvoiceForm.svelte` et
+  `products/+page.svelte` ; R1-2 : décimales jugées sur le texte de `decimalOf`) et `5d5c69b35` (les huit LOW : R1-3 à R1-9 ;
+  R1-10 laissé, Q3). Section « Revue de code P1 et remédiation » de la fiche. Captures neuves : 4 (refaite), 9 et 10 ; journaux
+  sous `$GATE_LOGS/e64/rem/`.
 - Fiche : `_bmad-output/implementation-artifacts/64-1-corrections-0201.md`, Dev Agent Record et Change Log compris.
 - Rapport de la P1 : `$GATE_LOGS/e64/64-1-revue-p1.md`, findings R1-1 à R1-10.
 - Lis le `CLAUDE.md` du worktree : *Review Iteration Rule*, *Recette visuelle*, *Le prompt d'une passe doit NOMMER le manuel*,
