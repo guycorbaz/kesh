@@ -478,7 +478,7 @@ Journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e492/` : `vert-T1.log`, `rouge
     `retrait-mutations.log` (seuls hunks de production : aucun, ceux de `invoices.rs` sont aux lignes 6010 et 6029, après `mod tests` en 3180).
   - **L4** : DE « … nach oben verschieben » / « … nach unten verschieben ». **L5** : « à chaque `PUT` qui modifie la facture ». **L7** : test qui observe la zone
     `aria-live` (`MutationObserver`, valeurs successives `[texte, '']`), rouge sans le vidage. **L8** : `ignorerRepetition` (`keydown` répété annulé) sur ↑ et ↓,
-    testé, rouge sans lui. **L9** : E2E, texte du PDF extrait par `pdftotext` et ordre vérifié, touche *Espace*, `expect.poll` pour l'ordre. **L10** : `reloading`
+    testé, rouge sans lui. **L9** : E2E, touche *Espace*, PDF rendu (`%PDF-`) — l'ordre dans le PDF reste prouvé par T4 (la lecture par `pdftotext`, d'abord écrite, est retirée après la revue P2 : idefix n'a pas l'outil), `expect.poll` pour l'ordre. **L10** : `reloading`
     au verrou (↑, ↓, poubelle, et garde de `moveLine`/`removeLine`), test « Annuler » pendant un rechargement, rouge sans lui. **L11** : README, v0.20.0 « ✅ Publiée ».
   - **Constats antérieurs** : poubelle verrouillée pendant l'envoi, la modale et le rechargement ; libellé `invoice-line-remove` (« Supprimer la ligne { $n } ») dans les quatre
     catalogues, `sitesTotal` **3971** (3970 + 1, l'`aria-label` de la poubelle) ; l'effacement des messages sans rapport avec les lignes reste la **décision D7**, inchangée.
@@ -525,3 +525,4 @@ Journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e492/` : `vert-T1.log`, `rouge
   deux mutations Rust remplacées par des équivalents (T3, T4). Statut laissé `in-progress` : les gates d'idefix (`test-fast`, `gate-ci`, `front`)
   n'étaient pas terminés ; le passage en `review` attend leurs journaux.
 - 2026-11-27 — **Revue de code P1** (Opus 5.5, `bmad-code-review`, `kesh-gate-logs/e492/49-2-revue-p1.md`) : **0/0/2/11**, plus trois constats antérieurs à la story. **Remédiée** (Opus 5.5) : M1, M2, L1 à L5, L7 à L11 corrigés (L6 : reprise de `main`) ; poubelle verrouillée et libellé en i18n ; l'effacement des messages sans rapport (D7) laissé tel quel. Détail et journaux au Dev Agent Record. Passe P2 (Sonnet) à lancer, prompt `49-2-reordonnancement-lignes-revue-prompt-p2.md`.
+- 2026-11-27 — **Revue de code P2** (Sonnet 5.5, `kesh-gate-logs/e492/49-2-revue-p2.md`) : **0/0/1/0** — M-P2-1 : l'E2E appelait `pdftotext`, absent d'idefix et de tout prérequis documenté. **Remédié par l'orchestrateur** : bloc et import retirés, en-tête et titre du test ramenés à ce qu'il prouve, l'ordre dans le PDF renvoyé à T4. Passe P3 ciblée (Haiku) sur ce seul commit, prompt `49-2-reordonnancement-lignes-revue-prompt-p3.md`.

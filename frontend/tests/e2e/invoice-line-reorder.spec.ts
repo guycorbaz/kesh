@@ -1,7 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import {
 	seedTestState,
 	clearAuthStorage,
@@ -18,7 +17,9 @@ import {
  * navigateur : on crée toutes les lignes à la suite (ligne libre A, commentaire C, article B),
  * puis on les remet dans l'ordre **au clavier** (↑ du commentaire, ↓ de A) ; le focus suit la
  * ligne, le déplacement est annoncé ; l'ordre se garde à l'enregistrement, se retrouve à la
- * réouverture du brouillon, à la fiche de la facture validée et à son PDF (texte extrait par `pdftotext`).
+ * réouverture du brouillon, à la fiche de la facture validée, et son PDF se rend (`%PDF-`). L'ordre
+ * des lignes **dans** le PDF est prouvé côté Rust par T4 (`de_haut_en_bas`, `invoice_line_types_e2e.rs`) :
+ * aucun outil système n'est demandé ici (idefix n'a pas `pdftotext`).
  *
  * Les captures de la recette visuelle (AC14, thème clair) sont prises quand
  * `KESH_E2E_CAPTURES_DIR` est posé ; le PDF de la facture y est aussi déposé.
@@ -98,9 +99,9 @@ const monter = (page: Page, n: number) => page.locator('button[data-move="up"]')
 const descendre = (page: Page, n: number) => page.locator('button[data-move="down"]').nth(n - 1);
 
 test.describe('Factures — réordonner les lignes (49-2)', () => {
-	test('créer toutes les lignes, puis réordonner au clavier ; l’ordre tient jusqu’au PDF', async ({
+	test('créer toutes les lignes, puis réordonner au clavier ; l’ordre tient jusqu’à la facture validée', async ({
 		page,
-	}, testInfo) => {
+	}) => {
 		await login(page);
 		await ensurePrimaryBankAccountViaApi(page);
 		const contactName = uniq('Ordre SA');
@@ -199,16 +200,7 @@ test.describe('Factures — réordonner les lignes (49-2)', () => {
 			expect(pdf.status()).toBe(200);
 			const octets = await pdf.body();
 			expect(octets.subarray(0, 5).toString('utf8')).toBe('%PDF-');
-			// L'ordre dans le PDF : le texte en est extrait par `pdftotext` (poppler, présent sur la
-			// station comme pour les manuels) ; les trois lignes s'y lisent dans l'ordre du brouillon.
-			const fichierPdf = testInfo.outputPath('facture.pdf');
-			await fs.mkdir(path.dirname(fichierPdf), { recursive: true });
-			await fs.writeFile(fichierPdf, octets);
-			const texte = execFileSync('pdftotext', ['-layout', fichierPdf, '-'], { encoding: 'utf8' });
-			const rangs = [COMMENTAIRE, produit, LIGNE_A].map((t) => texte.indexOf(t));
-			expect(rangs.every((r) => r >= 0), `lignes absentes du PDF : ${JSON.stringify(rangs)}`).toBe(true);
-			expect(rangs[0]).toBeLessThan(rangs[1]);
-			expect(rangs[1]).toBeLessThan(rangs[2]);
+			// L'ordre des lignes dans le PDF est prouvé par T4 (Rust, `de_haut_en_bas`).
 			const dossier = process.env.KESH_E2E_CAPTURES_DIR;
 			if (dossier) {
 				await fs.mkdir(dossier, { recursive: true });
