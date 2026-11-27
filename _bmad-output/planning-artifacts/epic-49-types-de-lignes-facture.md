@@ -17,7 +17,9 @@ la 49-4a » (décision de Guy du 2026-11-20).*
 Décision du Project Lead du 2026-11-21 (revue des règles à plusieurs développeurs : un epic tient dans une release) :
 l'Epic 49 se réduit à **49-1a, 49-1b (closes), 49-1c, 49-1d et 49-4a** pour la release du vendredi 2026-11-27, qui portera
 sa migration (donc la 0.20.0). **49-2, 49-3 et 49-4b** passent à l'**Epic 52** (`epic-52-lignes-de-facture-suite.md`),
-sous leur clé, après l'entrée de l'Epic 49 dans `main`.
+sous leur clé, après l'entrée de l'Epic 49 dans `main`. Le 2026-11-27 (décision du Project Lead), l'Epic 52 se réduit
+à la **49-2** (v0.21.0) ; la **49-3** et la **49-4b** passent à l'**Epic 62** (`epic-62-lignes-de-facture-titres.md`,
+v0.22.0).
 
 ## Objet
 
