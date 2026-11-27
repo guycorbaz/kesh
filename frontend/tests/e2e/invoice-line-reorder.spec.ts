@@ -17,7 +17,8 @@ import {
  * navigateur : on crée toutes les lignes à la suite (ligne libre A, commentaire C, article B),
  * puis on les remet dans l'ordre **au clavier** (↑ du commentaire, ↓ de A) ; le focus suit la
  * ligne, le déplacement est annoncé ; l'ordre se garde à l'enregistrement, se retrouve à la
- * réouverture du brouillon, à la fiche de la facture validée, et son PDF se rend (`%PDF-`). L'ordre
+ * réouverture du brouillon ; la fiche de la facture validée n'offre plus ↑ / ↓ ; la facture validée,
+ * relue par `GET /api/v1/invoices/{id}`, garde l'ordre, et son PDF se rend (`%PDF-`). L'ordre
  * des lignes **dans** le PDF est prouvé côté Rust par T4 (`de_haut_en_bas`, `invoice_line_types_e2e.rs`) :
  * aucun outil système n'est demandé ici (idefix n'a pas `pdftotext`).
  *
