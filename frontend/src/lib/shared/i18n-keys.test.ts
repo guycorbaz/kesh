@@ -1287,10 +1287,13 @@ const ATTENDU = {
 	// `kesh-gate-logs/s46-pr2/compteurs-1.log`) ; il égale 3856 (pr/39) + 18 (Epic 46) + 82 (46-5).
 	// Garde de la 46-5 (compte désigné par un compte bancaire, 2026-11-26) : **3958** (« expected 3958 to be 3956 »,
 	// `kesh-gate-logs/s46-pr2/garde-vitest-1.log`) — `numberBankLinked` et `parentBankLinked` (`accounts/groups/messages.ts`).
-	// Fusion de pr/46-rapports-groupes-v2 (ecf6cf835, main avec les Epics 39 et 40, garde de la 46-5) dans
-	// epic/55-navigation (2026-11-26) : les deux côtés gardés ; 3958 (pr/46) + 7 (Epic 55, 3789 → 3796 de son côté)
-	// = **3965**, confirmé par la garde (`kesh-gate-logs/s55-revue/fusion/gardes-1.log`).
-	sitesTotal: 3965,
+	// Story 49-2 (#1756, réordonner les lignes d'une facture) : **3963** (« expected 3963 to be 3958 »,
+	// `$GATE_LOGS/e492/rouge-T7.log`) — `invoice-line-move-up` et `invoice-line-move-down` (chacune lue deux fois, `aria-label`
+	// et `title`, dans le snippet `actionsDeLigne`) et `invoice-lines-moved-status` : 3958 + 5.
+	// Fusion de origin/main (Epic 55, 3958 + 7 = 3965) dans la branche de la 49-2 (2026-11-27) : les deux côtés gardés, soit 3958 + 5 + 7 = 3970 (garde : `$GATE_LOGS/e492/remediation/garde-sites-1.log`).
+	// Remédiation de la revue P1 de la 49-2 : **3971** (« expected 3971 to be 3970 ») — `invoice-line-remove`, lue une fois
+	// (`aria-label` de la poubelle du snippet `actionsDeLigne`) : 3970 + 1.
+	sitesTotal: 3971,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

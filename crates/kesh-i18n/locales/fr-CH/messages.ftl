@@ -4705,3 +4705,9 @@ bank-accounts-help-wise-account = Le même libellé pour les comptes de chaque d
 bank-accounts-help-wise-ledger = Obligatoire : le compte du plan du solde Wise, dans sa devise (un compte en devise exige le multi-devises).
 nav-wise = Wise
 fiscal-years-checks-k2-link-wise = Ouvrir la page Wise
+
+# Epic 52 — Story 49-2 : réordonner les lignes d'une facture (↑ / ↓)
+invoice-line-move-up = Monter la ligne { $n }
+invoice-line-move-down = Descendre la ligne { $n }
+invoice-lines-moved-status = Ligne déplacée en position { $position } sur { $total }
+invoice-line-remove = Supprimer la ligne { $n }

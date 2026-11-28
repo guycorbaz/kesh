@@ -8,7 +8,8 @@
 	import { notifyError, notifySuccess } from '$lib/shared/utils/notify';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { goto } from '$app/navigation';
-	import { Plus, Trash2, Package, MessageSquareText } from '@lucide/svelte';
+	import { tick } from 'svelte';
+	import { Plus, Trash2, Package, MessageSquareText, ArrowUp, ArrowDown } from '@lucide/svelte';
 	import Big from 'big.js';
 
 	import type { ContactResponse } from '$lib/features/contacts/contacts.types';
@@ -29,6 +30,7 @@
 	// formulaire, et le type de chaque ligne.
 	import {
 		estChiffree,
+		deplacerLigne,
 		estLigneDeTexte,
 		ligneAEnvoyer,
 		ligneDepuisReponse,
@@ -537,8 +539,52 @@
 		});
 	}
 
+	/**
+	 * Supprime la ligne `i`. Refusé comme un déplacement pendant un envoi, une modale de conflit
+	 * ou un rechargement : la charge envoyée et l'écran ne doivent pas diverger (revue P1 de la 49-2).
+	 */
 	function removeLine(i: number) {
+		if (submitting || conflictOpen || reloading) return;
 		lines.splice(i, 1);
+	}
+
+	/**
+	 * Entrée maintenue sur ↑ ou ↓ répète le clic : la ligne ferait l'aller-retour entre les deux
+	 * bornes quand le focus bascule (revue P1 de la 49-2, L8). Une répétition de touche n'active rien.
+	 */
+	function ignorerRepetition(e: KeyboardEvent) {
+		if (e.repeat) e.preventDefault();
+	}
+
+	/** Annonce aux lecteurs d'écran du dernier déplacement (zone `aria-live`, Story 49-2, D5). */
+	let moveStatus = $state('');
+
+	/**
+	 * Story 49-2 (D4, D5, D6, D7) — échange la ligne `i` avec sa voisine (`sens` : -1 la monte,
+	 * 1 la descend). L'ordre de `lines` est celui qui part au serveur (position = rang) : le
+	 * réordonnancement voyage avec l'enregistrement du brouillon. Le bandeau d'erreur est
+	 * effacé (il pouvait nommer une ligne par son ancien rang) ; le focus revient sur le même
+	 * bouton de la ligne déplacée, ou sur l'autre si celui-ci est devenu désactivé.
+	 */
+	async function moveLine(i: number, sens: -1 | 1) {
+		if (submitting || conflictOpen || reloading) return;
+		const cible = i + sens;
+		if (i < 0 || i >= lines.length || cible < 0 || cible >= lines.length) return;
+		const key = lines[i]._uiKey;
+		lines = deplacerLigne(lines, i, sens);
+		errorMsg = '';
+		// Vidée puis reposée : un second déplacement vers la même position est ré-annoncé.
+		moveStatus = '';
+		await tick();
+		moveStatus = i18nMsg('invoice-lines-moved-status', 'Ligne déplacée en position { $position } sur { $total }', {
+			position: cible + 1,
+			total: lines.length,
+		});
+		const bouton = (move: 'up' | 'down') =>
+			document.querySelector<HTMLButtonElement>(`button[data-line-key="${key}"][data-move="${move}"]`);
+		const meme = bouton(sens === -1 ? 'up' : 'down');
+		const autre = bouton(sens === -1 ? 'down' : 'up');
+		(meme && !meme.disabled ? meme : autre)?.focus();
 	}
 
 	// Story 36-3b (D4, C-36-3b-5) — les totaux lisent la charge du prix, non la saisie
@@ -984,6 +1030,62 @@
 			</p>
 		{/if}
 
+		<!-- Story 49-2 (D2) — la cellule d'actions d'une ligne, écrite une fois : monter, descendre,
+		     supprimer. Rendue par la rangée de texte comme par la rangée chiffrée. -->
+		{#snippet actionsDeLigne(line: LineState, i: number)}
+			{@const verrouille = submitting || conflictOpen || reloading}
+			<div class="flex gap-0.5">
+				<Button
+					type="button"
+					variant="ghost"
+					size="sm"
+					onclick={() => moveLine(i, -1)}
+					onkeydown={ignorerRepetition}
+					disabled={i === 0 || verrouille}
+					aria-label={i18nMsg('invoice-line-move-up', 'Monter la ligne { $n }', { n: i + 1 })}
+					title={i18nMsg('invoice-line-move-up', 'Monter la ligne { $n }', { n: i + 1 })}
+					data-line-key={line._uiKey}
+					data-move="up"
+				>
+					<ArrowUp class="h-4 w-4" aria-hidden="true" />
+				</Button>
+				<Button
+					type="button"
+					variant="ghost"
+					size="sm"
+					onclick={() => moveLine(i, 1)}
+					onkeydown={ignorerRepetition}
+					disabled={i === lines.length - 1 || verrouille}
+					aria-label={i18nMsg('invoice-line-move-down', 'Descendre la ligne { $n }', { n: i + 1 })}
+					title={i18nMsg('invoice-line-move-down', 'Descendre la ligne { $n }', { n: i + 1 })}
+					data-line-key={line._uiKey}
+					data-move="down"
+				>
+					<ArrowDown class="h-4 w-4" aria-hidden="true" />
+				</Button>
+				<Button
+					type="button"
+					variant="ghost"
+					size="sm"
+					onclick={() => removeLine(i)}
+					disabled={lines.length <= 1 || verrouille}
+					aria-label={i18nMsg('invoice-line-remove', 'Supprimer la ligne { $n }', { n: i + 1 })}
+				>
+					<Trash2 class="h-4 w-4" aria-hidden="true" />
+				</Button>
+			</div>
+		{/snippet}
+
+		<!-- Annonce du dernier déplacement (D5) : toujours dans le DOM, hors du tableau. -->
+		<div
+			class="sr-only"
+			aria-live="polite"
+			aria-atomic="true"
+			data-testid="invoice-lines-move-status"
+		>
+			{moveStatus}
+		</div>
+
 		<table class="w-full border-collapse text-sm" data-testid="invoice-lines-table">
 			<thead>
 				<tr class="border-b border-border text-left">
@@ -1001,7 +1103,7 @@
 						{i18nMsg('invoice-line-col-revenue-account', 'Compte de produit')}
 					</th>
 					<th class="py-2 pr-2 w-32 text-right">Total</th>
-					<th class="py-2 w-12"></th>
+					<th class="py-2 w-28"></th>
 				</tr>
 			</thead>
 			<tbody>
@@ -1026,18 +1128,7 @@
 									class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
 								></textarea>
 							</td>
-							<td class="py-2">
-								<Button
-									type="button"
-									variant="ghost"
-									size="sm"
-									onclick={() => removeLine(i)}
-									disabled={lines.length <= 1}
-									aria-label="Supprimer la ligne"
-								>
-									<Trash2 class="h-4 w-4" aria-hidden="true" />
-								</Button>
-							</td>
+							<td class="py-2">{@render actionsDeLigne(line, i)}</td>
 						</tr>
 					{:else}
 					<tr class="border-b border-border align-top">
@@ -1104,18 +1195,7 @@
 						<td class="py-2 pr-2 text-right font-mono">
 							{formatInvoiceTotal(lineTotal(line))}
 						</td>
-						<td class="py-2">
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								onclick={() => removeLine(i)}
-								disabled={lines.length <= 1}
-								aria-label="Supprimer la ligne"
-							>
-								<Trash2 class="h-4 w-4" aria-hidden="true" />
-							</Button>
-						</td>
+						<td class="py-2">{@render actionsDeLigne(line, i)}</td>
 					</tr>
 					<!-- Story 36-3b (D3) — le refus du prix, sous la ligne, sur les sept
 					     colonnes du tableau (validation P1, V1-1) ; textes de la 36-3. -->
