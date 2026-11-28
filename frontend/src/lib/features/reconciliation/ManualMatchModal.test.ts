@@ -27,7 +27,15 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 	i18nMsg: (_key: string, fallback: string) => fallback,
 }));
 
+// Story 58-6 (#1080, D6) : l'original, enveloppé d'un espion — les autres tests du fichier gardent
+// le comportement réel (`clearAllMocks` garde l'implémentation d'un `vi.fn(original)`).
+vi.mock('./reconciliation-counterparties', async (importOriginal) => {
+	const original = await importOriginal<typeof import('./reconciliation-counterparties')>();
+	return { ...original, keepOfferedCounterparty: vi.fn(original.keepOfferedCounterparty) };
+});
+
 import * as api from './reconciliation.api';
+import { keepOfferedCounterparty } from './reconciliation-counterparties';
 import ManualMatchModal from './ManualMatchModal.svelte';
 import CounterpartyModalHost from './CounterpartyModalHost.test.svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
@@ -337,12 +345,16 @@ describe('ManualMatchModal — compte retiré de la sélection (Story 35-7, AC3)
 
 		await resoudreBanque(r);
 
-		await waitFor(() => expect(champ().value).toBe(''));
+		// Story 58-6 (#1079) : la VALEUR d'abord. `champ().value === ''` est vrai sans l'effet de
+		// retrait : dès que le compte de la banque sort des options, le champ ne le retrouve plus et
+		// s'affiche vide, même si la valeur garde l'identifiant. Seuls le bouton désactivé et
+		// l'absence d'appel prouvent que la valeur est nulle ; le texte vient ensuite.
 		await waitFor(() => expect(submit.disabled).toBe(true));
-		expect(await r.findByText('Compte de contrepartie obligatoire')).toBeTruthy();
 		// La valeur est nulle : un clic ne part pas au serveur.
 		await fireEvent.click(submit);
 		expect(mockApi.manualMatchTransaction).not.toHaveBeenCalled();
+		await waitFor(() => expect(champ().value).toBe(''));
+		expect(await r.findByText('Compte de contrepartie obligatoire')).toBeTruthy();
 	});
 
 	it('un compte resté proposé n’est pas touché quand le compte de la banque est identifié', async () => {
@@ -350,9 +362,17 @@ describe('ManualMatchModal — compte retiré de la sélection (Story 35-7, AC3)
 		await choisir(r, '6900');
 		const submit = (await r.findByTestId('manual-match-submit')) as HTMLButtonElement;
 		await waitFor(() => expect(champ().value).toBe('6900 — Frais financiers'));
+		vi.mocked(keepOfferedCounterparty).mockClear();
 
 		await resoudreBanque(r);
 
+		// Story 58-6 (#1080) : sans l'espion, ce test restait vert si l'effet ne tournait plus du
+		// tout (le champ et le bouton ne bougent pas d'eux-mêmes). L'effet doit avoir examiné le
+		// compte conservé (401) contre l'identifiant de la banque (410) ; l'espion prouve que
+		// l'effet tourne, non qu'il écrit.
+		await waitFor(() =>
+			expect(keepOfferedCounterparty).toHaveBeenCalledWith(401, expect.any(Array), 410),
+		);
 		await waitFor(() => expect(submit.disabled).toBe(false));
 		expect(champ().value).toBe('6900 — Frais financiers');
 		expect(mockApi.manualMatchTransaction).not.toHaveBeenCalled();

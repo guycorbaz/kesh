@@ -526,12 +526,16 @@ describe('TransactionSplitModal — compte retiré de la sélection (Story 35-7,
 
 		await resoudreBanque(r);
 
-		await waitFor(async () => expect((await champ(r, 0)).value).toBe(''));
-		expect((await champ(r, 1)).value).toBe('6900 — Frais financiers');
+		// Story 58-6 (#1079) : la VALEUR d'abord. Le champ qui s'affiche vide ne prouve rien : il
+		// l'est dès que le compte de la banque sort des options, même si la ligne garde son
+		// identifiant. Le bouton désactivé, le message et l'absence d'appel prouvent que la valeur
+		// est nulle ; le texte du champ vient ensuite.
 		await waitFor(() => expect(submit.disabled).toBe(true));
 		expect(await r.findByText('Ligne 1 : compte requis')).toBeTruthy();
 		await fireEvent.click(submit);
 		expect(mockApi.splitTransaction).not.toHaveBeenCalled();
+		await waitFor(async () => expect((await champ(r, 0)).value).toBe(''));
+		expect((await champ(r, 1)).value).toBe('6900 — Frais financiers');
 	});
 
 	it('la ligne 2 seule sur le compte de la banque, la ligne 1 remplie → « Ligne 2 : compte requis »', async () => {
@@ -543,25 +547,57 @@ describe('TransactionSplitModal — compte retiré de la sélection (Story 35-7,
 
 		await resoudreBanque(r);
 
-		await waitFor(async () => expect((await champ(r, 1)).value).toBe(''));
-		expect((await champ(r, 0)).value).toBe('6900 — Frais financiers');
+		// Story 58-6 (#1079) : la valeur d'abord (voir le test précédent), le texte du champ ensuite.
 		await waitFor(() => expect(submit.disabled).toBe(true));
 		expect(await r.findByText('Ligne 2 : compte requis')).toBeTruthy();
 		expect(mockApi.splitTransaction).not.toHaveBeenCalled();
+		await waitFor(async () => expect((await champ(r, 1)).value).toBe(''));
+		expect((await champ(r, 0)).value).toBe('6900 — Frais financiers');
 	});
 
-	it('deux comptes restés proposés ne sont pas touchés', async () => {
+	// Story 58-6 (#1083) : la boucle de l'effet parcourt TOUTES les lignes, non les deux premières.
+	// Le message nomme la première ligne en défaut (« Ligne 2 »), non la dernière.
+	it('trois lignes, les lignes 2 et 3 sur le compte de la banque → toutes deux vidées, « Ligne 2 : compte requis »', async () => {
 		const r = monter();
-		await remplir(r, 0, '6900', '60');
-		await remplir(r, 1, '6900', '40');
+		await fireEvent.click(await r.findByTestId('split-add-line'));
+		await remplir(r, 0, '6900', '50');
+		await remplir(r, 1, '1020', '30');
+		await remplir(r, 2, '1020', '20');
+		const submit = (await r.findByTestId('split-submit')) as HTMLButtonElement;
+		// Prémisse : les trois choix ont pris.
+		await waitFor(() => expect(submit.disabled).toBe(false));
+		expect((await champ(r, 2)).value).toBe('1020 — Banque');
+
+		await resoudreBanque(r);
+
+		await waitFor(() => expect(submit.disabled).toBe(true));
+		expect(await r.findByText('Ligne 2 : compte requis')).toBeTruthy();
+		expect(r.queryByText('Ligne 3 : compte requis')).toBeNull();
+		await fireEvent.click(submit);
+		expect(mockApi.splitTransaction).not.toHaveBeenCalled();
+		await waitFor(async () => expect((await champ(r, 1)).value).toBe(''));
+		expect((await champ(r, 2)).value).toBe('');
+		expect((await champ(r, 0)).value).toBe('6900 — Frais financiers');
+	});
+
+	it('deux comptes restés proposés ne sont pas touchés, la ligne 3 sur la banque est vidée', async () => {
+		const r = monter();
+		await fireEvent.click(await r.findByTestId('split-add-line'));
+		await remplir(r, 0, '6900', '50');
+		await remplir(r, 1, '6900', '30');
+		await remplir(r, 2, '1020', '20');
 		const submit = (await r.findByTestId('split-submit')) as HTMLButtonElement;
 		await waitFor(() => expect(submit.disabled).toBe(false));
 
 		await resoudreBanque(r);
 
-		await waitFor(() => expect(submit.disabled).toBe(false));
+		await waitFor(() => expect(submit.disabled).toBe(true));
+		expect(await r.findByText('Ligne 3 : compte requis')).toBeTruthy();
 		expect((await champ(r, 0)).value).toBe('6900 — Frais financiers');
 		expect((await champ(r, 1)).value).toBe('6900 — Frais financiers');
+		await waitFor(async () => expect((await champ(r, 2)).value).toBe(''));
+		await fireEvent.click(submit);
+		expect(mockApi.splitTransaction).not.toHaveBeenCalled();
 	});
 });
 
