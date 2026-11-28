@@ -3908,6 +3908,6 @@ async fn s631_ac12_l_annulation_tient_l_exercice_de_l_achat_et_non_celui_du_jour
     assert_eq!(
         (!libre_achat, !libre_du_jour),
         (true, false),
-        "(exercice de l'achat tenu, exercice du jour tenu)"
+        "(exercice de l'achat tenu, exercice du jour libre)"
     );
 }

@@ -852,7 +852,7 @@ invoices-settlements-type-bank = Banküberweisung
 invoices-settlements-type-internal = Bar oder anderes Konto
 invoices-settlement-cancel-button = Zahlung stornieren
 invoices-settlement-cancel-reconciliation = Abgleich aufheben
-invoices-settlement-cancel-confirm = Diese Zahlung stornieren? Eine Gegenbuchung mit dem Datum der Zahlung wird in deren Geschäftsjahr im Hauptbuch erfasst, und der Betrag wird wieder fällig. Die Summen dieser Periode ändern sich: Wurde sie bereits abgerechnet, lassen Sie die Periode zuerst sperren – die Stornierung wird dann abgelehnt, was die Abrechnung schützt.
+invoices-settlement-cancel-confirm = Diese Zahlung stornieren? Eine Gegenbuchung mit dem Datum der Zahlung wird in deren Geschäftsjahr im Hauptbuch erfasst, und der Betrag wird wieder fällig. Die Summen der Periode der Zahlung ändern sich: Wurde sie bereits abgerechnet, lassen Sie die Periode zuerst sperren – die Stornierung wird dann abgelehnt, was die Abrechnung schützt.
 invoices-settlement-cancelled = Zahlung storniert: Die Gegenbuchung wurde erfasst.
 invoices-settlement-cancel-blocked-credited = Diese Rechnung wurde durch eine Gutschrift ausgeglichen: Diese Zahlung bleibt auf dem Debitorenkonto offen, sie kann nicht storniert werden.
 invoices-settlement-cancel-blocked-written-off = Der Restbetrag dieser Rechnung wurde ausgebucht: Stornieren Sie zuerst die Ausbuchung.
@@ -861,7 +861,7 @@ invoices-settlements-type-write-off = Ausbuchung — { $nature }
 invoices-write-off-amount-label = Ausgebuchter Betrag
 invoices-write-off-button = Restbetrag ausbuchen
 invoices-write-off-cancel-button = Ausbuchung stornieren
-invoices-write-off-cancel-confirm = Diese Ausbuchung stornieren? Eine Gegenbuchung mit dem Datum der Ausbuchung wird in deren Geschäftsjahr im Hauptbuch erfasst, MWST inbegriffen, und der Betrag wird wieder fällig. Die Summen dieser Periode ändern sich, MWST inbegriffen: Wurde sie bereits abgerechnet, lassen Sie die Periode zuerst sperren – die Stornierung wird dann abgelehnt, was die Abrechnung schützt.
+invoices-write-off-cancel-confirm = Diese Ausbuchung stornieren? Eine Gegenbuchung mit dem Datum der Ausbuchung wird in deren Geschäftsjahr im Hauptbuch erfasst, MWST inbegriffen, und der Betrag wird wieder fällig. Die Summen der Periode der Ausbuchung ändern sich, MWST inbegriffen: Wurde sie bereits abgerechnet, lassen Sie die Periode zuerst sperren – die Stornierung wird dann abgelehnt, was die Abrechnung schützt.
 invoices-write-off-cancelled = Ausbuchung storniert: Die Gegenbuchung wurde erfasst.
 invoices-write-off-confirm = Restbetrag ausbuchen
 invoices-write-off-date-label = Datum der Ausbuchung
@@ -889,7 +889,7 @@ settlement-cancel-blocked-bank-match = Diese Zahlung ist mit einer Banktransakti
 settlement-cancel-blocked-account-archived = Ein Konto dieser Zahlung wurde archiviert: Reaktivieren Sie es, um die Zahlung stornieren zu können.
 settlement-cancel-blocked-no-fiscal-year = Kein offenes Geschäftsjahr umfasst das heutige Datum: Legen Sie es an, um diese Zahlung stornieren zu können.
 # Story 63-1 (#1752, #1753) — die Stornierung trägt das Datum der Zahlung: unter der Sperrgrenze kündigt die Seite es an.
-settlement-cancel-blocked-period-locked = Diese Zahlung liegt in einer gesperrten Periode: Um sie stornieren zu können, muss ein Administrator die Sperre vor ihr Datum zurücksetzen.
+settlement-cancel-blocked-period-locked = Diese Buchung liegt in einer gesperrten Periode: Um sie stornieren zu können, muss ein Administrator die Sperre vor ihr Datum zurücksetzen.
 settlement-cancel-blocked-period-locked-through = Die Periode ist bis zum { $date } einschliesslich gesperrt.
 # Story 25-3-b (#418) — annuler un rapprochement : ses motifs et son dialogue.
 reconciliation-cancel-blocked-not-reconciled = Diese Banktransaktion ist nicht abgeglichen: Es gibt keinen Abgleich aufzuheben.
@@ -3192,7 +3192,7 @@ imported-supplier-invoices-report-qr-unreadable = QR unlesbar
 imported-supplier-invoices-qr-unreadable-hint = Dokument ohne die Daten des QR übernommen: Erfassen Sie IBAN und Referenz beim Erstellen der Rechnung von Hand.
 supplier-invoices-add-line = Zeile hinzufügen
 supplier-invoices-cancel = Rechnung stornieren
-supplier-invoices-cancel-confirm = Diese Rechnung stornieren? Eine Gegenbuchung des Einkaufs mit dessen Datum wird in dessen Geschäftsjahr ins Hauptbuch gebucht. Die Summen dieser Periode ändern sich, MWST inbegriffen: Wurde sie bereits abgerechnet, lassen Sie die Periode zuerst sperren – die Stornierung wird dann abgelehnt, was die Abrechnung schützt.
+supplier-invoices-cancel-confirm = Diese Rechnung stornieren? Eine Gegenbuchung des Einkaufs mit dessen Datum wird in dessen Geschäftsjahr ins Hauptbuch gebucht. Die Summen der Periode des Einkaufs ändern sich, MWST inbegriffen: Wurde sie bereits abgerechnet, lassen Sie die Periode zuerst sperren – die Stornierung wird dann abgelehnt, was die Abrechnung schützt.
 supplier-invoices-cancel-confirm-paid = Sie ist bezahlt: Ihre Zahlung bleibt im Hauptbuch, von der Rechnung gelöst — eine Zahlung ohne Rechnung, die noch zuzuordnen ist. Ist die Zahlung selbst fehlerhaft, stornieren Sie besser zuerst die Zahlung.
 supplier-invoices-cancelled = Rechnung storniert: Die Gegenbuchung des Einkaufs wurde ins Hauptbuch gebucht.
 supplier-invoices-cancelled-info = Rechnung storniert.
@@ -3209,7 +3209,7 @@ supplier-invoices-cancel-blocked-in-payment-batch = Diese Rechnung ist in einem 
 
 ## Story 25-3-a-2 (#414) — annuler un règlement fournisseur
 supplier-invoices-settlement-cancel-button = Zahlung stornieren
-supplier-invoices-settlement-cancel-confirm = Diese Zahlung stornieren? Eine Gegenbuchung mit dem Datum der Zahlung wird in deren Geschäftsjahr im Hauptbuch erfasst, und die Rechnung ist danach wieder validiert und zu bezahlen. Die Summen dieser Periode ändern sich: Wurde sie bereits abgerechnet, lassen Sie die Periode zuerst sperren – die Stornierung wird dann abgelehnt, was die Abrechnung schützt.
+supplier-invoices-settlement-cancel-confirm = Diese Zahlung stornieren? Eine Gegenbuchung mit dem Datum der Zahlung wird in deren Geschäftsjahr im Hauptbuch erfasst, und die Rechnung ist danach wieder validiert und zu bezahlen. Die Summen der Periode der Zahlung ändern sich: Wurde sie bereits abgerechnet, lassen Sie die Periode zuerst sperren – die Stornierung wird dann abgelehnt, was die Abrechnung schützt.
 supplier-invoices-settlement-cancel-batch-warning = Diese Rechnung ist im Zahlungsauftrag Nr. { $batch } enthalten, bestätigt am { $date }. Hat die Bank diesen Auftrag ausgeführt, wurde sie bereits bezahlt: Korrigieren Sie dann mit einer neuen direkten Zahlung, nie mit einem neuen Zahlungsauftrag.
 supplier-invoices-settlement-cancelled = Zahlung storniert: Die Gegenbuchung wurde erfasst und die Rechnung ist wieder validiert und zu bezahlen.
 supplier-invoices-settlement-entry-link = Zahlungsbuchung anzeigen

@@ -22,9 +22,9 @@
  * ouvert au jour » (`FISCAL_YEAR_INVALID`) n'est plus produit par la fiche — son
  * texte reste, la variante aussi (issue #1759).
  */
-// ⚠️ Le seul formateur de date suisse du frontend vit dans `features/reports` ;
-// il n'importe lui-même que des modules partagés (aucun cycle).
-import { formatSwissDate } from "$lib/features/reports/reports.api";
+// ⚠️ Le seul formateur de date suisse du frontend vit dans `lib/shared/utils/swiss-date.ts`
+// (`reports.api` le ré-exporte) : la couche partagée ne remonte pas vers `features/`.
+import { formatSwissDate } from "./swiss-date";
 import { i18nMsg } from "./i18n.svelte";
 
 /** Les codes de la queue commune, dans l'ordre de précédence du serveur. */
@@ -55,6 +55,23 @@ export function periodLockedThrough(base: string, label: string | null): string 
     { date: formatSwissDate(label) },
   );
   return `${base} ${through}`;
+}
+
+/**
+ * Le texte d'un refus **au clic** d'une annulation (revue P1 de la 63-1, L4). Sur un
+ * `400 PERIOD_LOCKED` — le verrou posé entre la lecture de la fiche et le clic —, le
+ * serveur rend le texte générique des écritures (`journal-entries-period-locked`, dates
+ * ISO, sans remède) : l'écran dit à la place **le motif de la fiche**, avec la borne
+ * (`details.lockedThrough`) en date suisse. Tout autre refus garde son message.
+ * `motif` donne le texte de la fiche pour la borne (`null` si le serveur ne l'a pas jointe).
+ */
+export function cancelRefusalMessage(
+  err: { code: string; message: string; details?: Record<string, unknown> },
+  motif: (lockedThrough: string | null) => string,
+): string {
+  if (err.code !== "PERIOD_LOCKED") return err.message;
+  const through = err.details?.lockedThrough;
+  return motif(typeof through === "string" ? through : null);
 }
 
 /**
@@ -95,7 +112,7 @@ export function settlementCancelTailMessage(
       return periodLockedThrough(
         i18nMsg(
           "settlement-cancel-blocked-period-locked",
-          "Ce règlement est dans une période verrouillée : pour pouvoir l'annuler, un administrateur doit faire reculer le verrou avant sa date.",
+          "Cette écriture est dans une période verrouillée : pour pouvoir l'annuler, un administrateur doit faire reculer le verrou avant sa date.",
         ),
         label,
       );

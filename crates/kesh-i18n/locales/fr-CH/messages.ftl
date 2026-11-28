@@ -914,7 +914,7 @@ invoices-settlements-type-bank = Virement bancaire
 invoices-settlements-type-internal = Espèces ou autre compte
 invoices-settlement-cancel-button = Annuler le règlement
 invoices-settlement-cancel-reconciliation = Annuler le rapprochement
-invoices-settlement-cancel-confirm = Annuler ce règlement ? Une écriture inverse, datée du règlement, sera passée au grand livre dans son exercice, et le montant redeviendra dû. Les totaux de cette période changent : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.
+invoices-settlement-cancel-confirm = Annuler ce règlement ? Une écriture inverse, datée du règlement, sera passée au grand livre dans son exercice, et le montant redeviendra dû. Les totaux de la période du règlement changent : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.
 invoices-settlement-cancelled = Règlement annulé : l'écriture inverse a été passée.
 invoices-settlement-cancel-blocked-credited = Cette facture a été créditée par un avoir : ce règlement reste ouvert au compte débiteurs, il ne s'annule pas.
 invoices-settlement-cancel-blocked-written-off = Le reste de cette facture a été soldé : annulez d'abord le solde.
@@ -923,7 +923,7 @@ invoices-settlements-type-write-off = Solde — { $nature }
 invoices-write-off-amount-label = Montant soldé
 invoices-write-off-button = Solder le reste
 invoices-write-off-cancel-button = Annuler le solde
-invoices-write-off-cancel-confirm = Annuler ce solde ? Une écriture inverse, datée du solde, sera passée au grand livre dans son exercice, TVA comprise, et le montant redeviendra dû. Les totaux de cette période changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.
+invoices-write-off-cancel-confirm = Annuler ce solde ? Une écriture inverse, datée du solde, sera passée au grand livre dans son exercice, TVA comprise, et le montant redeviendra dû. Les totaux de la période du solde changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.
 invoices-write-off-cancelled = Solde annulé : l'écriture inverse a été passée.
 invoices-write-off-confirm = Solder le reste
 invoices-write-off-date-label = Date du solde
@@ -951,7 +951,7 @@ settlement-cancel-blocked-bank-match = Ce règlement est rapproché d'une transa
 settlement-cancel-blocked-account-archived = Un compte de ce règlement a été archivé : réactivez-le pour pouvoir annuler le règlement.
 settlement-cancel-blocked-no-fiscal-year = Aucun exercice ouvert ne couvre la date du jour : créez-le pour pouvoir annuler ce règlement.
 # Story 63-1 (#1752, #1753) — l'annulation est datée du règlement : sous la borne du verrou, la fiche l'annonce.
-settlement-cancel-blocked-period-locked = Ce règlement est dans une période verrouillée : pour pouvoir l'annuler, un administrateur doit faire reculer le verrou avant sa date.
+settlement-cancel-blocked-period-locked = Cette écriture est dans une période verrouillée : pour pouvoir l'annuler, un administrateur doit faire reculer le verrou avant sa date.
 settlement-cancel-blocked-period-locked-through = La période est verrouillée jusqu'au { $date } inclus.
 # Story 25-3-b (#418) — annuler un rapprochement : ses motifs et son dialogue.
 reconciliation-cancel-blocked-not-reconciled = Cette transaction bancaire n'est pas rapprochée : il n'y a pas de rapprochement à annuler.
@@ -3231,7 +3231,7 @@ imported-supplier-invoices-report-qr-unreadable = QR illisible
 imported-supplier-invoices-qr-unreadable-hint = Document accepté sans les données du QR : en créant la facture, saisissez l’IBAN et la référence à la main.
 supplier-invoices-add-line = Ajouter une ligne
 supplier-invoices-cancel = Annuler la facture
-supplier-invoices-cancel-confirm = Annuler cette facture ? Une écriture inverse de l'achat, datée comme lui, sera passée au grand livre dans son exercice. Les totaux de cette période changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.
+supplier-invoices-cancel-confirm = Annuler cette facture ? Une écriture inverse de l'achat, datée comme lui, sera passée au grand livre dans son exercice. Les totaux de la période de l'achat changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.
 supplier-invoices-cancel-confirm-paid = Elle est payée : son règlement reste au grand livre, détaché de la facture — un paiement sans facture, à rattacher. Si c'est le paiement lui-même qui est erroné, annulez plutôt le règlement d'abord.
 supplier-invoices-cancelled = Facture annulée : l'écriture inverse de l'achat a été passée au grand livre.
 supplier-invoices-cancelled-info = Facture annulée.
@@ -3248,7 +3248,7 @@ supplier-invoices-cancel-blocked-in-payment-batch = Cette facture figure dans un
 
 ## Story 25-3-a-2 (#414) — annuler un règlement fournisseur
 supplier-invoices-settlement-cancel-button = Annuler le règlement
-supplier-invoices-settlement-cancel-confirm = Annuler ce règlement ? Une écriture inverse, datée du paiement, sera passée au grand livre dans son exercice, et la facture redeviendra validée, à payer. Les totaux de cette période changent : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.
+supplier-invoices-settlement-cancel-confirm = Annuler ce règlement ? Une écriture inverse, datée du paiement, sera passée au grand livre dans son exercice, et la facture redeviendra validée, à payer. Les totaux de la période du paiement changent : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.
 supplier-invoices-settlement-cancel-batch-warning = Cette facture figure dans le lot de paiement n° { $batch }, confirmé le { $date }. Si la banque a exécuté cet ordre, elle a déjà été payée : corrigez alors par un nouveau règlement direct, jamais par un nouveau lot.
 supplier-invoices-settlement-cancelled = Règlement annulé : l'écriture inverse a été passée et la facture est de nouveau validée, à payer.
 supplier-invoices-settlement-entry-link = Voir l'écriture de règlement

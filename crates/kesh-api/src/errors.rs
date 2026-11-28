@@ -6255,7 +6255,7 @@ impl IntoResponse for AppError {
                         // l'annonce (`cancelBlockedBy`), avec ce texte.
                         SettlementCancelBlocker::PeriodLocked => (
                             "settlement-cancel-blocked-period-locked",
-                            "Ce règlement est dans une période verrouillée : pour pouvoir l'annuler, un administrateur doit faire reculer le verrou avant sa date.",
+                            "Cette écriture est dans une période verrouillée : pour pouvoir l'annuler, un administrateur doit faire reculer le verrou avant sa date.",
                         ),
                         // Tête du dé-rapprochement : jamais produite par
                         // l'annulation d'un règlement ; son texte est celui

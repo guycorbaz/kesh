@@ -2825,10 +2825,14 @@ async fn s631_ac3_un_escompte_se_contre_passe_tva_comprise_dans_sa_periode(pool:
         "datée du solde, dans 2025"
     );
     assert_eq!(ctx.ecritures_de(fy_2026).await, dans_2026, "rien dans 2026");
-    // Par compte, le solde et son inverse nettent à zéro, à la même date.
+    // Par compte, le solde et son inverse nettent à zéro **dans 2025** : la somme est
+    // bornée à l'exercice (revue P1 de la 63-1, L8) — sans borne, elle serait nulle sous
+    // toute datation, l'inverse du jour comprise.
     let nets: Vec<(i64, rust_decimal::Decimal)> = sqlx::query_as(
-        "SELECT account_id, SUM(debit - credit) FROM journal_entry_lines \
-         WHERE entry_id IN (?, ?) GROUP BY account_id ORDER BY account_id",
+        "SELECT l.account_id, SUM(l.debit - l.credit) FROM journal_entry_lines l \
+         JOIN journal_entries je ON je.id = l.entry_id \
+         WHERE l.entry_id IN (?, ?) AND je.entry_date BETWEEN '2025-01-01' AND '2025-12-31' \
+         GROUP BY l.account_id ORDER BY l.account_id",
     )
     .bind(ecriture)
     .bind(inverse)

@@ -116,7 +116,7 @@ describe('InvoiceSettlements', () => {
 		});
 		expect(queryByTestId('invoice-settlement-cancel')).toBeNull();
 		const motif = getByTestId('invoice-settlement-cancel-blocked').textContent ?? '';
-		expect(motif).toContain('Ce règlement est dans une période verrouillée');
+		expect(motif).toContain('Cette écriture est dans une période verrouillée');
 		expect(motif).toContain("verrouillée jusqu'au 31.03.2026 inclus.");
 	});
 

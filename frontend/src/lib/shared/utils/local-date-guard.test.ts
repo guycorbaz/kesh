@@ -492,12 +492,12 @@ const ALLOWLIST_INSTANTS: Entree[] = [
 		lignes: 2,
 	},
 	{
-		fichier: 'lib/features/reports/reports.api.ts',
+		fichier: 'lib/shared/utils/swiss-date.ts',
 		fragment: 'const ZURICH_PARTS = new Intl.DateTimeFormat(',
 		motif: "module de référence : `timeZone: 'Europe/Zurich'`",
 	},
 	{
-		fichier: 'lib/features/reports/reports.api.ts',
+		fichier: 'lib/shared/utils/swiss-date.ts',
 		fragment: "const d = new Date(`${m[1]}T${m[2]}${m[3] ?? 'Z'}`);",
 		motif: 'module de référence : `instantDuServeur`, la seule lecture « naïf = UTC », décalage honoré',
 	},

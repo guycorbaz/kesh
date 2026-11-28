@@ -35,6 +35,7 @@
 	} from '$lib/features/supplier-invoices/supplier-invoices.api';
 	import { supplierSettlementCancelMessage } from '$lib/features/supplier-invoices/settlement-cancel';
 	import { todayLocal } from '$lib/shared/utils/local-date';
+	import { cancelRefusalMessage } from '$lib/shared/utils/settlement-cancel-blocked';
 	import { supplierInvoiceCancelMessage } from '$lib/features/supplier-invoices/invoice-cancel';
 	import {
 		supplierInvoiceUnvalidateMessage,
@@ -316,7 +317,7 @@
 		settlementCancelError = '';
 		let message = i18nMsg(
 			'supplier-invoices-settlement-cancel-confirm',
-			"Annuler ce règlement ? Une écriture inverse, datée du paiement, sera passée au grand livre dans son exercice, et la facture redeviendra validée, à payer. Les totaux de cette période changent : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
+			"Annuler ce règlement ? Une écriture inverse, datée du paiement, sera passée au grand livre dans son exercice, et la facture redeviendra validée, à payer. Les totaux de la période du paiement changent : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
 		);
 		const batch = invoice.lastConfirmedBatch;
 		if (batch) {
@@ -346,7 +347,11 @@
 		} catch (err) {
 			// Story 34-8 (AC-8) ; ce qui reste est une `ApiError` (revue P2, B-2 = A-2).
 			if (await rereadAfterUnknownOutcome(err)) return;
-			if (isApiError(err)) settlementCancelError = err.message;
+			// Revue P1 de la 63-1 (L4) : un verrou posé entre la lecture et le clic se dit comme la fiche.
+			if (isApiError(err))
+				settlementCancelError = cancelRefusalMessage(err, (through) =>
+					supplierSettlementCancelMessage('PERIOD_LOCKED', through),
+				);
 			await reloadAfterStaleRefusal(err); // revue P2 (E-1)
 		} finally {
 			cancellingSettlement = false;
@@ -363,7 +368,7 @@
 		cancelError = '';
 		let message = i18nMsg(
 			'supplier-invoices-cancel-confirm',
-			"Annuler cette facture ? Une écriture inverse de l'achat, datée comme lui, sera passée au grand livre dans son exercice. Les totaux de cette période changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
+			"Annuler cette facture ? Une écriture inverse de l'achat, datée comme lui, sera passée au grand livre dans son exercice. Les totaux de la période de l'achat changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
 		);
 		if (invoice.status === 'paid') {
 			message +=
@@ -387,7 +392,10 @@
 		} catch (err) {
 			// Story 34-8 (AC-8) ; ce qui reste est une `ApiError` (revue P2, B-2 = A-2).
 			if (await rereadAfterUnknownOutcome(err)) return;
-			if (isApiError(err)) cancelError = err.message;
+			if (isApiError(err))
+				cancelError = cancelRefusalMessage(err, (through) =>
+					supplierInvoiceCancelMessage('PERIOD_LOCKED', through),
+				);
 			await reloadAfterStaleRefusal(err); // revue P2 (E-1)
 		} finally {
 			cancelling = false;
@@ -413,7 +421,10 @@
 				err.code === 'SUPPLIER_INVOICE_MUST_BE_UNVALIDATED_FIRST' ||
 				err.code === 'SUPPLIER_INVOICE_NOT_PAID' ||
 				err.code === 'SUPPLIER_INVOICE_CANCELLED' ||
-				err.code === 'SUPPLIER_INVOICE_DRAFT')
+				err.code === 'SUPPLIER_INVOICE_DRAFT' ||
+				// Revue P1 de la 63-1 (L3) : le verrou posé entre la lecture et le clic — la relecture
+				// remplace le bouton par le motif de la fiche.
+				err.code === 'PERIOD_LOCKED')
 		);
 	}
 

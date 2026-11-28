@@ -1788,6 +1788,58 @@ async fn cancelled_invoice_returns_to_draft(pool: MySqlPool) {
     assert_eq!(entete(pool.clone()).await, entete_avant);
 }
 
+/// T1 (AC-11, revue P1 de la 63-1, L9) — l'**état hérité** d'une annulation
+/// d'avant la v0.21.0, que le manuel décrit encore (encadré « nette à zéro qu'au
+/// cumul ») : la contre-passation est datée du jour, l'achat de sa date. Repasser
+/// en brouillon laisse le cumul intact, mais la **période de l'achat perd l'achat**
+/// (V2-5) : c'est l'attendu d'avant la story, gardé pour cet état-là. Tue la
+/// perte de cette couverture quand `cancelled_invoice_returns_to_draft` ne
+/// prouve plus que l'état d'après la v0.21.0.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_invoice_returns_to_draft_legacy_reversal_dated_today(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let c = seeded.company_id;
+    let date = jour(2026, 6, 15);
+    let a = annulee(
+        &pool,
+        &seeded,
+        f,
+        "FF-AN1H",
+        date,
+        &[(dec!(100), dec!(8.1))],
+    )
+    .await;
+    datee_du_jour_comme_avant_la_v0210(&pool, &seeded, a).await;
+    let veille = aujourdhui().pred_opt().unwrap();
+    assert!(veille >= date, "montage : l'achat précède la veille");
+    let effet_achat = effet(&pool, a.achat).await;
+    assert_eq!(effet_achat.len(), 3, "montage : {effet_achat:?}");
+    let mut avant = Vec::new();
+    for (compte, _) in &effet_achat {
+        avant.push((
+            solde_au(&pool, c, *compte, None).await,
+            solde_au(&pool, c, *compte, Some(veille)).await,
+        ));
+    }
+
+    repasser(&pool, &seeded, a)
+        .await
+        .expect("annulée (état hérité) → brouillon");
+
+    for ((compte, _), (cumul, periode)) in effet_achat.iter().zip(avant) {
+        assert_eq!(
+            solde_au(&pool, c, *compte, None).await,
+            cumul,
+            "compte {compte} : le cumul ne bouge pas"
+        );
+        assert_ne!(
+            solde_au(&pool, c, *compte, Some(veille)).await,
+            periode,
+            "compte {compte} : la période de l'achat perd l'achat (V2-5, état hérité)"
+        );
+    }
+}
+
 /// T2 (AC-2) — le brouillon issu d'une annulée vit comme tout brouillon :
 /// modifié puis revalidé ; ou, document joint, supprimé (document rendu « à
 /// traiter »).

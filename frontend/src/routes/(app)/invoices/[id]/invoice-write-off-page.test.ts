@@ -326,7 +326,7 @@ describe("fiche facture — annuler un solde", () => {
     await fireEvent.click(await r.findByTestId("invoice-settlement-cancel"));
     expect(
       await r.findByText(
-        "Annuler ce solde ? Une écriture inverse, datée du solde, sera passée au grand livre dans son exercice, TVA comprise, et le montant redeviendra dû. Les totaux de cette période changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
+        "Annuler ce solde ? Une écriture inverse, datée du solde, sera passée au grand livre dans son exercice, TVA comprise, et le montant redeviendra dû. Les totaux de la période du solde changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
       ),
     ).toBeTruthy();
   });
@@ -340,7 +340,7 @@ describe("fiche facture — annuler un solde", () => {
     await fireEvent.click(await r.findByTestId("invoice-settlement-cancel"));
     expect(
       await r.findByText(
-        "Annuler ce règlement ? Une écriture inverse, datée du règlement, sera passée au grand livre dans son exercice, et le montant redeviendra dû. Les totaux de cette période changent : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
+        "Annuler ce règlement ? Une écriture inverse, datée du règlement, sera passée au grand livre dans son exercice, et le montant redeviendra dû. Les totaux de la période du règlement changent : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
       ),
     ).toBeTruthy();
   });

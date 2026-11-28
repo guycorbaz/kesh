@@ -192,6 +192,26 @@ describe("fiche facture — annuler un règlement", () => {
     // La fiche est toujours là.
     expect(await findByText("F-2026-005", { exact: false })).toBeTruthy();
   });
+
+  // Revue P1 de la 63-1 (L4) — le verrou posé entre la lecture et le clic.
+  it("400 PERIOD_LOCKED au clic : le motif de la fiche, borne en date suisse, sans date ISO (mutation : `err.message` tel quel)", async () => {
+    cancelSettlementMock.mockRejectedValue({
+      code: "PERIOD_LOCKED",
+      message:
+        "Les écritures sont verrouillées jusqu'au 2025-12-31 ; celle-ci est datée du 2025-12-20.",
+      status: 400,
+      details: { lockedThrough: "2025-12-31", attempted: "2025-12-20" },
+    });
+    const { findByTestId, getByTestId } = render(Page);
+
+    await fireEvent.click(await findByTestId("invoice-settlement-cancel"));
+    await fireEvent.click(getByTestId("invoice-settlement-cancel-confirm"));
+
+    const texte = (await findByTestId("invoice-settlement-cancel-error")).textContent ?? "";
+    expect(texte).toContain("Cette écriture est dans une période verrouillée");
+    expect(texte).toContain("La période est verrouillée jusqu'au 31.12.2025 inclus.");
+    expect(texte).not.toContain("2025-12-31");
+  });
 });
 
 describe("fiche facture — créer un avoir sur une facture réglée (Story 25-4-a)", () => {

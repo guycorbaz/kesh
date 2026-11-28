@@ -74,6 +74,10 @@
 	} from '$lib/features/invoices/invoice-helpers';
 	import { apiClient, isApiError } from '$lib/shared/utils/api-client';
 	import {
+		cancelRefusalMessage,
+		settlementCancelTailMessage,
+	} from '$lib/shared/utils/settlement-cancel-blocked';
+	import {
 		notifyError,
 		notifyMissingFiscalYearOrFallback,
 		notifySuccess,
@@ -239,7 +243,10 @@
 			cancelTarget = null;
 			await loadSettlements();
 		} catch (err) {
-			cancelError = isApiError(err) ? err.message : i18nMsg('common-error', 'Erreur inattendue');
+			// Revue P1 de la 63-1 (L4) : un verrou posé entre la lecture et le clic se dit comme la fiche.
+			cancelError = isApiError(err)
+				? cancelRefusalMessage(err, (through) => settlementCancelTailMessage('PERIOD_LOCKED', through))
+				: i18nMsg('common-error', 'Erreur inattendue');
 			// L'état a pu changer (autre onglet, rapprochement entre-temps) : relire. La
 			// facture aussi (Story 34-5, revue P1, E1-4) : une annulation écrite malgré une
 			// réponse perdue a incrémenté la version, et le règlement suivant partirait
@@ -1864,11 +1871,11 @@
 					{cancelIsWriteOff
 						? i18nMsg(
 								'invoices-write-off-cancel-confirm',
-								"Annuler ce solde ? Une écriture inverse, datée du solde, sera passée au grand livre dans son exercice, TVA comprise, et le montant redeviendra dû. Les totaux de cette période changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
+								"Annuler ce solde ? Une écriture inverse, datée du solde, sera passée au grand livre dans son exercice, TVA comprise, et le montant redeviendra dû. Les totaux de la période du solde changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
 							)
 						: i18nMsg(
 								'invoices-settlement-cancel-confirm',
-								"Annuler ce règlement ? Une écriture inverse, datée du règlement, sera passée au grand livre dans son exercice, et le montant redeviendra dû. Les totaux de cette période changent : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
+								"Annuler ce règlement ? Une écriture inverse, datée du règlement, sera passée au grand livre dans son exercice, et le montant redeviendra dû. Les totaux de la période du règlement changent : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
 							)}
 				</Dialog.Description>
 			</Dialog.Header>

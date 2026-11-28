@@ -31,6 +31,11 @@
 //!   issue **#1760** ; à la date de la story, `kesh-report/src/lib.rs` masque
 //!   ainsi des `pub mod`/`pub use`, sans jeton ;
 //! - une macro qui engendrerait le jeton (`concat_idents!`, macro procédurale) ;
+//! - une annulation **future** qui créerait son inverse par `create_in_tx`, daté
+//!   du jour, **sans** `CancellationDating` : aucun jeton, donc aucun relevé.
+//!   Aucun site de ce genre aujourd'hui — `reverses_entry_id` n'est posé que par
+//!   `reverse_in_tx_inner` — mais rien ne l'interdit par la syntaxe (revue P1
+//!   de la 63-1, L6) ;
 //! - un chemin qui ne nomme pas l'énumération (`use journal_entries as j;` puis
 //!   `j::CancellationDating::Today` reste vu ; un `pub use` qui la renommerait
 //!   est fermé par la règle de l'alias).
