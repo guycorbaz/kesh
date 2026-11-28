@@ -27,6 +27,14 @@ développement**, avec son périmètre exact (fichiers, lignes, assertion attend
 - **L4** — un escompte ou une perte sur une facture sans part de TVA (taux 0, société non assujettie, reste de quelques centimes) montre « TVA comprise » : le texte est vrai à zéro près, l'écran ne sait pas
   la ventilation. Observation, non défaut ; issue `enhancement` possible.
 
+## La remédiation de la P5 (développement, Opus 5.5)
+
+- **Commits** : `e55a8df23` (code : spec E2E `:235` et espace de `invoices-write-off-cancelled` ×4) ; `6257440a4` (fiche). Le diff à relire est `git diff 126aabf7e..<tête>` (la remédiation
+  seule), non plus `3c3ac4390..`.
+- **Inventaire** (`$GATE_LOGS/e63/inventaire-tva-annulation.md`) : § 6 « Textes affirmés par les tests » (17 lignes, 40 assertions, 1 fausse corrigée) ; § 3.5 T9 ; § 5 angle mort n° 5 corrigé (L2). Refais
+  l'extraction toi-même (point 3), ne te fie pas à ce tableau.
+- **Gates du développement** (`$GATE_LOGS/e63/rem6/`) : les deux specs seules **9/9**, Vitest complet 5594, `check`, `lint-i18n-ownership`, `build`, `cargo test -p kesh-i18n` 42, `binary(textes_coherents)` 34/34.
+
 ## Ce que tu vérifies
 
 1. **Le commit de remédiation de la P5**, seul : la spec E2E (assertion de `:235` : elle doit affirmer le texte neuf du règlement, **pas** une sous-chaîne trouvée par complaisance — lis la valeur au FTL fr-CH),
