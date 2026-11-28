@@ -754,7 +754,7 @@ fiche fournisseur : une capture ne les montre pas, leur texte est écrit à côt
    dépendance de `lib/shared` vers `features/` (le seul formateur de date suisse du frontend y vit) — accepter, ou le déplacer
    dans `lib/shared` (issue `technical-debt`).
 3. La boîte de confirmation de la fiche fournisseur est un `confirm()` natif : la recette visuelle ne peut la capturer.
-4. Un artefact écrit par erreur hors du worktree : `/home/gcorbaz/devel/kesh/frontend/test-results/.last-run.json` (créé le
+4. Un artefact écrit par erreur hors du worktree : `frontend/test-results/.last-run.json` **du dépôt principal** (créé le
    2026-11-28 à 04:00 par trois lancements de Playwright partis par mégarde du dépôt principal, « No tests found » ; fichier
    ignoré par git, `git status` du dépôt principal propre). Sa suppression m'a été refusée par les permissions : à effacer par
    l'orchestrateur (répertoire `test-results/` créé à cette heure-là, sans autre contenu).

@@ -17,11 +17,11 @@ au clic par le socle (`400 PERIOD_LOCKED`). **Une erreur ici fausse les livres.*
 
 ## Où travailler
 
-- Worktree `/home/gcorbaz/devel/kesh-63-1`, branche `story/63-1-annulations-datees-origine`. Relis la tête par `git log -1`.
+- Worktree `kesh-63-1` (voisin du dépôt principal), branche `story/63-1-annulations-datees-origine`. Relis la tête par `git log -1`.
 - Diff de la story : `a9b551d5a..HEAD` (`a9b551d5a` est la fusion d'`origin/epic/53-ecritures-justes`, 53-6a comprise).
 - Fiche : `_bmad-output/implementation-artifacts/63-1-annulations-datees-origine.md` — décisions D1 à D8, AC-1 à AC-17,
   mutations M1 à M8, **Dev Agent Record** (relevé T0, inventaire des sites, tests par AC, mutations, gates, captures).
-- Preuves hors dépôt, `$GATE_LOGS` = `/home/gcorbaz/devel/kesh-gate-logs/` : `e63/rouge/` (le rouge d'abord),
+- Preuves hors dépôt, `$GATE_LOGS` = `kesh-gate-logs/`, voisin des worktrees : `e63/rouge/` (le rouge d'abord),
   `e63/t2-retrait-date-tests*.log` (les 232 arguments retirés des tests, un par ligne), `e63/t2-nextest-*.log`,
   `e63/mutations/` (`resume.txt`, un `.diff` et un `.log` par mutation), `e63/captures/` (**regarde les images**, et lis
   les `.txt` des boîtes natives), `idefix/<id>/` (gates distants).
