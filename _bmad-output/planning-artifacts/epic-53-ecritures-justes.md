@@ -8,7 +8,8 @@ la release suivante).* Branche `epic/53-ecritures-justes`, partie de `main` au l
 
 Six défauts P1 qui faussent les livres : une écriture passée deux fois après une réponse perdue, une TVA contre-passée sur
 un autre compte que celui de la vente, une ouverture passée sur un compte de résultat, et un compte bancaire dont le lien
-au grand livre change sans qu'on le dise.
+au grand livre change sans qu'on le dise ; et, depuis le 2026-11-27, une annulation de rapprochement dont la contre-passation
+tombe dans un autre exercice que son écriture (#1674).
 
 ## Stories
 
@@ -16,12 +17,15 @@ au grand livre change sans qu'on le dise.
 |---|---|---|
 | 53-1a — La saisie ne passe pas deux fois | #1355 | **née du découpage de la 53-1 le 2026-11-25** (décision du Project Lead, signal de recyclage en validation P2) : après une réponse perdue, un second envoi d'une saisie manuelle identique est refusé (409 levable par confirmation, auditée) ; l'écran fige l'issue inconnue et fait vérifier avant de reprendre ; pose le motif commun (politique de doublon, erreur, module d'états). Aucun verrou neuf sur `journal_entries` : l'instantané naît après le verrou de l'exercice. |
 | 53-1b — La conversion ne passe pas deux fois | #1365 | **née du même découpage** : reprend le motif de la 53-1a pour la conversion de devises ; pré-verrou des exercices juste après la société. Dépend de la 53-1a (fusionnée d'abord). |
-| 53-2 — La TVA revient sur le compte de la vente | #525, #1198 | l'avoir (#525) et la correction de TVA d'un escompte ou d'une perte (#1198) contre-passent la TVA sur le compte de TVA due **de la vente**, non sur celui des réglages du moment. Probablement une migration (mémoriser le compte sur la facture, ou le relire de l'écriture de vente) : la fiche le dit ; une migration fait monter `b` et sort de préférence un vendredi. |
+| 53-2 — La TVA revient sur le compte de la vente | #525, #1198 (reclassées P2 le 2026-11-21, décision du Project Lead : conformité légale) | l'avoir (#525) et la correction de TVA d'un escompte ou d'une perte (#1198) contre-passent la TVA sur le compte de TVA due **de la vente**, non sur celui des réglages du moment. Probablement une migration (mémoriser le compte sur la facture, ou le relire de l'écriture de vente) : la fiche le dit ; une migration fait monter `b` et sort de préférence un vendredi. |
 | 53-3 — L'ouverture ne se passe pas sur un compte de résultat | #513 | le contrôle des types de comptes du bilan d'ouverture se fait dans la transaction qui écrit, sous verrou. |
 | ~~53-4 — L'assistant ne réécrit pas le compte bancaire~~ | #1004 | **sortie de l'Epic 53 le 2026-11-25** (décision du Project Lead) : la validation P2 de la fiche a établi au code qu'aucun compte principal ne peut exister avant l'étape 6 (`assert_onboarding_complete`, `bank_accounts.rs:358`) ; le défaut ne touche que la saisie de l'assistant, avant toute écriture comptable : #1004 reclassée P3. Fiche et validations conservées sur `story/53-4-assistant-compte-bancaire`, pour la liste d'attente. |
+| ~~53-6~~ — Annuler un rapprochement contre-passe dans l'exercice de l'écriture | #1674 | **ajoutée le 2026-11-27 puis découpée le même jour** (décision du Project Lead, signal de recyclage de la validation P2) en 53-6a et 53-6b ; fiche d'origine = page de renvoi (statut `split`). Décisions du 2026-11-27 : Q1 date de l'écriture d'origine même dans un même exercice ; Q2 période verrouillée = refus ; Q3 trois issues P1 séparées (R7 à R9) hors story ; Q4 détection dans la 53-6b ; Q5 pas d'`/api/v2` ; Q6 exercice clos = refus. |
+| 53-6a — Annulation d'un rapprochement : date de l'écriture d'origine | #1674 (P1, CLO-2) | le **correctif** : la contre-passation prend la date de l'écriture, dans son exercice (rouvert compris) ; exercice clos : refus ; période verrouillée : refus annoncé dans la vue ; cinq bras (écriture seule, règlement client, règlement fournisseur, groupes client et fournisseur, Wise groupé). Aucune migration. Fiche `53-6a-annulation-rapprochement-date-origine.md`, écrite contre `main` (v0.20.0) : la branche reprend `main` avant le développement. `ready-for-dev` **sous réserve de sa validation**. |
+| 53-6b — Détection des contre-passations tombées dans un autre exercice | #1674 (suite) | route de lecture, panneau sur la page des imports, procédure de correction au manuel ; dépend de la 53-6a ; fiche `53-6b-detection-contre-passations-autre-exercice.md`, `backlog`, **non validée**. **Sortie de l'epic proposée** (voir ci-dessous). |
 | 53-solde — Story de solde | plafond fixé au lancement | dette des revues de l'epic seulement. |
 
-Cinq stories, story de solde comprise (53-1a, 53-1b, 53-2, 53-3, solde), depuis la sortie de la 53-4 et le découpage de la 53-1 (2026-11-25) : la borne de six tient.
+Six stories, story de solde comprise (53-1a, 53-1b, 53-2, 53-3, **53-6a**, solde 53-5), depuis la sortie de la 53-4, le découpage de la 53-1 (2026-11-25) et le découpage de la 53-6 (2026-11-27) : la borne de six est atteinte. ⚠️ **La 53-6b (détection) la dépasse (sept)** : **proposition** — la sortir de l'Epic 53 vers un epic suivant, de six stories au plus (l'orchestrateur la place ; elle dépend de la 53-6a, donc après sa fusion), son epic d'accueil la déclarant « dépend de la 53-6a » au kickoff. Ne pas la développer dans l'Epic 53 sans dérogation du Project Lead. Les trois issues P1 de Q3 (R7 à R9) ne sont pas des stories de l'epic : elles se rattachent à la release suivante (CLAUDE.md : tout P1 passe en priorité).
 
 ## Fichiers et modules (probables, confirmés par les fiches)
 
@@ -31,8 +35,9 @@ Cinq stories, story de solde comprise (53-1a, 53-1b, 53-2, 53-3, solde), depuis 
 - 53-2 : `kesh-db/src/repositories/credit_notes.rs`, `invoice_settlements_write.rs` ; migration éventuelle.
 - 53-3 : `kesh-api/src/routes/opening_balances.rs` ; `kesh-db/src/repositories/journal_entries.rs` (`create_opening_entry`), `accounts.rs` (lecture des types), `fiscal_years.rs` (clé d'erreur) ; tests `kesh-db` et `kesh-api` (fiche 53-3, validation P1, V1-10).
 - ~~53-4~~ : sortie de l'epic (2026-11-25).
+- 53-6a : `kesh-db/src/repositories/journal_entries.rs` (`ReversalDating`, `reverse_in_tx_inner`), `reconciliation_cancel.rs`, `settlement_cancellation.rs`, `invoice_settlements_write.rs`, `supplier_invoices.rs`, `grouped_settlements.rs`, `errors.rs` ; `kesh-api/src/routes/reconciliation.rs`, `lib.rs`, `errors.rs` ; `kesh-i18n` (quatre locales) ; `frontend/src/lib/features/reconciliation/`; quatre modules. 53-6b : `reconciliation_cancel.rs` (requête), `routes/reconciliation.rs`, `lib.rs`, `kesh-i18n`, `frontend/…/reconciliation` + `bank-import/+page.svelte` (panneau).
 
-Recoupements : `journal_entries.rs` entre la 53-1a/53-1b et la 53-3 (fonctions distinctes ; la seconde fusionnée reprend la première), avec l'Epic 51 (48-2) et l'Epic 47 d'un contributeur ; `onboarding.rs` avec l'Epic 50
+Recoupements : `journal_entries.rs` entre la 53-1a/53-1b, la 53-3 et la 53-6 (fonctions distinctes ; la seconde fusionnée reprend la première) ; `invoice_settlements_write.rs` entre la 53-2 et la 53-6 (fonctions distinctes) ; `reconciliation_cancel.rs` entre la 53-6 et l'Epic 39 (Wise, déjà dans `main`), avec l'Epic 51 (48-2) et l'Epic 47 d'un contributeur ; `onboarding.rs` avec l'Epic 50
 (aucun site commun connu).
 
 ## Dépendances

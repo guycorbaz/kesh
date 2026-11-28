@@ -40,6 +40,8 @@ function view(partial: Partial<ReconciliationTransactionResponse>): Reconciliati
 		cancelBlockedBy: null,
 		cancelBlockedLabel: null,
 		cancelBlockedDocumentId: null,
+		reversalDate: '2026-03-14',
+		reversalFiscalYearName: '2026',
 		...partial,
 	};
 }
@@ -100,19 +102,98 @@ describe('CancelReconciliationDialog', () => {
 	});
 
 	it('refusé AU CLIC par un code hors motifs ⇒ le message du serveur, dans le dialogue (mutation : erreur avalée ou générique)', async () => {
+		// Story 53-6a : `PERIOD_LOCKED` est un motif ; `LATER_FISCAL_YEAR_CLOSED` reprend l'exemple.
 		mockApi.getReconciliationTransaction.mockResolvedValue(view({}));
 		mockApi.cancelReconciliation.mockRejectedValue({
-			code: 'PERIOD_LOCKED',
-			message: 'La période du jour est verrouillée.',
+			code: 'LATER_FISCAL_YEAR_CLOSED',
+			message: 'Un exercice postérieur est clôturé.',
 			status: 400,
 		});
 		const onSuccess = vi.fn();
 		const { findByTestId } = monter(onSuccess);
 		await fireEvent.click(await findByTestId('reconciliation-cancel-submit'));
 		expect((await findByTestId('reconciliation-cancel-error')).textContent).toContain(
-			'La période du jour est verrouillée.',
+			'Un exercice postérieur est clôturé.',
 		);
 		expect(onSuccess).not.toHaveBeenCalled();
+	});
+
+	// Story 53-6a (#1674, AC-10, D4) — la date et l'exercice de la contre-passation.
+	it('la confirmation dit la DATE de l’écriture et son EXERCICE, jamais « aujourd’hui », et la phrase TVA (mutation : `reversalDate` ignoré)', async () => {
+		mockApi.getReconciliationTransaction.mockResolvedValue(
+			view({ reversalDate: '2025-12-20', reversalFiscalYearName: 'FY 2025' }),
+		);
+		const { findByTestId } = monter();
+		const t = (await findByTestId('reconciliation-cancel-confirm-text')).textContent ?? '';
+		expect(t).toContain('datée du 20.12.2025');
+		expect(t).toContain("dans l'exercice « FY 2025 »");
+		expect(t).not.toContain("aujourd'hui");
+		const tva = (await findByTestId('reconciliation-cancel-vat')).textContent ?? '';
+		expect(tva).toContain('TVA comprise');
+		// Revue P1, L2 — le conseil dit aussi ce qui s'ensuit : un refus, qui protège la déclaration.
+		expect(tva).toContain("l'annulation sera alors refusée, ce qui protège la déclaration");
+	});
+
+	it('Revue P1 (L4) — une vue sans date ni exercice (serveur antérieur) ne tronque pas la phrase', async () => {
+		mockApi.getReconciliationTransaction.mockResolvedValue(
+			view({ reversalDate: undefined, reversalFiscalYearName: undefined }),
+		);
+		const { findByTestId } = monter();
+		const t = (await findByTestId('reconciliation-cancel-confirm-text')).textContent ?? '';
+		expect(t).toContain('datée du —');
+		expect(t).toContain("dans l'exercice « — »");
+	});
+
+	it('Story 53-6a — les cinq genres nomment la date (mutation : un message oublié)', async () => {
+		const cas: Partial<ReconciliationTransactionResponse>[] = [
+			{ kind: 'entry' },
+			{ kind: 'invoice_settlement', invoiceId: 5, invoiceNumber: 'F-1' },
+			{ kind: 'supplier_settlement', supplierInvoiceId: 31, supplierInvoiceNumber: 'FF-1' },
+			{
+				kind: 'grouped_settlement',
+				groupedInvoices: [{ kind: 'invoice', id: 1, number: 'F-1', amount: '10.00' }],
+			},
+			{
+				kind: 'grouped_settlement',
+				groupedInvoices: [{ kind: 'supplier_invoice', id: 2, number: 'FF-2', amount: '10.00' }],
+			},
+		];
+		for (const partial of cas) {
+			mockApi.getReconciliationTransaction.mockResolvedValue(view(partial));
+			const { findByTestId } = monter();
+			const t = (await findByTestId('reconciliation-cancel-confirm-text')).textContent ?? '';
+			expect(t, JSON.stringify(partial)).toContain('datée du 14.03.2026');
+			expect(t, JSON.stringify(partial)).toContain("dans l'exercice « 2026 »");
+			cleanup();
+		}
+	});
+
+	// Story 53-6a (AC-9) — la période verrouillée, à la lecture et au clic.
+	it('PERIOD_LOCKED à la lecture ⇒ le motif avec la borne en date suisse, sans Confirmer (mutation : motif non traduit)', async () => {
+		mockApi.getReconciliationTransaction.mockResolvedValue(
+			view({ cancellable: false, cancelBlockedBy: 'PERIOD_LOCKED', cancelBlockedLabel: '2026-06-30' }),
+		);
+		const { findByTestId, queryByTestId } = monter();
+		const motif = (await findByTestId('reconciliation-cancel-motif')).textContent ?? '';
+		expect(motif).toContain('période verrouillée');
+		expect(motif).toContain("verrouillée jusqu'au 30.06.2026 inclus");
+		expect(queryByTestId('reconciliation-cancel-submit')).toBeNull();
+		expect(queryByTestId('reconciliation-cancel-vat')).toBeNull();
+	});
+
+	it('PERIOD_LOCKED au clic (400 du socle) ⇒ le motif, la borne de `details.lockedThrough` (mutation : message du serveur)', async () => {
+		mockApi.getReconciliationTransaction.mockResolvedValue(view({}));
+		mockApi.cancelReconciliation.mockRejectedValue({
+			code: 'PERIOD_LOCKED',
+			message: 'texte serveur',
+			status: 400,
+			details: { lockedThrough: '2026-06-30', attempted: '2026-06-15' },
+		});
+		const { findByTestId } = monter();
+		await fireEvent.click(await findByTestId('reconciliation-cancel-submit'));
+		const erreur = (await findByTestId('reconciliation-cancel-error')).textContent ?? '';
+		expect(erreur).toContain('période verrouillée');
+		expect(erreur).toContain("verrouillée jusqu'au 30.06.2026 inclus");
 	});
 });
 
@@ -204,7 +285,9 @@ describe('CancelReconciliationDialog — règlement fournisseur (Story 30-1b, T-
 		const t = (await findByTestId('reconciliation-cancel-confirm-text')).textContent ?? '';
 		expect(t).toContain('Seul le lien de cette transaction');
 		expect(t).toContain('aucune écriture inverse');
-		expect(t).not.toContain("Une écriture inverse datée d'aujourd'hui sera passée");
+		// Story 53-6a : réécrit sur le texte neuf (l'ancien passerait à vide).
+		expect(t).not.toContain('Une écriture inverse datée du');
+		expect(queryByTestId('reconciliation-cancel-vat')).toBeNull();
 		expect(queryByTestId('reconciliation-cancel-motif')).toBeNull();
 		await fireEvent.click(await findByTestId('reconciliation-cancel-submit'));
 		await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(result));

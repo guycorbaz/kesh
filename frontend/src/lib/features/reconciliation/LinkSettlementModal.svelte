@@ -395,7 +395,7 @@
 				<p class="mt-2 text-sm" data-testid="entry-cancel-today">
 					{i18nMsg(
 						'reconciliation-link-entry-cancel-today',
-						"Aujourd'hui, Kesh ne voit aucun obstacle : annuler ce rapprochement contre-passerait cette écriture (ou annulerait le règlement qu'elle porte). Une clôture d'exercice, une période verrouillée ou un exercice postérieur clos pourraient l'empêcher, dès aujourd'hui sans que Kesh le voie, ou plus tard.",
+						"Aujourd'hui, Kesh ne voit aucun obstacle : annuler ce rapprochement contre-passerait cette écriture, à sa date (ou annulerait le règlement qu'elle porte). Une clôture d'exercice ou un exercice postérieur clos pourraient l'empêcher, dès aujourd'hui sans que Kesh le voie, ou plus tard, comme un verrou de période posé d'ici là.",
 					)}
 				</p>
 			{:else if selectedEntry && selectedEntry.cancelBlockedBy !== null}

@@ -241,7 +241,7 @@
 		</p>
 		<div>
 			<label for="rule-provider-type" class="block text-sm font-medium">
-				{i18nMsg('reconciliation-rules-labels-provider-type', 'Type PayPal (exact)')}
+				{i18nMsg('reconciliation-rules-labels-provider-type', 'Type chez le prestataire (exact)')}
 			</label>
 			<input
 				id="rule-provider-type"
@@ -251,6 +251,14 @@
 				maxlength="64"
 				data-testid="rule-form-provider-type"
 			/>
+			<!-- Story 39-11d (AC-1) — le filtre de type est commun aux prestataires : PayPal y écrit son
+			     type, Wise le préfixe de l'identifiant de la ligne. -->
+			<p class="mt-1 text-xs text-text-muted" data-testid="rule-form-provider-type-help">
+				{i18nMsg(
+					'reconciliation-rules-help-provider-type',
+					'PayPal : le type tel qu’écrit dans le relevé (Website Payment, General Payment…). Wise : le préfixe de l’identifiant (TRANSFER, CARD, BALANCE, CONVERSION_ORDER, FEE-TRANSFER…).',
+				)}
+			</p>
 		</div>
 		<div>
 			<label for="rule-counterparty-email" class="block text-sm font-medium">

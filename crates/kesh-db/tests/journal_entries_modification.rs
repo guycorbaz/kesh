@@ -446,7 +446,7 @@ async fn update_waits_for_a_concurrent_reversal_then_refuses(pool: MySqlPool) {
         s.company_id,
         e.entry.id,
         Acteur::utilisateur(s.admin_user_id),
-        crate::jour::aujourd_hui_test(),
+        journal_entries::CancellationDating::Today(crate::jour::aujourd_hui_test()),
     )
     .await
     .expect("contre-passation de B");
@@ -560,7 +560,7 @@ async fn delete_waits_for_a_concurrent_reversal_then_refuses(pool: MySqlPool) {
         s.company_id,
         e.entry.id,
         Acteur::utilisateur(s.admin_user_id),
-        crate::jour::aujourd_hui_test(),
+        journal_entries::CancellationDating::Today(crate::jour::aujourd_hui_test()),
     )
     .await
     .expect("contre-passation de B");

@@ -37,6 +37,7 @@
 	} from './reconciliation-cancel';
 	import type { GroupedPieceRef } from './reconciliation.types';
 	import { displayDue, parseUnits } from './group-settlement';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { gapSenseLabel } from './gap-label';
 
 	/** Story 43-3 — le numéro d'une facture d'un groupe, `#id` à défaut. */
@@ -136,11 +137,17 @@
 				'Seul le lien de cette transaction à l’écriture du virement sera retiré : l’écriture reste rapprochée de l’autre côté du virement, sur votre autre compte, et aucune écriture inverse n’est passée. La transaction redeviendra à rapprocher.',
 			);
 		}
+		// Story 53-6a (#1674, D4) — la contre-passation est datée de l'écriture du rapprochement,
+		// dans son exercice : la confirmation les nomme, au lieu de « aujourd'hui ».
+		// Une vue rendue par un serveur antérieur ne porte ni l'un ni l'autre : un tiret plutôt
+		// qu'un blanc, qui laisserait une phrase tronquée (revue P1, L4).
+		const date = view?.reversalDate ? formatSwissDate(view.reversalDate) : '—';
+		const fiscalYear = view?.reversalFiscalYearName ?? '—';
 		if (view?.kind === 'invoice_settlement') {
 			return i18nMsg(
 				'reconciliation-cancel-confirm-invoice',
-				"Une écriture inverse datée d'aujourd'hui sera passée, le règlement de la facture { $invoice } sera retiré et la facture redeviendra à régler ; la transaction redeviendra à rapprocher.",
-				{ invoice: view.invoiceNumber ?? String(view.invoiceId ?? '') },
+				"Une écriture inverse datée du { $date } (date de l'écriture du rapprochement) sera passée dans l'exercice « { $fiscalYear } », le règlement de la facture { $invoice } sera retiré et la facture redeviendra à régler ; la transaction redeviendra à rapprocher.",
+				{ date, fiscalYear, invoice: view.invoiceNumber ?? String(view.invoiceId ?? '') },
 			);
 		}
 		// Story 30-1b (#686, AC-b11) — un règlement fournisseur : son paiement est retiré
@@ -148,8 +155,10 @@
 		if (view?.kind === 'supplier_settlement') {
 			return i18nMsg(
 				'reconciliation-cancel-confirm-supplier-invoice',
-				"Une écriture inverse datée d'aujourd'hui sera passée, le paiement de la facture fournisseur { $invoice } sera retiré et la facture redeviendra validée, à payer ; la transaction redeviendra à rapprocher.",
+				"Une écriture inverse datée du { $date } (date de l'écriture du rapprochement) sera passée dans l'exercice « { $fiscalYear } », le paiement de la facture fournisseur { $invoice } sera retiré et la facture redeviendra validée, à payer ; la transaction redeviendra à rapprocher.",
 				{
+					date,
+					fiscalYear,
 					invoice: supplierInvoiceShortLabel({
 						id: view.supplierInvoiceId ?? 0,
 						internalNumber: view.internalNumber,
@@ -165,21 +174,37 @@
 			if ((view.groupedInvoices ?? []).some((g) => g.kind === 'supplier_invoice')) {
 				return i18nMsg(
 					'reconciliation-cancel-confirm-group-supplier',
-					"Une écriture inverse datée d'aujourd'hui sera passée, le paiement des factures fournisseur { $invoices } sera retiré et elles redeviendront validées, à payer ; la transaction redeviendra à rapprocher.",
-					{ invoices },
+					"Une écriture inverse datée du { $date } (date de l'écriture du rapprochement) sera passée dans l'exercice « { $fiscalYear } », le paiement des factures fournisseur { $invoices } sera retiré et elles redeviendront validées, à payer ; la transaction redeviendra à rapprocher.",
+					{ date, fiscalYear, invoices },
 				);
 			}
 			return i18nMsg(
 				'reconciliation-cancel-confirm-group',
-				"Une écriture inverse datée d'aujourd'hui sera passée, le règlement des factures { $invoices } sera retiré et elles redeviendront à régler ; la transaction redeviendra à rapprocher.",
-				{ invoices },
+				"Une écriture inverse datée du { $date } (date de l'écriture du rapprochement) sera passée dans l'exercice « { $fiscalYear } », le règlement des factures { $invoices } sera retiré et elles redeviendront à régler ; la transaction redeviendra à rapprocher.",
+				{ date, fiscalYear, invoices },
 			);
 		}
 		return i18nMsg(
 			'reconciliation-cancel-confirm-entry',
-			"Une écriture inverse datée d'aujourd'hui sera passée, et la transaction redeviendra à rapprocher.",
+			"Une écriture inverse datée du { $date } (date de l'écriture du rapprochement) sera passée dans l'exercice « { $fiscalYear } », et la transaction redeviendra à rapprocher.",
+			{ date, fiscalYear },
 		);
 	});
+
+	/**
+	 * Story 53-6a (#1674, D4) — la contre-passation change les totaux de la période de
+	 * l'écriture, TVA comprise. Montrée **toujours** quand une écriture inverse est passée (choix du
+	 * développement, D4 : Kesh ne tient pas la périodicité de TVA, et un seuil « mois courant »
+	 * exigerait le jour, que la vue ne lit plus) ; jamais pour un retrait seul.
+	 */
+	const vatText = $derived(
+		view && !view.unlinkOnly
+			? i18nMsg(
+					'reconciliation-cancel-confirm-vat',
+					"Les totaux de cette période changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
+				)
+			: null,
+	);
 
 	async function confirm() {
 		if (submitting) return;
@@ -233,6 +258,9 @@
 			{/if}
 			{#if groupGapText}
 				<p class="text-sm" data-testid="reconciliation-cancel-group-gap">{groupGapText}</p>
+			{/if}
+			{#if vatText}
+				<p class="text-sm text-text-muted" data-testid="reconciliation-cancel-vat">{vatText}</p>
 			{/if}
 		{/if}
 

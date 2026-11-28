@@ -3059,7 +3059,8 @@ pub async fn supplier_invoice_cancel_blocker(
         company_id,
         purchase_entry,
         None,
-        aujourd_hui,
+        // Annulation de la facture : datée du jour, inchangé (Q3, Story 53-6a).
+        super::journal_entries::CancellationDating::Today(aujourd_hui),
     )
     .await?
     {
@@ -3216,7 +3217,8 @@ pub async fn cancel_in_tx(
         ReversalAuthority::SupplierPurchase {
             supplier_invoice_id: id,
         },
-        aujourd_hui,
+        // Datée du jour, inchangé (Q3, Story 53-6a).
+        journal_entries::CancellationDating::Today(aujourd_hui),
     )
     .await?;
 
@@ -3321,19 +3323,22 @@ pub async fn cancel(
 /// que pour le client (Story 25-3-a-1). Une seule fonction pour lire (l'écran
 /// masque le bouton avant le clic) et pour écrire (le geste refuse).
 ///
+/// `dating` (Story 53-6a) : celle que la contre-passation recevra —
+/// `Today(jour)` depuis la fiche, `OriginDate` pour le dé-rapprochement.
+///
 /// Facture introuvable (ou d'une autre société) → [`DbError::NotFound`].
 pub async fn supplier_settlement_cancel_blocker(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     supplier_invoice_id: i64,
-    aujourd_hui: NaiveDate,
+    dating: super::journal_entries::CancellationDating,
 ) -> Result<Option<super::settlement_cancellation::SettlementCancelHit>, DbError> {
     supplier_settlement_cancel_blocker_unlinking(
         conn,
         company_id,
         supplier_invoice_id,
         None,
-        aujourd_hui,
+        dating,
     )
     .await
 }
@@ -3353,7 +3358,7 @@ pub async fn supplier_settlement_cancel_blocker_unlinking(
     company_id: i64,
     supplier_invoice_id: i64,
     unlinking: Option<i64>,
-    aujourd_hui: NaiveDate,
+    dating: super::journal_entries::CancellationDating,
 ) -> Result<Option<super::settlement_cancellation::SettlementCancelHit>, DbError> {
     let entry_id =
         match supplier_settlement_cancel_head(conn, company_id, supplier_invoice_id).await? {
@@ -3361,11 +3366,7 @@ pub async fn supplier_settlement_cancel_blocker_unlinking(
             Err(hit) => return Ok(Some(hit)),
         };
     super::settlement_cancellation::settlement_entry_cancel_blocker(
-        conn,
-        company_id,
-        entry_id,
-        unlinking,
-        aujourd_hui,
+        conn, company_id, entry_id, unlinking, dating,
     )
     .await
 }
@@ -3430,12 +3431,17 @@ pub struct SupplierSettlementCancellation {
 /// `acteur` est l'auteur du geste, clé d'API comprise (Story 36-4, #1131) : le
 /// délettrage de la pièce, la contre-passation (son lettrage compris) et
 /// l'entrée `supplier_invoice.settlement_cancelled` le portent tous trois.
+///
+/// `dating` (Story 53-6a, #1674) : la datation de la contre-passation —
+/// `Today(jour)` depuis la fiche ([`cancel_settlement`]), `OriginDate` pour le
+/// dé-rapprochement (la date du règlement, dans son exercice ; une écriture
+/// sous la borne du verrou est alors refusée par le socle, 400 `PeriodLocked`).
 pub async fn cancel_settlement_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
     acteur: Acteur,
-    aujourd_hui: NaiveDate,
+    dating: crate::repositories::journal_entries::CancellationDating,
 ) -> Result<SupplierSettlementCancellation, DbError> {
     use crate::errors::SettlementCancelBlocker;
     use crate::repositories::journal_entries::{self, ReversalAuthority};
@@ -3492,7 +3498,7 @@ pub async fn cancel_settlement_in_tx(
         | SettlementCancelBlocker::DocumentLetteringInClosedPeriods),
         _,
         _,
-    )) = supplier_settlement_cancel_blocker(tx, company_id, id, aujourd_hui).await?
+    )) = supplier_settlement_cancel_blocker(tx, company_id, id, dating).await?
     {
         return Err(DbError::SettlementNotCancellable { blocker });
     }
@@ -3531,7 +3537,7 @@ pub async fn cancel_settlement_in_tx(
         ReversalAuthority::SupplierSettlement {
             supplier_invoice_id: id,
         },
-        aujourd_hui,
+        dating,
     )
     .await?;
 
@@ -3627,7 +3633,15 @@ pub async fn cancel_settlement(
     aujourd_hui: NaiveDate,
 ) -> Result<SupplierSettlementCancelled, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    let result = cancel_settlement_in_tx(&mut tx, company_id, id, acteur, aujourd_hui).await;
+    // Depuis la fiche : datée du jour, inchangé (Q3, Story 53-6a).
+    let result = cancel_settlement_in_tx(
+        &mut tx,
+        company_id,
+        id,
+        acteur,
+        super::journal_entries::CancellationDating::Today(aujourd_hui),
+    )
+    .await;
     let (view, done) = commit_with_view(tx, company_id, result, |_| id, aujourd_hui).await?;
     Ok(SupplierSettlementCancelled {
         invoice: view,
@@ -3717,8 +3731,14 @@ pub async fn get_settlement_view_in_tx(
         return Ok(None);
     };
     let lines = fetch_lines(tx, invoice.id).await?;
-    let settlement_cancel_blocker =
-        supplier_settlement_cancel_blocker(tx, company_id, id, aujourd_hui).await?;
+    // La fiche annule au jour (Q3, Story 53-6a).
+    let settlement_cancel_blocker = supplier_settlement_cancel_blocker(
+        tx,
+        company_id,
+        id,
+        super::journal_entries::CancellationDating::Today(aujourd_hui),
+    )
+    .await?;
     let invoice_cancel_blocker =
         supplier_invoice_cancel_blocker(tx, company_id, id, aujourd_hui).await?;
     let last_confirmed_batch =

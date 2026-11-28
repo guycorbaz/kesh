@@ -166,9 +166,12 @@ async fn monter(pool: &MySqlPool) -> (SeededCompany, i64, i64, i64) {
 /// ⛔ **Une clôture concurrente attend le dé-rapprochement** — la leçon de la
 /// revue de la 25-3-a-1, appliquée ici. Sans le verrou de l'étape 3 (écriture
 /// **et** exercice, avant de juger), le geste lirait l'exercice 2019 encore
-/// ouvert, défairait le lien, et contre-passerait **avec succès** une écriture
-/// d'exercice clos : la contre-passation est datée du jour, dans un autre
-/// exercice, ouvert. Avec lui, il attend la clôture, relit, et refuse.
+/// ouvert, défairait le lien, et tenterait de contre-passer une écriture
+/// d'exercice clos — avant la Story 53-6a, **avec succès** (la contre-passation
+/// était datée du jour, dans un autre exercice, ouvert) ; depuis, datée de
+/// l'origine, elle n'est plus arrêtée que par le filet du socle
+/// (`DbError::FiscalYearClosed`, hors de la famille du geste). Avec le verrou,
+/// le geste attend la clôture, relit, et refuse dans sa famille.
 ///
 /// ⚠️ Montée sur une écriture PROPRE, non sur un règlement : pour un règlement,
 /// le geste de la 25-3-a-1 verrouille lui aussi l'exercice, et masquerait la
@@ -189,14 +192,7 @@ async fn a_concurrent_close_waits_for_the_unreconciliation(pool: MySqlPool) {
     let p = pool.clone();
     let (company_id, user_id) = (seeded.company_id, seeded.admin_user_id);
     let annulation = tokio::spawn(async move {
-        reconciliation_cancel::cancel(
-            &p,
-            company_id,
-            tx_id,
-            Acteur::utilisateur(user_id),
-            crate::jour::aujourd_hui_test(),
-        )
-        .await
+        reconciliation_cancel::cancel(&p, company_id, tx_id, Acteur::utilisateur(user_id)).await
     });
     // ⛔ Synchronisation déterministe : on ne valide la clôture qu'une fois le
     // geste VU en attente d'un `FOR UPDATE` sur `fiscal_years`.
@@ -255,7 +251,6 @@ async fn reconciliation_cancel_letters_the_reversal_pair(pool: MySqlPool) {
         seeded.company_id,
         tx_id,
         Acteur::utilisateur(seeded.admin_user_id),
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("dé-rapprochement");
@@ -288,6 +283,248 @@ async fn reconciliation_cancel_letters_the_reversal_pair(pool: MySqlPool) {
 }
 
 // ===========================================================================
+// Story 53-6a (#1674) — la contre-passation datée de l'écriture d'origine
+// ===========================================================================
+
+/// Ce que la contre-passation de `entry` a écrit : `(id, date, exercice,
+/// libellé)`, et le détail de sa trace `journal_entry.reversed`.
+async fn inverse_de(
+    pool: &MySqlPool,
+    entry: i64,
+) -> ((i64, NaiveDate, i64, String), serde_json::Value) {
+    let inverse: (i64, NaiveDate, i64, String) = sqlx::query_as(
+        "SELECT id, entry_date, fiscal_year_id, description FROM journal_entries \
+         WHERE reverses_entry_id = ?",
+    )
+    .bind(entry)
+    .fetch_one(pool)
+    .await
+    .expect("une contre-passation");
+    let details: serde_json::Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'journal_entry.reversed' \
+         AND entity_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(entry)
+    .fetch_one(pool)
+    .await
+    .expect("trace journal_entry.reversed");
+    (inverse, details)
+}
+
+/// Le nombre d'écritures de l'exercice `fiscal_year_id`.
+async fn ecritures_de(pool: &MySqlPool, fiscal_year_id: i64) -> i64 {
+    compter(
+        pool,
+        "SELECT COUNT(*) FROM journal_entries WHERE fiscal_year_id = ?",
+        fiscal_year_id,
+    )
+    .await
+}
+
+/// AC-2 (D1) — **écriture seule, origine dans un exercice antérieur encore
+/// ouvert, jamais clôturé ; le jour dans l'exercice suivant** : l'inverse est
+/// datée de l'origine (3 juin 2019), dans 2019, sans suffixe d'exercice ; rien
+/// n'est écrit dans l'exercice du jour ; la trace porte `"dating":
+/// "originDate"`. Tue M1 (bras `Entry` passé au jour).
+#[sqlx::test(migrations = "./test-schema")]
+async fn s536a_ac2_l_inverse_d_une_ecriture_seule_est_datee_de_l_origine(pool: MySqlPool) {
+    let (seeded, fy_2019, entry, tx_id) = monter(&pool).await;
+    let du_jour = seeded.fiscal_year_id;
+    assert_ne!(crate::jour::aujourd_hui_test(), jour(2019, 6, 3));
+    let avant = ecritures_de(&pool, du_jour).await;
+    let numero: i64 = compter(
+        &pool,
+        "SELECT entry_number FROM journal_entries WHERE id = ?",
+        entry,
+    )
+    .await;
+
+    let done = reconciliation_cancel::cancel(
+        &pool,
+        seeded.company_id,
+        tx_id,
+        Acteur::utilisateur(seeded.admin_user_id),
+    )
+    .await
+    .expect("dé-rapprochement");
+
+    let ((id, date, fy, libelle), details) = inverse_de(&pool, entry).await;
+    assert_eq!(done.reversal_journal_entry_id, Some(id));
+    assert_eq!((date, fy), (jour(2019, 6, 3), fy_2019));
+    assert_eq!(libelle, format!("Contre-passation écriture n° {numero}"));
+    assert_eq!(
+        ecritures_de(&pool, du_jour).await,
+        avant,
+        "aucune écriture dans l'exercice du jour"
+    );
+    assert_eq!(
+        details,
+        serde_json::json!({ "reversalJournalEntryId": id, "dating": "originDate" })
+    );
+}
+
+/// AC-3 — **exercice de l'origine clôturé puis rouvert**, le jour dans
+/// l'exercice suivant : comme AC-2 ; puis 2019 se clôture de nouveau, sans
+/// obstacle nouveau (l'écriture et son inverse s'annulent dans le même exercice).
+#[sqlx::test(migrations = "./test-schema")]
+async fn s536a_ac3_un_exercice_rouvert_recoit_l_inverse_et_se_recloture(pool: MySqlPool) {
+    let (seeded, fy_2019, entry, tx_id) = monter(&pool).await;
+    let (c, u) = (seeded.company_id, seeded.admin_user_id);
+    kesh_db::repositories::fiscal_years::close(&pool, u, c, fy_2019)
+        .await
+        .expect("clôture de 2019");
+    kesh_db::repositories::fiscal_years::reopen(&pool, u, c, fy_2019, "correction".into())
+        .await
+        .expect("réouverture de 2019");
+    let avant = ecritures_de(&pool, seeded.fiscal_year_id).await;
+
+    reconciliation_cancel::cancel(&pool, c, tx_id, Acteur::utilisateur(u))
+        .await
+        .expect("dé-rapprochement dans l'exercice rouvert");
+
+    let ((_, date, fy, _), _) = inverse_de(&pool, entry).await;
+    assert_eq!((date, fy), (jour(2019, 6, 3), fy_2019));
+    assert_eq!(ecritures_de(&pool, seeded.fiscal_year_id).await, avant);
+    kesh_db::repositories::fiscal_years::close(&pool, u, c, fy_2019)
+        .await
+        .expect("2019 se clôture de nouveau");
+}
+
+/// Défait le lien de la transaction du montage en SQL : le socle, appelé seul,
+/// refuserait sinon l'écriture rapprochée (`MATCHED_BANK_TRANSACTION`).
+async fn delier(pool: &MySqlPool, tx_id: i64) {
+    sqlx::query(
+        "UPDATE bank_transactions SET matched_entry_id = NULL, status = 'pending' WHERE id = ?",
+    )
+    .bind(tx_id)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// AC-12 (a, D2) — **l'exercice de l'inverse est confirmé**, et un exercice
+/// ouvert autre que celui de l'origine rend `Invariant`. État **forgé** (aucun
+/// chemin ne le produit : les exercices ne se chevauchent pas et une écriture
+/// est datée dans le sien) : l'écriture de 2019 reçoit une date de 2021, que
+/// couvre l'exercice ouvert du seed. Rien n'est écrit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn s536a_ac12_un_autre_exercice_que_celui_de_l_origine_est_un_invariant(pool: MySqlPool) {
+    let (seeded, _, entry, tx_id) = monter(&pool).await;
+    delier(&pool, tx_id).await;
+    sqlx::query("UPDATE journal_entries SET entry_date = '2021-03-01' WHERE id = ?")
+        .bind(entry)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let res = journal_entries::reverse_in_tx(
+        &mut tx,
+        seeded.company_id,
+        entry,
+        Acteur::utilisateur(seeded.admin_user_id),
+        journal_entries::CancellationDating::OriginDate,
+    )
+    .await;
+    tx.rollback().await.unwrap();
+    assert!(
+        matches!(&res, Err(DbError::Invariant(msg)) if msg.contains("couvre la date de l'origine")),
+        "{res:?}"
+    );
+    assert_eq!(
+        compter(
+            &pool,
+            "SELECT COUNT(*) FROM journal_entries WHERE reverses_entry_id = ?",
+            entry
+        )
+        .await,
+        0
+    );
+}
+
+/// AC-12 (c, D3) — **la mesure des verrous**, origine en 2019 et jour dans
+/// l'exercice suivant (celui du seed) : sous `OriginDate`, la contre-passation
+/// tient l'exercice de l'origine et **pas** l'exercice du jour ; sous `Today`,
+/// elle tient l'exercice du jour. Mesurée par une sonde `FOR UPDATE NOWAIT`
+/// d'une autre connexion, transaction de la contre-passation tenue ouverte
+/// (aucun privilège `PROCESS`, `docs/agents-orchestration.md` § 6.1).
+///
+/// **Portée exacte** (revue P1, L7) : la sonde appelle `reverse_in_tx` seul —
+/// non le geste entier `cancel_in_tx`, dont elle ne couvre ni l'ordre des
+/// verrous ni les lectures de la queue — et ne regarde que deux lignes de
+/// `fiscal_years`. Elle établit que l'exercice du jour est tenu sous `Today` et
+/// **libre** sous `OriginDate` (la thèse de D3 : l'ensemble des verrous
+/// diminue). Elle n'établit ni que « 2019 tenu » vienne de l'étape (4) — l'étape
+/// (1) du socle le tient déjà —, ni l'absence de verrou sur une autre table, ni
+/// les verrous d'intervalle.
+#[sqlx::test(migrations = "./test-schema")]
+async fn s536a_ac12_la_contre_passation_datee_de_l_origine_ne_tient_pas_l_exercice_du_jour(
+    pool: MySqlPool,
+) {
+    let (seeded, fy_2019, entry, tx_id) = monter(&pool).await;
+    delier(&pool, tx_id).await;
+    let sonde = "SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE NOWAIT";
+    let mut verrous = Vec::new();
+    for dating in [
+        journal_entries::CancellationDating::OriginDate,
+        journal_entries::CancellationDating::Today(crate::jour::aujourd_hui_test()),
+    ] {
+        let mut tx = pool.begin().await.unwrap();
+        journal_entries::reverse_in_tx(
+            &mut tx,
+            seeded.company_id,
+            entry,
+            Acteur::utilisateur(seeded.admin_user_id),
+            dating,
+        )
+        .await
+        .expect("contre-passation");
+        let libre_2019 = kesh_db::test_fixtures::sonde_verrou_nowait(&pool, sonde, fy_2019).await;
+        let libre_du_jour =
+            kesh_db::test_fixtures::sonde_verrou_nowait(&pool, sonde, seeded.fiscal_year_id).await;
+        tx.rollback().await.unwrap();
+        verrous.push((dating, !libre_2019, !libre_du_jour));
+    }
+    assert_eq!(
+        verrous,
+        vec![
+            (journal_entries::CancellationDating::OriginDate, true, false),
+            (
+                journal_entries::CancellationDating::Today(crate::jour::aujourd_hui_test()),
+                true,
+                true
+            ),
+        ],
+        "(datation, 2019 tenu, exercice du jour tenu)"
+    );
+}
+
+/// AC-13 (filet du socle, D2) — **sous `OriginDate`, une origine dans un
+/// exercice clos est refusée par le socle lui-même** (`FiscalYearClosed`),
+/// même appelé sans la queue : le geste la refuse d'abord (rang 2), le socle
+/// ne s'en remet pas à lui.
+#[sqlx::test(migrations = "./test-schema")]
+async fn s536a_le_socle_refuse_une_origine_d_un_exercice_clos(pool: MySqlPool) {
+    let (seeded, fy_2019, entry, tx_id) = monter(&pool).await;
+    delier(&pool, tx_id).await;
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(fy_2019)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let res = journal_entries::reverse_in_tx(
+        &mut tx,
+        seeded.company_id,
+        entry,
+        Acteur::utilisateur(seeded.admin_user_id),
+        journal_entries::CancellationDating::OriginDate,
+    )
+    .await;
+    tx.rollback().await.unwrap();
+    assert!(matches!(res, Err(DbError::FiscalYearClosed)), "{res:?}");
+}
+
+// ===========================================================================
 // Story 30-1a (#686) — dé-rapprocher un règlement fournisseur
 // ===========================================================================
 
@@ -310,7 +547,7 @@ async fn monter_fournisseur(pool: &MySqlPool) -> (SeededCompany, ReglementRappro
 
 /// Le code du classement que rend la vue.
 async fn kind_of(pool: &MySqlPool, company_id: i64, bt: i64) -> Option<&'static str> {
-    reconciliation_cancel::get_view(pool, company_id, bt, crate::jour::aujourd_hui_test())
+    reconciliation_cancel::get_view(pool, company_id, bt)
         .await
         .expect("vue")
         .expect("transaction")
@@ -397,7 +634,7 @@ async fn preparer_sans_reglages(
 /// T-a2 et T-a3 (AC-a2) — **le dé-rapprochement défait le règlement** : la
 /// transaction revient « à rapprocher » (statut, lien, marqueur de rejet) ; la
 /// facture revient `open`, colonnes de règlement et `paid_at` vidés ; la
-/// contre-passation est datée du jour et liée ; le lettrage de pièce est
+/// contre-passation est datée du règlement (Story 53-6a, AC-6) et liée ; le lettrage de pièce est
 /// dissous et le paiement lettré avec son miroir ; la dette envers le
 /// fournisseur renaît, et la banque est rendue. Tue M-a1 et M-a4 (une
 /// contre-passation par `reverse_in_tx` est refusée : l'écriture appartient au
@@ -421,7 +658,6 @@ async fn unreconciling_a_supplier_settlement_undoes_it(pool: MySqlPool) {
         c,
         r.bank_transaction_id,
         Acteur::utilisateur(seeded.admin_user_id),
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("⛔ le dé-rapprochement d'un règlement fournisseur doit aboutir");
@@ -461,7 +697,7 @@ async fn unreconciling_a_supplier_settlement_undoes_it(pool: MySqlPool) {
     .unwrap();
     assert_eq!(facture, ("open".to_string(), None, None, None, None, None));
 
-    // La contre-passation, datée du jour et liée.
+    // La contre-passation, datée de l'écriture de règlement et liée.
     let (reverses, date): (Option<i64>, NaiveDate) =
         sqlx::query_as("SELECT reverses_entry_id, entry_date FROM journal_entries WHERE id = ?")
             .bind(done.reversal_journal_entry_id)
@@ -469,8 +705,15 @@ async fn unreconciling_a_supplier_settlement_undoes_it(pool: MySqlPool) {
             .await
             .unwrap();
     assert_eq!(reverses, Some(r.settlement_entry_id));
-    // Story 35-5a0 (D4, revue P2) : le jour que l'annulation a reçu.
-    assert_eq!(date, crate::jour::aujourd_hui_test());
+    // Story 53-6a (#1674, AC-6, D1) : la date de l'écriture du règlement (15 juin
+    // 2026), non le jour de l'annulation — sauf le jour où l'horloge de test
+    // serait arrêtée au 15 juin 2026, où le test passerait à vide.
+    assert_ne!(
+        crate::jour::aujourd_hui_test(),
+        jour(2026, 6, 15),
+        "le jour doit différer de l'origine"
+    );
+    assert_eq!(date, jour(2026, 6, 15));
 
     // Le lettrage : la pièce dissoute, le paiement lettré avec son miroir.
     let ligne = |entry: i64| {
@@ -511,6 +754,95 @@ async fn unreconciling_a_supplier_settlement_undoes_it(pool: MySqlPool) {
     );
 }
 
+/// Story 53-6a (#1674, AC-9, R3) — **un paiement fournisseur rapproché dont
+/// l'écriture est sous la borne** : la vue l'annonce (`PeriodLocked`, la
+/// borne), le clic est refusé par le **socle** (`DbError::PeriodLocked`, 400 à
+/// la route — le geste unitaire ne refuse pas ce rang lui-même), le lien reste ;
+/// au lendemain de la borne, l'annulation passe, datée du règlement.
+///
+/// ⚠️ **Montage de repli, dit tel** (D5) : le décor paie la facture le jour de
+/// sa date, si bien que la borne figerait le lettrage de pièce (rang 2 bis,
+/// qui répond d'abord). L'état **hérité** — facture soldée sans groupe
+/// `document` — est posé en SQL, comme la fiche l'admet.
+#[sqlx::test(migrations = "./test-schema")]
+async fn s536a_a_supplier_settlement_under_the_period_lock_is_refused_by_the_core(pool: MySqlPool) {
+    let (seeded, r) = monter_fournisseur(&pool).await;
+    let c = seeded.company_id;
+    sqlx::query(
+        "UPDATE journal_entry_lines SET lettering_key = NULL, lettering_origin = NULL \
+         WHERE entry_id IN (?, ?)",
+    )
+    .bind(r.purchase_entry_id)
+    .bind(r.settlement_entry_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let verrou = |date: NaiveDate| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+                .bind(date)
+                .bind(c)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    };
+    verrou(jour(2026, 6, 15)).await;
+    let ecritures = compter(
+        &pool,
+        "SELECT COUNT(*) FROM journal_entries WHERE company_id = ?",
+        c,
+    )
+    .await;
+    let view = reconciliation_cancel::get_view(&pool, c, r.bank_transaction_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        view.cancel_blocker,
+        Some((
+            SettlementCancelBlocker::PeriodLocked,
+            None,
+            Some("2026-06-15".into())
+        ))
+    );
+    let refus = reconciliation_cancel::cancel(
+        &pool,
+        c,
+        r.bank_transaction_id,
+        Acteur::utilisateur(seeded.admin_user_id),
+    )
+    .await;
+    assert!(
+        matches!(refus, Err(DbError::PeriodLocked { locked_through, attempted })
+            if locked_through == jour(2026, 6, 15) && attempted == jour(2026, 6, 15)),
+        "{refus:?}"
+    );
+    assert_supplier_link_intact(&pool, &seeded, r, ecritures).await;
+
+    verrou(jour(2026, 6, 14)).await;
+    let done = reconciliation_cancel::cancel(
+        &pool,
+        c,
+        r.bank_transaction_id,
+        Acteur::utilisateur(seeded.admin_user_id),
+    )
+    .await
+    .expect("au lendemain de la borne");
+    let date: NaiveDate = compter_date(&pool, done.reversal_journal_entry_id.unwrap()).await;
+    assert_eq!(date, jour(2026, 6, 15));
+}
+
+/// La date d'une écriture.
+async fn compter_date(pool: &MySqlPool, entry: i64) -> NaiveDate {
+    sqlx::query_scalar("SELECT entry_date FROM journal_entries WHERE id = ?")
+        .bind(entry)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
 /// T-a4 (AC-a3) — **exercice du règlement clos** : refus
 /// `ReconciliationNotCancellable` (exercice clos) par le geste lui-même,
 /// **avant** de défaire le lien — rien d'écrit, le lien intact, la facture
@@ -538,7 +870,6 @@ async fn a_closed_year_refuses_the_supplier_unreconciliation(pool: MySqlPool) {
         seeded.company_id,
         r.bank_transaction_id,
         Acteur::utilisateur(seeded.admin_user_id),
-        crate::jour::aujourd_hui_test(),
     )
     .await;
     assert!(
@@ -551,6 +882,74 @@ async fn a_closed_year_refuses_the_supplier_unreconciliation(pool: MySqlPool) {
         "reçu {r2:?}"
     );
     assert_supplier_link_intact(&pool, &seeded, r, ecritures).await;
+}
+
+/// Story 53-6a (#1674, AC-6, R3) — **un paiement fournisseur de 2019, exercice
+/// encore ouvert, dé-rapproché le jour d'un exercice suivant** : l'inverse est
+/// datée du paiement (3 juin 2019), dans 2019 ; rien dans l'exercice du jour ;
+/// la facture redevient `open`. Tue M3.
+#[sqlx::test(migrations = "./test-schema")]
+async fn s536a_ac6_a_supplier_settlement_reverses_in_its_open_year(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let fy_2019 = exercice_2019(&pool, seeded.company_id).await;
+    let f = preparer(&pool, &seeded).await;
+    let r = reglement_rapproche(&pool, &seeded, f, "FF-2019", jour(2019, 6, 3), dec!(75.50)).await;
+    let du_jour = ecritures_de(&pool, seeded.fiscal_year_id).await;
+    let done = reconciliation_cancel::cancel(
+        &pool,
+        seeded.company_id,
+        r.bank_transaction_id,
+        Acteur::utilisateur(seeded.admin_user_id),
+    )
+    .await
+    .expect("dé-rapprochement");
+    let ((id, date, fy, _), details) = inverse_de(&pool, r.settlement_entry_id).await;
+    assert_eq!(done.reversal_journal_entry_id, Some(id));
+    assert_eq!((date, fy), (jour(2019, 6, 3), fy_2019));
+    assert_eq!(ecritures_de(&pool, seeded.fiscal_year_id).await, du_jour);
+    assert_eq!(details["dating"], "originDate");
+    let statut: String = sqlx::query_scalar("SELECT status FROM supplier_invoices WHERE id = ?")
+        .bind(r.supplier_invoice_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(statut, "open");
+}
+
+/// Story 53-6a (#1674, AC-3, AC-6, R3) — **le paiement fournisseur d'un
+/// exercice 2019 clôturé puis rouvert** : l'inverse y est datée du paiement
+/// (3 juin 2019), comme à l'exercice jamais clôturé ; rien dans l'exercice du
+/// jour ; la facture redevient `open` ; puis 2019 se clôture de nouveau. Tue M3.
+#[sqlx::test(migrations = "./test-schema")]
+async fn s536a_ac6_a_supplier_settlement_reverses_in_a_reopened_year(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let (c, u) = (seeded.company_id, seeded.admin_user_id);
+    let fy_2019 = exercice_2019(&pool, c).await;
+    let f = preparer(&pool, &seeded).await;
+    let r = reglement_rapproche(&pool, &seeded, f, "FF-2019R", jour(2019, 6, 3), dec!(75.50)).await;
+    kesh_db::repositories::fiscal_years::close(&pool, u, c, fy_2019)
+        .await
+        .expect("clôture de 2019");
+    kesh_db::repositories::fiscal_years::reopen(&pool, u, c, fy_2019, "correction".into())
+        .await
+        .expect("réouverture de 2019");
+    let du_jour = ecritures_de(&pool, seeded.fiscal_year_id).await;
+
+    reconciliation_cancel::cancel(&pool, c, r.bank_transaction_id, Acteur::utilisateur(u))
+        .await
+        .expect("dé-rapprochement dans l'exercice rouvert");
+    let ((_, date, fy, _), _) = inverse_de(&pool, r.settlement_entry_id).await;
+    assert_eq!((date, fy), (jour(2019, 6, 3), fy_2019));
+    assert_eq!(ecritures_de(&pool, seeded.fiscal_year_id).await, du_jour);
+    let statut: String = sqlx::query_scalar("SELECT status FROM supplier_invoices WHERE id = ?")
+        .bind(r.supplier_invoice_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(statut, "open");
+    kesh_db::repositories::fiscal_years::close(&pool, u, c, fy_2019)
+        .await
+        .expect("2019 se clôture de nouveau");
 }
 
 /// Rien n'a bougé : le lien, la facture payée, le nombre d'écritures.
@@ -602,15 +1001,10 @@ async fn assert_supplier_link_intact(
 #[sqlx::test(migrations = "./test-schema")]
 async fn the_view_says_a_reconciled_supplier_settlement_is_cancellable(pool: MySqlPool) {
     let (seeded, r) = monter_fournisseur(&pool).await;
-    let view = reconciliation_cancel::get_view(
-        &pool,
-        seeded.company_id,
-        r.bank_transaction_id,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .unwrap()
-    .unwrap();
+    let view = reconciliation_cancel::get_view(&pool, seeded.company_id, r.bank_transaction_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(view.kind.map(|k| k.code()), Some("supplier_settlement"));
     assert_eq!(view.cancel_blocker, None, "{view:?}");
 }
@@ -655,13 +1049,7 @@ async fn unreconciliation_and_invoice_cancellation_race_without_a_mixed_state(po
     let bt = r.bank_transaction_id;
     let derapprochement = tokio::spawn(async move {
         retry_on_deadlock("test::reconciliation_cancel", || {
-            reconciliation_cancel::cancel(
-                &p,
-                c,
-                bt,
-                Acteur::utilisateur(u),
-                crate::jour::aujourd_hui_test(),
-            )
+            reconciliation_cancel::cancel(&p, c, bt, Acteur::utilisateur(u))
         })
         .await
     });
@@ -764,14 +1152,7 @@ async fn a_supplier_unreconciliation_waits_for_a_concurrent_close(pool: MySqlPoo
         r.bank_transaction_id,
     );
     let annulation = tokio::spawn(async move {
-        reconciliation_cancel::cancel(
-            &p,
-            c,
-            bt,
-            Acteur::utilisateur(u),
-            crate::jour::aujourd_hui_test(),
-        )
-        .await
+        reconciliation_cancel::cancel(&p, c, bt, Acteur::utilisateur(u)).await
     });
     let vue = attendre_des_requetes_en_cours(&pool, &["fiscal_years", "FOR UPDATE"], 1, || {
         annulation.is_finished()

@@ -2425,7 +2425,6 @@ async fn cancelled_paid_invoice_redrafts_after_unreconciliation(pool: MySqlPool)
         seeded.company_id,
         r.bank_transaction_id,
         Acteur::utilisateur(seeded.admin_user_id),
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("rapprochement annulé");
@@ -2655,7 +2654,6 @@ async fn a_reconciled_paid_invoice_goes_back_to_draft_through_unreconciliation(p
         c,
         r.bank_transaction_id,
         Acteur::utilisateur(u),
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("rapprochement annulé");

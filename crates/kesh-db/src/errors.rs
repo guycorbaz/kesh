@@ -84,6 +84,73 @@ impl FxAccountReason {
     ];
 }
 
+/// Le motif d'un refus `ACCOUNT_GROUP_INVALID` de la route groupée du plan
+/// (`POST /api/v1/accounts/groups`, Story 46-5a, AC-3) — `details.reason`.
+/// Ce que ni la création ni la modification d'un compte ne contrôlent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AccountGroupReason {
+    /// Les membres d'une proposition sont de types différents.
+    MixedTypes,
+    /// Le groupe rattaché ou réutilisé est d'un autre type que ses membres.
+    GroupTypeMismatch,
+    /// Le numéro d'un groupe à créer est déjà porté, archivé compris.
+    NumberTaken,
+    /// Le compte d'un rattachement n'est pas un compte de groupe (inactif, ou
+    /// sans sous-compte actif).
+    NotAGroup,
+    /// Le compte d'une réutilisation a des sous-comptes actifs ou n'est pas actif.
+    NotReusable,
+    /// Un membre figure deux fois dans la demande.
+    AccountInTwoGroups,
+    /// Le compte d'un rattachement ou d'une réutilisation est aussi membre d'une
+    /// proposition de la demande.
+    GroupIsMember,
+    /// Le compte d'un rattachement ou d'une réutilisation est déjà visé par une
+    /// proposition précédente de la demande (revue P1 de la 46-5a, L2).
+    GroupInTwoProposals,
+    /// Un membre est le compte même du rattachement ou de la réutilisation de
+    /// sa proposition.
+    MemberIsOwnGroup,
+    /// Une proposition n'a aucun membre.
+    Empty,
+    /// Plus de 100 propositions, ou plus de 1000 membres, dans la demande.
+    TooMany,
+}
+
+impl AccountGroupReason {
+    /// Le code du motif côté API (`details.reason`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::MixedTypes => "mixedTypes",
+            Self::GroupTypeMismatch => "groupTypeMismatch",
+            Self::NumberTaken => "numberTaken",
+            Self::NotAGroup => "notAGroup",
+            Self::NotReusable => "notReusable",
+            Self::AccountInTwoGroups => "accountInTwoGroups",
+            Self::GroupIsMember => "groupIsMember",
+            Self::GroupInTwoProposals => "groupInTwoProposals",
+            Self::MemberIsOwnGroup => "memberIsOwnGroup",
+            Self::Empty => "empty",
+            Self::TooMany => "tooMany",
+        }
+    }
+
+    /// La liste close des onze motifs.
+    pub const ALL: [Self; 11] = [
+        Self::MixedTypes,
+        Self::GroupTypeMismatch,
+        Self::NumberTaken,
+        Self::NotAGroup,
+        Self::NotReusable,
+        Self::AccountInTwoGroups,
+        Self::GroupIsMember,
+        Self::GroupInTwoProposals,
+        Self::MemberIsOwnGroup,
+        Self::Empty,
+        Self::TooMany,
+    ];
+}
+
 /// La désignation qui fait d'un compte un compte de différence de change
 /// (Story 37-1, AC-4, AC-4 bis) — `details.designation` de
 /// `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`.
@@ -615,10 +682,16 @@ pub enum DuplicateGesture {
 /// **réel** de `reverse_in_tx`, qui contrôle les comptes archivés (étape 3)
 /// avant l'exercice du jour (étape 4) : la lecture se règle sur l'écriture.
 ///
-/// ⚠️ **Qui refuse, à l'écriture** : le geste ne refuse lui-même que les rangs
-/// 1, 1 bis, 2 et 2 bis ([`DbError::SettlementNotCancellable`]) ; les rangs 3 à 5 sont
-/// refusés par le socle, avec son erreur canonique — c'est ce qui garde le 400
-/// qui **nomme** les comptes archivés.
+/// ⚠️ **Qui refuse, à l'écriture** : les gestes **unitaires** (règlement client
+/// ou fournisseur, écriture rapprochée seule) ne refusent eux-mêmes que les
+/// rangs 1, 1 bis, 2 et 2 bis ([`DbError::SettlementNotCancellable`],
+/// [`DbError::ReconciliationNotCancellable`]) ; les rangs 3, 4, `PeriodLocked`
+/// et 5 sont refusés par le socle, avec son erreur canonique — c'est ce qui
+/// garde le 400 qui **nomme** les comptes archivés, et celui qui dit la borne.
+/// ⚠️ Les **dé-rapprochements groupés** (`grouped_settlements::cancel_in_tx`,
+/// Story 43-1a ; `supplier_cancel_in_tx`, 43-1b) refusent eux-mêmes **tous**
+/// les rangs, en [`DbError::ReconciliationNotCancellable`] (409, sans
+/// `details`) : rangs 4, `PeriodLocked` et 5 compris (Story 53-6a, D5).
 ///
 /// ⚠️ **L'annulation d'une FACTURE fournisseur** (Story 25-3-c, #454) emprunte
 /// cet enum sans en suivre l'ordre de déclaration : sa précédence est
@@ -712,8 +785,21 @@ pub enum SettlementCancelBlocker {
     MatchedBankTransaction,
     /// Un compte de l'écriture de règlement a été archivé depuis.
     AccountArchived,
+    /// Story 53-6a (#1674, D5) — **sous la datation `OriginDate` seulement**
+    /// (le dé-rapprochement) : l'écriture examinée est datée **au plus tard**
+    /// de la borne du verrou de période (`companies.books_locked_through`,
+    /// seuil inclusif), et sa contre-passation, datée d'elle, serait refusée
+    /// par le socle. La borne voyage en étiquette
+    /// ([`SettlementCancelHit`](crate::repositories::settlement_cancellation::SettlementCancelHit)).
+    ///
+    /// **Place** : l'ordre réel du socle — après les comptes archivés (étape
+    /// 3), à la place du rang 5, inatteignable sous `OriginDate`. **Code
+    /// réemployé** : `PERIOD_LOCKED`, celui de [`DbError::PeriodLocked`] —
+    /// même état du monde.
+    PeriodLocked,
     /// Aucun exercice **ouvert** ne couvre le jour, où la contre-passation
-    /// serait datée.
+    /// serait datée — sous la datation `Today` (gestes depuis la fiche) ;
+    /// inatteignable sous `OriginDate`.
     NoOpenFiscalYearToday,
     /// Annulation d'une facture fournisseur (Story 25-3-c), **dernier** rang :
     /// la facture est engagée dans un lot de paiement `generated`. Dernier
@@ -729,7 +815,8 @@ impl SettlementCancelBlocker {
     /// (`INVOICE_CREDITED` de [`UnvalidationBlocker`], `FISCAL_YEAR_CLOSED`,
     /// `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` de
     /// [`DbError::LetteringAllLinesInClosedPeriods`], `MATCHED_BANK_TRANSACTION`,
-    /// `ACCOUNT_ARCHIVED`, `FISCAL_YEAR_INVALID`) :
+    /// `ACCOUNT_ARCHIVED`, `PERIOD_LOCKED` de [`DbError::PeriodLocked`],
+    /// `FISCAL_YEAR_INVALID`) :
     /// un même fait ne reçoit pas un second nom.
     pub fn code(self) -> &'static str {
         match self {
@@ -743,6 +830,7 @@ impl SettlementCancelBlocker {
             Self::DocumentLetteringInClosedPeriods => "LETTERING_ALL_LINES_IN_CLOSED_PERIODS",
             Self::MatchedBankTransaction => "MATCHED_BANK_TRANSACTION",
             Self::AccountArchived => "ACCOUNT_ARCHIVED",
+            Self::PeriodLocked => "PERIOD_LOCKED",
             Self::NoOpenFiscalYearToday => "FISCAL_YEAR_INVALID",
             Self::SupplierInvoiceInPaymentBatch => "SUPPLIER_INVOICE_IN_PAYMENT_BATCH",
         }
@@ -1075,6 +1163,48 @@ pub struct ClosedPeriodExposure {
     /// La borne du verrou des livres, quand au moins une écriture qui changerait
     /// est datée au plus tard de cette borne ; `None` sinon.
     pub locked_through: Option<chrono::NaiveDate>,
+}
+
+/// L'erreur de [`crate::repositories::accounts::apply_groups`] (Story 46-5a,
+/// AC-3) : la [`DbError`] de l'étape qui a échoué, et **l'étape** — rang de la
+/// proposition dans la demande et, quand l'étape porte sur un compte, son
+/// identifiant. **Pas d'enveloppe dans `DbError`** : la route rejoue sur
+/// `source` (interblocage) et ajoute l'étape à la réponse de `source`
+/// (`details.groupStep`), sans toucher aux correspondances existantes.
+///
+/// `group_index` vaut `None` pour une erreur hors proposition (verrou de la
+/// société, commit) et pour un refus [`DbError::AccountGroupInvalid`], qui
+/// porte déjà son rang.
+#[derive(Debug, Error)]
+#[error("{source}")]
+pub struct GroupStepError {
+    /// Rang de la proposition dans `groups` (à partir de 0).
+    pub group_index: Option<usize>,
+    /// Le compte de l'étape (membre, ou compte d'un rattachement, d'une
+    /// réutilisation), quand l'étape porte sur un compte.
+    pub account_id: Option<i64>,
+    /// L'erreur de l'étape, inchangée.
+    pub source: DbError,
+}
+
+impl GroupStepError {
+    /// Une erreur rattachée à aucune proposition.
+    pub fn bare(source: DbError) -> Self {
+        Self {
+            group_index: None,
+            account_id: None,
+            source,
+        }
+    }
+
+    /// Une erreur de l'étape `(group_index, account_id)`.
+    pub fn at(group_index: usize, account_id: Option<i64>, source: DbError) -> Self {
+        Self {
+            group_index: Some(group_index),
+            account_id,
+            source,
+        }
+    }
 }
 
 /// Erreurs des opérations de persistance MariaDB.
@@ -1748,6 +1878,42 @@ pub enum DbError {
         parent_account_id: i64,
         /// Numéro du parent demandé.
         parent_number: String,
+    },
+
+    /// Changement de parent refusé : le parent demandé est désigné par un
+    /// compte bancaire — son compte du plan ou son compte de frais de
+    /// prestataire. Il reçoit des écritures automatiques : devenu parent, il
+    /// passerait non imputable (Epic 46, décision du mainteneur du
+    /// 2026-11-26). HTTP 409 `ACCOUNT_PARENT_BANK_LINKED`.
+    #[error("Le compte {parent_number} est désigné par le compte bancaire {bank_name}")]
+    AccountParentBankLinked {
+        /// Identifiant du parent demandé.
+        parent_account_id: i64,
+        /// Numéro du parent demandé.
+        parent_number: String,
+        /// Le premier compte bancaire (par identifiant) qui le désigne.
+        bank_account_id: i64,
+        /// Nom affiché de ce compte bancaire (nom, et description s'il en a une).
+        bank_name: String,
+        /// Numéro du sous-compte archivé dont la réactivation est refusée
+        /// (`PUT /accounts/{id}/reactivate`, revue d'intégration de la PR de
+        /// l'Epic 46, H1) ; `None` pour un changement de parent. Ne sert qu'au
+        /// message : les `details` sont ceux du changement de parent.
+        reactivated_number: Option<String>,
+    },
+
+    /// Une proposition de la route groupée du plan est refusée pour un motif
+    /// que ni la création ni la modification d'un compte ne contrôlent (Story
+    /// 46-5a, AC-3). HTTP 400 `ACCOUNT_GROUP_INVALID`, `details: { groupIndex,
+    /// reason, accountId? }`.
+    #[error("Proposition de groupe {group_index} refusée : {}", .reason.as_str())]
+    AccountGroupInvalid {
+        /// Rang de la proposition dans `groups` (à partir de 0).
+        group_index: usize,
+        /// Le motif.
+        reason: AccountGroupReason,
+        /// Le compte en cause, quand le motif en vise un.
+        account_id: Option<i64>,
     },
 
     /// Changement de parent refusé : le parent demandé n'existe pas dans la
@@ -2637,6 +2803,8 @@ impl DbError {
             Self::AccountParentArchived { .. } => "ACCOUNT_PARENT_ARCHIVED",
             Self::AccountParentCycle { .. } => "ACCOUNT_PARENT_CYCLE",
             Self::AccountParentHasEntries { .. } => "ACCOUNT_PARENT_HAS_ENTRIES",
+            Self::AccountParentBankLinked { .. } => "ACCOUNT_PARENT_BANK_LINKED",
+            Self::AccountGroupInvalid { .. } => "ACCOUNT_GROUP_INVALID",
             Self::AccountParentNotFound => "VALIDATION_ERROR",
             Self::AccountRoleInvalidForType { .. } => "ACCOUNT_ROLE_INVALID_FOR_TYPE",
             Self::InvalidRevenueAccounts(_) => "INVOICE_LINE_REVENUE_ACCOUNT_INVALID",

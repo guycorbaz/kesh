@@ -1,0 +1,12 @@
+Société PME 46-3
+Compte de résultat
+Période : 01.01.2026 31.12.2026
+Produits
+8000 Produits extraordinaires 400.00
+Total produits 400.00
+Charges
+5000 Salaires 2'500.00
+8010 Charges extraordinaires 150.00
+Total charges 2'650.00
+Résultat net -2'250.00
+page 1 / 1

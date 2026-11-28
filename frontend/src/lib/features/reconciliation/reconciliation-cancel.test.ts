@@ -78,6 +78,8 @@ describe('reconciliationCancelMessage', () => {
 			['LETTERING_ALL_LINES_IN_CLOSED_PERIODS', 'toutes les lignes de ce lettrage'],
 			['MATCHED_BANK_TRANSACTION', 'autre transaction bancaire'],
 			['ACCOUNT_ARCHIVED', 'réactivez-le'],
+			// Story 53-6a (#1674) — le neuvième motif.
+			['PERIOD_LOCKED', 'période verrouillée'],
 			['FISCAL_YEAR_INVALID', 'Aucun exercice ouvert'],
 		];
 		for (const [code, extrait] of cas) {
@@ -90,18 +92,48 @@ describe('reconciliationCancelMessage', () => {
 	it('le compte archivé est NOMMÉ (mutation : `label` ignoré)', () => {
 		expect(reconciliationCancelMessage('ACCOUNT_ARCHIVED', '1020')).toContain('(1020)');
 	});
+
+	it('Story 53-6a — la BORNE du verrou est ajoutée en date suisse (mutation : `label` ignoré)', () => {
+		// Revue P1, L1 — la borne est nommée comme telle, jamais lue comme la date de l'écriture.
+		const avec = reconciliationCancelMessage('PERIOD_LOCKED', '2026-06-30');
+		expect(avec).toContain("La période est verrouillée jusqu'au 30.06.2026 inclus.");
+		expect(avec).not.toContain('(30.06.2026)');
+		expect(reconciliationCancelMessage('PERIOD_LOCKED', null)).not.toContain('jusqu');
+	});
 });
 
 describe('reconciliationCancelErrorMessage', () => {
-	it('un code hors des huit motifs ⇒ le message du SERVEUR (mutation : texte générique)', () => {
+	it('un code hors des neuf motifs ⇒ le message du SERVEUR (mutation : texte générique)', () => {
+		// Story 53-6a : `PERIOD_LOCKED` est devenu un motif ; `LATER_FISCAL_YEAR_CLOSED` reprend
+		// l'exemple du code hors motifs (refus du socle, état hérité).
 		expect(
 			reconciliationCancelErrorMessage({
-				code: 'PERIOD_LOCKED',
-				message: 'La période du 25.09.2026 est verrouillée.',
+				code: 'LATER_FISCAL_YEAR_CLOSED',
+				message: 'Un exercice postérieur est clôturé.',
 				status: 400,
 			}),
-		).toBe('La période du 25.09.2026 est verrouillée.');
-		expect(isReconciliationCancelCode('PERIOD_LOCKED')).toBe(false);
+		).toBe('Un exercice postérieur est clôturé.');
+		expect(isReconciliationCancelCode('LATER_FISCAL_YEAR_CLOSED')).toBe(false);
+	});
+
+	it('Story 53-6a — le 400 PERIOD_LOCKED du socle ⇒ le motif, la borne lue dans `details.lockedThrough` ; le 409 groupé, sans `details` ⇒ le motif sans borne (mutation : `details` ignoré, message du serveur)', () => {
+		expect(isReconciliationCancelCode('PERIOD_LOCKED')).toBe(true);
+		const auClic = reconciliationCancelErrorMessage({
+			code: 'PERIOD_LOCKED',
+			message: 'texte serveur',
+			status: 400,
+			details: { lockedThrough: '2026-06-30', attempted: '2026-06-15' },
+		});
+		expect(auClic).toContain('période verrouillée');
+		expect(auClic).toContain("verrouillée jusqu'au 30.06.2026 inclus");
+		expect(auClic).not.toContain('texte serveur');
+		const groupe = reconciliationCancelErrorMessage({
+			code: 'PERIOD_LOCKED',
+			message: 'texte serveur',
+			status: 409,
+		});
+		expect(groupe).toContain('période verrouillée');
+		expect(groupe).not.toContain('(');
 	});
 
 	it('un motif ⇒ son texte ; le 400 des comptes archivés nomme les comptes de `details.rejected` (mutation : `details` ignoré)', () => {

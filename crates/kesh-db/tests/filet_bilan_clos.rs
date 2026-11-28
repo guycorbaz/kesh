@@ -588,7 +588,7 @@ async fn la_contre_passation_du_jour_sous_un_futur_clos_est_refusee(pool: MySqlP
         s.company_id,
         e.entry.id,
         Acteur::utilisateur(s.admin_user_id),
-        crate::jour::aujourd_hui_test(),
+        journal_entries::CancellationDating::Today(crate::jour::aujourd_hui_test()),
     )
     .await;
     drop(tx);
@@ -706,7 +706,7 @@ async fn predicteur_muet_sous_un_exercice_futur_clos(pool: MySqlPool) {
         s.company_id,
         e.entry.id,
         None,
-        crate::jour::aujourd_hui_test(),
+        journal_entries::CancellationDating::Today(crate::jour::aujourd_hui_test()),
     )
     .await
     .expect("lecture");
@@ -722,7 +722,56 @@ async fn predicteur_muet_sous_un_exercice_futur_clos(pool: MySqlPool) {
         s.company_id,
         e.entry.id,
         Acteur::utilisateur(s.admin_user_id),
-        crate::jour::aujourd_hui_test(),
+        journal_entries::CancellationDating::Today(crate::jour::aujourd_hui_test()),
+    )
+    .await;
+    drop(tx);
+    assert_posterieur_clos(r, futur, &format!("Exercice {}", annee + 1));
+}
+
+/// Story 53-6a (#1674, revue P1, L5) — **le même angle mort sous `OriginDate`**
+/// (le dé-rapprochement) : le filet du socle juge alors l'exercice de
+/// **l'écriture** examinée, non celui du jour. Dans l'état hérité où un exercice
+/// postérieur à celui de l'écriture est clos, la queue rend `None` (l'écran
+/// annonce l'annulation possible) et le clic est refusé par le filet
+/// (`LATER_FISCAL_YEAR_CLOSED`). Rougira, avec le précédent, le jour où le rang
+/// #568 sera ajouté.
+#[sqlx::test(migrations = "./test-schema")]
+async fn predicteur_muet_sous_un_exercice_futur_clos_a_la_date_de_l_origine(pool: MySqlPool) {
+    let (s, annee) = societe_du_jour(&pool).await;
+    let e = journal_entries::create(
+        &pool,
+        s.fiscal_year_id,
+        Acteur::utilisateur(s.admin_user_id),
+        corps(&s, crate::jour::aujourd_hui_test()),
+    )
+    .await
+    .expect("écriture");
+    let futur = exercice(&pool, &s, annee + 1, "Closed").await;
+
+    let mut conn = pool.acquire().await.unwrap();
+    let annonce = settlement_cancellation::settlement_entry_cancel_blocker(
+        &mut conn,
+        s.company_id,
+        e.entry.id,
+        None,
+        journal_entries::CancellationDating::OriginDate,
+    )
+    .await
+    .expect("lecture");
+    drop(conn);
+    assert!(
+        annonce.is_none(),
+        "angle mort assumé (#568) : le prédicteur ne voit pas l'exercice postérieur clos — obtenu {annonce:?}"
+    );
+
+    let mut tx = pool.begin().await.unwrap();
+    let r = journal_entries::reverse_in_tx(
+        &mut tx,
+        s.company_id,
+        e.entry.id,
+        Acteur::utilisateur(s.admin_user_id),
+        journal_entries::CancellationDating::OriginDate,
     )
     .await;
     drop(tx);

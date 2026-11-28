@@ -12,7 +12,7 @@ Règles et décisions en vigueur pour travailler sur Kesh. Ce fichier ne porte n
 - **Les décomptes** (migrations, tests, stories, issues) ne s'écrivent pas ici : ils vont à la PR de release, au journal `kesh-gate-logs/rel<version>/` et à la rétrospective. Ils se recomptent depuis la source :
   - migrations : `ls crates/kesh-db/migrations/*.sql | wc -l` ;
   - stories livrées : clés de `development_status:` de `sprint-status.yaml` au statut `done`, hors `epic-N` et `*-retrospective`, lues par un parseur YAML ; epics : clés `epic-<entier>` ; un epic est ouvert s'il porte une story `backlog`, `ready-for-dev`, `in-progress` ou `review` ;
-  - issues ouvertes : `gh issue list --state open --limit 600 --json number --jq length` ; bugs : commande de § *Priorités des défauts* ; au tag passé, reconstituer depuis `createdAt`/`closedAt`.
+  - issues ouvertes : `gh issue list --state open --limit 1000 --json number --jq length` ; bugs : commande de § *Priorités des défauts* ; au tag passé, reconstituer depuis `createdAt`/`closedAt`.
 
 ### Ce qu'impose la production
 
@@ -24,6 +24,8 @@ Règles et décisions en vigueur pour travailler sur Kesh. Ce fichier ne porte n
 ## Communication
 
 Guy travaille en **français** : conversation et documents en français, sauf indication contraire.
+
+**Une question à Guy ne bloque pas le travail** (décision de Guy du 2026-11-26). L'orchestrateur qui attend une réponse de Guy pose la question, puis passe à un travail qui n'en dépend pas — une autre story, un autre epic, un lot d'issues — et reprend le sujet suspendu dès la réponse. Il ne contourne jamais la question en tranchant à la place de Guy : ce qui lui revient (fusion, tag, image, priorité, périmètre, effacement) attend. *Motif : avancer même quand Guy est occupé ailleurs.*
 
 ## Structure du dépôt
 
@@ -235,7 +237,7 @@ Pour tout endpoint qui traite N propositions et rend `{ accepted, failed }` :
 
 ## Priorités des défauts
 
-Chaque défaut ouvert porte sa priorité dès sa création, et c'est elle qui ordonne le travail. La conformité légale relève du comptable ou de l'utilisateur, non du logiciel seul : elle est P2, sauf si le défaut produit une erreur dans les livres (décision du Project Lead du 2026-11-21). **Tout P1 passe en priorité dans la release suivante**, quitte à une release dédiée.
+Chaque défaut ouvert porte sa priorité dès sa création, et c'est elle qui ordonne le travail. La conformité légale relève du comptable ou de l'utilisateur, non du logiciel seul : elle est P2, sauf si le défaut produit une erreur dans les livres (décision du Project Lead du 2026-11-21). **Tout P1 passe en priorité dans la release suivante**, quitte à une release dédiée. **Chaque release descend l'échelle** : tous les P1 qu'elle peut tenir, puis au moins une issue de chacune des autres priorités (§ *Cadence*, la story de correction).
 
 | Label | Niveau | Critère |
 |---|---|---|
@@ -248,7 +250,7 @@ Chaque défaut ouvert porte sa priorité dès sa création, et c'est elle qui or
 
 1. **Le nombre de bugs baisse.** Bug = issue ouverte portant `bug` ou `known-failure`, comptée au kickoff et à la rétrospective :
    ```sh
-   gh issue list --state open --limit 600 --json labels \
+   gh issue list --state open --limit 1000 --json labels \
      --jq '[.[]|select([.labels[].name]|any(.=="bug" or .=="known-failure"))]|length'
    ```
 2. **Tout P1 ouvert est traité en priorité dans la release suivante**, quitte à une release dédiée ; celui qui reste est nommé à la rétrospective, avec sa raison.
@@ -258,6 +260,10 @@ Et :
 
 - **Moins d'issues ouvertes au tag qu'au tag précédent est un objectif, pas une barrière** : le dépasser n'empêche pas de publier. Le décompte (toutes les issues) s'écrit : celui du tag précédent et l'objectif au fichier d'epic dès le kickoff, celui du tag à la PR de release et à la rétrospective, avec l'écart et sa cause (décision de Guy du 2026-10-24).
 - **On trace toujours** : un point qu'on décide de ne pas traiter s'ouvre en issue, même s'il fait remonter le compte ; on ne ferme jamais un défaut réel pour tenir le chiffre ; **une issue par problème**, sans regroupement (décisions de Guy des 2026-10-23 et 2026-11-10).
+- **Avant d'ouvrir une issue ou de la retenir pour une release, on vérifie qu'elle n'est pas déjà couverte** : par une issue ouverte ou fermée (recherche sur les mots du titre, `--state all`), par un commit ou une PR déjà fusionnés, ou par le code tel qu'il est. Une issue déjà couverte ne s'ouvre pas, ou se ferme avec la preuve (décision de Guy du 2026-11-26).
+- **À chaque release, les issues encore ouvertes mais déjà corrigées se ferment**, preuve à l'appui (commit, test, ligne de code), jamais au jugé. Deux niveaux (décision de Guy du 2026-11-26) :
+  - **à chaque release** : toutes les issues ouvertes qu'un commit ou une PR cite depuis le tag précédent (`git log <tag-précédent>..HEAD --format=%B | grep -oE 'refs #[0-9]+'`), plus **une tranche des cinquante plus anciennes**, reprise là où la précédente s'est arrêtée (le dernier numéro relu s'écrit au journal du dossier) ;
+  - **une fois par mois**, à la revue de portefeuille : la revue de toutes les issues ouvertes.
 - **Un LOW de revue qui touche la production peut se corriger dans la story**, suivi d'une passe ciblée de ce seul correctif ; l'issue reste le choix par défaut quand le correctif sort du périmètre (décision de Guy du 2026-11-14).
 - **Une story de solde à la fin de chaque epic**, avant le tag : seulement la dette des stories de l'epic, plafonnée par un nombre d'issues fixé au kickoff (décision de Guy du 2026-11-14).
 - **L'étiquette `bug` décrit un comportement faux visible** : un test manquant, un commentaire, une phrase de fiche prennent `technical-debt` ou `documentation`. Les anciennes issues ne se réétiquettent que sur demande de Guy, et un tel réétiquetage s'écrit à côté du décompte des bugs (décision de Guy du 2026-11-14). Le 2026-11-21, les onze issues de la TVA qui étaient P1 (#390 à #397, #401, #525, #1198) et les issues #404, #235 et #98 ont été reclassées P2, la conformité légale ne relevant plus du P1 (décision du Project Lead du 2026-11-21).
@@ -280,7 +286,7 @@ Les anciennes rétrospectives classent la dette en **A** (vraie dette), **B** (l
 
 - **Titre d'une KF : `[KF-NNN] description`.** Le numéro se lit **depuis GitHub** avant d'être attribué, sur le seul préfixe :
   ```sh
-  gh issue list --state all --limit 600 --json title --jq '.[].title' \
+  gh issue list --state all --limit 1000 --json title --jq '.[].title' \
     | grep -oE '^\[KF-[0-9]{3}\]' | grep -oE '[0-9]{3}' | sort -n | tail -1
   ```
 - **Quand créer** : un bug reproduit hors de la story en cours (un bug trouvé dans la story se corrige dans la story, au Change Log) ; une KF détectée hors du travail courant ; un CR **avant** tout changement de périmètre d'une story validée.
@@ -392,7 +398,9 @@ Règle décidée par le Project Lead le 2026-11-21 ; sa mise en œuvre fait l'ob
 - **Une branche d'epic n'est pas une base** : un contributeur part de `main` ; bâtir sur une branche d'epic non publiée demande l'accord du Project Lead.
 - **Un epic qui n'aboutit pas à la coupure se réduit** : on ne retarde pas une release, on réduit son étendue. L'orchestrateur sort les stories non closes vers un epic ultérieur (de six stories au plus, § *Numérotation des versions*) et le dit au compte rendu de la PR ; l'epic réduit se clôt avec la release, sans entrer en deux fois dans `main` (décisions du Project Lead des 2026-11-18 et 2026-11-21) ; le Project Lead garde le dernier mot. Il ne touche jamais à l'epic d'un contributeur.
 - **Une story sortie emporte sa migration.** Une migration est annoncée d'avance au projet GitHub et dite en tête des notes ; les migrations voisines se regroupent quand c'est possible.
-- **Chaque release planifiée corrige au moins un ou deux bugs**, dans une story de correction en plus de ses epics, comptée dans la borne de six : un P1 d'abord, sinon ce qui touche l'usage réel du Project Lead, sinon le plus ancien. Elle est petite et part en premier. Le dosage s'adapte au stock de bugs. Elle s'ajoute à la story de solde et à la correction des LOW, sans les remplacer.
+- **Chaque release planifiée porte une story de correction**, en plus de ses epics et comptée dans la borne de six, qui suit l'échelle des priorités (§ *Priorités des défauts*) : **tous les P1 ouverts** qu'elle peut tenir, puis **au moins une issue P2, une P3 et une P4**, pour qu'aucune priorité ne reste figée. À défaut de P1, elle commence par les P2. Dans chaque priorité, ce qui touche l'usage réel du Project Lead passe d'abord, puis le plus ancien. Elle est petite et part en premier. Elle s'ajoute à la story de solde et à la correction des LOW, sans les remplacer (décision de Guy du 2026-11-26).
+- **Un epic de nettoyage par release**, en plus des epics de fonctionnalités et de la story de correction : au plus six stories, **chacune regroupant cinq à dix issues P3 ou P4 peu coûteuses d'un même module** (textes et manuel, tests, cosmétique d'un domaine, dette d'un crate), sans règle métier changée, ni migration, ni changement d'API. Une issue qui révèle en cours de route un vrai défaut sort du lot et suit son propre chemin. Chaque story garde sa boucle de revue et ses gates. Le premier est l'Epic 58, pour la release qui suit la v0.20.0 (décision de Guy du 2026-11-26).
+- **Tout epic, interne ou d'un contributeur, intègre aussi quelques issues peu coûteuses** des modules qu'il touche : P3 ou P4 sans règle métier changée, ni migration, ni changement d'API, les plus anciennes d'abord, ni réservées à un autre epic ni retenues par l'epic de nettoyage. Elles entrent dans ses stories, sans dépasser la borne de six, et se déclarent au kickoff pour qu'aucune issue ne soit traitée deux fois (décision de Guy du 2026-11-26).
 - **Une release dédiée à un P1** part sans attendre le vendredi (§ *Priorités des défauts*) ; elle ne compte pas comme la release de la semaine.
 - **Une release de correction (`x.y.1`, `x.y.2`…)** se fait sans migration, depuis `main`, et c'est le Project Lead qui la déclare ; tout ce qui porte une migration attend la release planifiée suivante (proposition de l'agent d'un contributeur, retenue par Guy le 2026-11-24).
 - **Absence du Project Lead** : pas de release cette semaine-là ; il annonce ses dates d'avance, les stories continuent.

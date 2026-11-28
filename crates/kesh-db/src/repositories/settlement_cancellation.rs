@@ -18,6 +18,7 @@ use chrono::NaiveDate;
 use sqlx::MySqlConnection;
 
 use crate::errors::{DbError, ReversalBlocker, SettlementCancelBlocker, map_db_error};
+use crate::repositories::journal_entries::{CancellationDating, ReversalDateVerdict};
 use crate::repositories::{fiscal_years, journal_entries, letterings};
 
 /// Un motif d'annulation refusée : le motif, l'identifiant de la pièce qui le
@@ -47,23 +48,41 @@ pub type SettlementCancelHit = (SettlementCancelBlocker, Option<i64>, Option<Str
 /// annoncer dans l'autre ordre ferait dire un motif à l'écran et en refuser un
 /// autre au clic.
 ///
-/// ⚠️ **Limite assumée** : le verrou de période **du jour** (24-4c) n'est pas
-/// évalué ici — il se contrôle au clic (`PERIOD_LOCKED`, 400). Une borne ne
-/// peut pas être future ; seule une borne égale au jour l'atteindrait.
+/// ⚠️ **Le verrou de période** (24-4c) dépend de la **datation** (Story 53-6a,
+/// #1674, D5) :
+/// - sous [`CancellationDating::OriginDate`] (le dé-rapprochement), la
+///   contre-passation est datée de l'écriture examinée : une écriture **sous la
+///   borne** (seuil inclusif) est refusée — rang `PeriodLocked`, à la place du
+///   rang 5, qui y est inatteignable (l'exercice de l'écriture, ouvert au rang
+///   2, couvre sa date). La borne et la date sont lues **sans verrou**, même
+///   tolérance que l'étape 0-bis du socle ; la borne voyage en étiquette.
+///   Cette tolérance vaut désormais **pour une écriture du passé** : avant la
+///   53-6a, la contre-passation du dé-rapprochement, datée du jour, ne tombait
+///   jamais sous une borne (strictement antérieure au jour) ; datée de
+///   l'écriture, elle peut entrer dans une période dont le verrou est posé dans
+///   le même instant — la tolérance de toute saisie antidatée, sans remède
+///   attendu (revue P1, L13) ;
+/// - sous [`CancellationDating::Today`] (les gestes depuis la fiche), il n'est
+///   **pas** évalué — limite assumée : il se contrôle au clic (`PERIOD_LOCKED`,
+///   400). Une borne ne peut pas être future ; seule une borne égale au jour
+///   l'atteindrait.
 ///
-/// ⚠️ **Angle mort assumé — l'exercice du jour suivi d'un exercice clos**
-/// (Story 15-12b, #543, C120 ; rang tracé par l'issue **#568**). Le rang 5
-/// contrôle qu'un exercice **ouvert** couvre le jour où la contre-passation
-/// serait datée, **pas** qu'aucun exercice postérieur à celui-ci n'est clos.
-/// Dans l'état hérité où l'exercice du jour est suivi d'un exercice clos (un
-/// exercice futur clôturé d'avance), ce prédicteur rend `None` — l'écran
-/// annonce l'annulation possible — et le clic est refusé par le filet de
+/// ⚠️ **Angle mort assumé — l'exercice de la contre-passation suivi d'un
+/// exercice clos** (Story 15-12b, #543, C120 ; rang tracé par l'issue
+/// **#568**). Le rang 5 (sous `Today`) contrôle qu'un exercice **ouvert** couvre
+/// le jour où la contre-passation serait datée, et le rang 2 (sous
+/// `OriginDate`) que l'exercice de l'écriture est ouvert ; ni l'un ni l'autre ne
+/// contrôle qu'**aucun exercice postérieur à celui de la contre-passation n'est
+/// clos**. Dans cet état hérité (sous `Today`, l'exercice du jour suivi d'un
+/// exercice futur clôturé d'avance ; sous `OriginDate`, un exercice ouvert
+/// suivi d'un exercice clos), ce prédicteur rend `None` — l'écran annonce
+/// l'annulation possible — et le clic est refusé par le filet de
 /// `journal_entries::create_in_tx_inner` (`400 LATER_FISCAL_YEAR_CLOSED`, dont
 /// le message porte sa propre marche à suivre). Même nature que la limite
 /// précédente : un refus du socle, au clic, que la lecture ne reproduit pas.
-/// Fixé par le test `predicteur_muet_sous_un_exercice_futur_clos`
-/// (`kesh-db/tests/filet_bilan_clos.rs`), qui rougira le jour où le rang sera
-/// ajouté.
+/// Fixé, pour chaque datation, par `predicteur_muet_sous_un_exercice_futur_clos`
+/// et `…_a_la_date_de_l_origine` (`kesh-db/tests/filet_bilan_clos.rs`), qui
+/// rougiront le jour où le rang sera ajouté.
 ///
 /// **Lecture seule** : aucun verrou n'est posé ici. ⛔ **Un geste qui s'en sert
 /// pour REFUSER doit donc verrouiller avant** — la pièce, puis l'écriture de
@@ -83,9 +102,10 @@ pub type SettlementCancelHit = (SettlementCancelBlocker, Option<i64>, Option<Str
 /// d'autre. Les annulations de règlement passent `None` : leur comportement
 /// est inchangé.
 ///
-/// `aujourd_hui` (Story 35-5a0, #929, #1022, #907) : la date du jour, lue une
-/// fois sur l'horloge de la requête et passée **aussi** à la contre-passation —
-/// le rang 5 juge l'exercice du jour même où elle serait datée.
+/// `dating` (Story 53-6a, #1674) : la datation que la contre-passation recevra
+/// **aussi** — `Today(jour)`, lu une fois sur l'horloge de la requête (Story
+/// 35-5a0 : le rang 5 juge l'exercice du jour même où elle serait datée), ou
+/// `OriginDate` (rang `PeriodLocked`, ci-dessus).
 ///
 /// Écriture introuvable (ou d'une autre société) → [`DbError::NotFound`].
 pub async fn settlement_entry_cancel_blocker(
@@ -93,14 +113,15 @@ pub async fn settlement_entry_cancel_blocker(
     company_id: i64,
     entry_id: i64,
     unlinking: Option<i64>,
-    aujourd_hui: NaiveDate,
+    dating: CancellationDating,
 ) -> Result<Option<SettlementCancelHit>, DbError> {
     // Rang 2 — l'exercice de l'écriture EXAMINÉE (règlement, rapprochement ou
     // achat), non celui du jour.
     // Patron : `journal_entries::delete_in_tx`, qui lit `fy.status` joint par
-    // `fiscal_year_id`.
-    let status: Option<String> = sqlx::query_scalar(
-        "SELECT fy.status FROM journal_entries je \
+    // `fiscal_year_id`. La date de l'écriture, même ligne, sans verrou de plus,
+    // pour le rang `PeriodLocked` (Story 53-6a).
+    let row: Option<(String, NaiveDate)> = sqlx::query_as(
+        "SELECT fy.status, je.entry_date FROM journal_entries je \
          JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
          WHERE je.id = ? AND je.company_id = ?",
     )
@@ -109,7 +130,7 @@ pub async fn settlement_entry_cancel_blocker(
     .fetch_optional(&mut *conn)
     .await
     .map_err(map_db_error)?;
-    let status = status.ok_or(DbError::NotFound)?;
+    let (status, entry_date) = row.ok_or(DbError::NotFound)?;
     if status == "Closed" {
         return Ok(Some((
             SettlementCancelBlocker::FiscalYearClosed,
@@ -142,12 +163,19 @@ pub async fn settlement_entry_cancel_blocker(
             .iter()
             .find(|(b, _, _)| *b == ReversalBlocker::MatchedBankTransaction)
             .map(|(_, bank_transaction_id, _)| *bank_transaction_id),
-        Some(unlinked) => sqlx::query_scalar::<_, i64>(
-            "SELECT id FROM bank_transactions \
-             WHERE company_id = ? AND matched_entry_id = ? AND id <> ? ORDER BY id LIMIT 1",
-        )
+        // Story 39-11c (amendement A-2) : une autre ligne du même paiement de
+        // prestataire (paiement par carte Wise groupé) n'empêche pas — elle
+        // revient en attente avec celle qu'on défait (`cancel_in_tx`, 5 bis).
+        Some(unlinked) => sqlx::query_scalar::<_, i64>(&format!(
+            "SELECT bt.id FROM bank_transactions bt \
+             JOIN bank_accounts ba ON ba.id = bt.bank_account_id \
+             WHERE bt.company_id = ? AND bt.matched_entry_id = ? AND bt.id <> ? \
+               AND NOT (bt.status = 'reconciled' AND {}) ORDER BY bt.id LIMIT 1",
+            super::reconciliation_cancel::PROVIDER_GROUP_SIBLING
+        ))
         .bind(company_id)
         .bind(entry_id)
+        .bind(unlinked)
         .bind(unlinked)
         .fetch_optional(&mut *conn)
         .await
@@ -172,14 +200,49 @@ pub async fn settlement_entry_cancel_blocker(
         )));
     }
 
-    // Rang 5 — l'exercice où la contre-passation serait DATÉE : le jour, comme
-    // dans le socle (la date reçue, Story 35-5a0).
-    if !fiscal_years::has_open_covering_date(&mut *conn, company_id, aujourd_hui).await? {
-        return Ok(Some((
-            SettlementCancelBlocker::NoOpenFiscalYearToday,
-            None,
-            None,
-        )));
+    match dating {
+        // Rang `PeriodLocked` (Story 53-6a, D5) — la contre-passation serait
+        // datée de l'écriture examinée : sous la borne, le socle la refuserait
+        // (`create_in_tx_inner`, étape 1-bis). Même règle, même seuil inclusif :
+        // `journal_entries::cancellation_date_verdict`. Lecture ordinaire de la
+        // borne, comme l'étape 0-bis du socle.
+        CancellationDating::OriginDate => {
+            let books_locked_through: Option<NaiveDate> =
+                sqlx::query_scalar("SELECT books_locked_through FROM companies WHERE id = ?")
+                    .bind(company_id)
+                    .fetch_optional(&mut *conn)
+                    .await
+                    .map_err(map_db_error)?
+                    .flatten();
+            // L'exercice est ouvert (rang 2 passé) : le verdict ne peut plus
+            // dire `FiscalYearClosed`.
+            if let ReversalDateVerdict::PeriodLocked { locked_through, .. } =
+                journal_entries::cancellation_date_verdict(
+                    dating,
+                    entry_date,
+                    false,
+                    books_locked_through,
+                )
+            {
+                return Ok(Some((
+                    SettlementCancelBlocker::PeriodLocked,
+                    None,
+                    Some(locked_through.to_string()),
+                )));
+            }
+        }
+        // Rang 5 — l'exercice où la contre-passation serait DATÉE : le jour,
+        // comme dans le socle (la date reçue, Story 35-5a0). Inatteignable sous
+        // `OriginDate` : l'exercice de l'écriture, ouvert, couvre sa date.
+        CancellationDating::Today(aujourd_hui) => {
+            if !fiscal_years::has_open_covering_date(&mut *conn, company_id, aujourd_hui).await? {
+                return Ok(Some((
+                    SettlementCancelBlocker::NoOpenFiscalYearToday,
+                    None,
+                    None,
+                )));
+            }
+        }
     }
 
     Ok(None)

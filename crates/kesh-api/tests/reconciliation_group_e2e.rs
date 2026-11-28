@@ -1502,6 +1502,48 @@ async fn la_vue_et_l_annulation_d_un_groupe(pool: MySqlPool) {
     assert_eq!(v["differenceAccount"], Value::Null);
 }
 
+/// Story 53-6a (#1674, AC-9, D5, H1) — **un groupe client dont l'écriture est
+/// sous la borne du verrou** : la vue rend `PERIOD_LOCKED` (borne en
+/// étiquette) et la date de l'écriture ; le clic est refusé par le geste
+/// groupé lui-même, **`409 PERIOD_LOCKED` sans `details`** — non le `400` du
+/// socle. Montage des chemins réels : factures du 21 juin, payées le 20
+/// (tolérance d'un jour), le lettrage de pièce n'est pas figé. Tue M4 et M6
+/// (clic : `409` → `400`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s536a_un_groupe_sous_le_verrou_est_refuse_en_409(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.facture("P-1", "500.00", "2026-06-21").await;
+    let b = ctx.facture("P-2", "300.00", "2026-06-21").await;
+    let tx = ctx.transaction("800.00", "2026-06-20").await;
+    ctx.grouper(tx, &[a, b], None).await;
+    sqlx::query("UPDATE companies SET books_locked_through = '2026-06-20' WHERE id = ?")
+        .bind(ctx.seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let v = vue(&ctx, tx).await;
+    assert_eq!(v["cancelBlockedBy"], "PERIOD_LOCKED", "{v}");
+    assert_eq!(v["cancelBlockedLabel"], "2026-06-20", "{v}");
+    assert_eq!(v["reversalDate"], "2026-06-20", "{v}");
+    let empreinte = ctx.empreinte().await;
+    let (s, body) = ctx
+        .post(
+            &format!("/api/v1/reconciliation/transactions/{tx}/cancel"),
+            json!({}),
+        )
+        .await;
+    assert_refus(s, &body, 409, "PERIOD_LOCKED");
+    assert_eq!(body["error"]["details"], Value::Null, "{body}");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m
+                .starts_with("L'écriture de ce rapprochement est dans une période verrouillée")),
+        "{body}"
+    );
+    assert_eq!(ctx.empreinte().await, empreinte, "rien d'écrit");
+}
+
 /// AC7 — `gap` et `differenceAccount` pour `e > 0` et `e = 0` ; une facture
 /// créditée bloque l'annulation et se nomme ; l'annulation d'un rapprochement
 /// unitaire rend son `kind` et une liste vide.

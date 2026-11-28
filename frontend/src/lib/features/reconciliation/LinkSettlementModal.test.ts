@@ -480,7 +480,7 @@ describe('LinkSettlementModal — écritures existantes (Story v017-3a)', () => 
 		);
 		await fireEvent.click((await findAllByTestId('entry-candidate-radio'))[0]);
 		expect((await findByTestId('entry-cancel-today')).textContent?.trim()).toBe(
-			"Aujourd'hui, Kesh ne voit aucun obstacle : annuler ce rapprochement contre-passerait cette écriture (ou annulerait le règlement qu'elle porte). Une clôture d'exercice, une période verrouillée ou un exercice postérieur clos pourraient l'empêcher, dès aujourd'hui sans que Kesh le voie, ou plus tard.",
+			"Aujourd'hui, Kesh ne voit aucun obstacle : annuler ce rapprochement contre-passerait cette écriture, à sa date (ou annulerait le règlement qu'elle porte). Une clôture d'exercice ou un exercice postérieur clos pourraient l'empêcher, dès aujourd'hui sans que Kesh le voie, ou plus tard, comme un verrou de période posé d'ici là.",
 		);
 		expect(queryByTestId('entry-cancel-blocked-ack')).toBeNull();
 		expect((getByTestId('link-submit') as HTMLButtonElement).disabled).toBe(false);
@@ -561,6 +561,23 @@ describe('LinkSettlementModal — écritures existantes (Story v017-3a)', () => 
 			'[data-testid="entry-cancel-blocked-reason"]',
 		);
 		expect(raison?.textContent).toContain('(3000)');
+	});
+
+	// Story 53-6a (#1674, AC-9) — une écriture sous la borne du verrou : l'obstacle annoncé,
+	// la borne en date suisse, la case à cocher comme pour tout motif.
+	it('une écriture sous le verrou de période : le motif nomme la borne, Rattacher attend la case', async () => {
+		mockApi.getEntryCandidates.mockResolvedValue({
+			bankTransactionId: 42,
+			candidates: [entry(7, 'PERIOD_LOCKED', '2026-06-30', '-250.00')],
+		});
+		const { findAllByTestId, findByTestId, getByTestId } = mount(vi.fn(), vi.fn(), debit());
+		await fireEvent.click((await findAllByTestId('entry-candidate-radio'))[0]);
+		const raison = (await findByTestId('entry-candidate-cancel-blocked')).querySelector(
+			'[data-testid="entry-cancel-blocked-reason"]',
+		);
+		expect(raison?.textContent).toContain('période verrouillée');
+		expect(raison?.textContent).toContain("verrouillée jusqu'au 30.06.2026 inclus");
+		expect((getByTestId('link-submit') as HTMLButtonElement).disabled).toBe(true);
 	});
 
 	it('la case se décoche quand on change d’écriture', async () => {

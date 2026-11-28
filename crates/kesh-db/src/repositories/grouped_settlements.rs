@@ -1613,12 +1613,15 @@ pub fn is_savepoint_lost(err: &DbError) -> bool {
 /// facture (rang 1, `supplier_invoices::supplier_settlement_cancel_head`), puis
 /// la même queue une fois. Une écriture sans aucun membre →
 /// [`DbError::Invariant`] : aucune réponse fausse (revue P1, B-2, E-3).
+///
+/// La queue est jugée sous la datation **`OriginDate`** (Story 53-6a, #1674) :
+/// défaire un groupe le contre-passe à la date de son écriture — d'où le rang
+/// `PeriodLocked` à la place du rang 5. Aucune date du jour n'est lue.
 pub(crate) async fn group_cancel_blocker(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     entry_id: i64,
     unlinking: i64,
-    aujourd_hui: NaiveDate,
 ) -> Result<
     Option<(
         crate::repositories::settlement_cancellation::SettlementCancelHit,
@@ -1628,8 +1631,7 @@ pub(crate) async fn group_cancel_blocker(
 > {
     let members = client_members(conn, company_id, entry_id).await?;
     let Some((_, first_invoice, first_number, _)) = members.first().cloned() else {
-        return supplier_group_cancel_blocker(conn, company_id, entry_id, unlinking, aujourd_hui)
-            .await;
+        return supplier_group_cancel_blocker(conn, company_id, entry_id, unlinking).await;
     };
     for (settlement_id, invoice_id, number, _) in members {
         let (_, head) = super::invoice_settlements_write::settlement_cancel_head(
@@ -1654,7 +1656,7 @@ pub(crate) async fn group_cancel_blocker(
             company_id,
             entry_id,
             Some(unlinking),
-            aujourd_hui,
+            super::journal_entries::CancellationDating::OriginDate,
         )
         .await?
         .map(|hit| {
@@ -1672,13 +1674,12 @@ pub(crate) async fn group_cancel_blocker(
 /// Le bras fournisseur de [`group_cancel_blocker`] (Story 43-1b, AC6) : la
 /// tête de chaque facture, par identifiant croissant, puis la queue de
 /// l'écriture commune **une fois** ; un motif de l'écriture nomme la première
-/// facture.
+/// facture. Datation `OriginDate`, comme le bras client (Story 53-6a).
 async fn supplier_group_cancel_blocker(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     entry_id: i64,
     unlinking: i64,
-    aujourd_hui: NaiveDate,
 ) -> Result<
     Option<(
         crate::repositories::settlement_cancellation::SettlementCancelHit,
@@ -1710,7 +1711,7 @@ async fn supplier_group_cancel_blocker(
             company_id,
             entry_id,
             Some(unlinking),
-            aujourd_hui,
+            super::journal_entries::CancellationDating::OriginDate,
         )
         .await?
         .map(|hit| (hit, piece(&first))),
@@ -1720,7 +1721,8 @@ async fn supplier_group_cancel_blocker(
 /// Ce que rend le dé-rapprochement d'un groupe.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GroupedCancellation {
-    /// L'écriture inverse, datée du jour.
+    /// L'écriture inverse, datée de l'écriture du groupe, dans son exercice
+    /// (Story 53-6a, #1674).
     pub reversal_journal_entry_id: i64,
     /// Les factures dont le règlement a été retiré (identifiant croissant).
     pub invoices: Vec<GroupedViewInvoice>,
@@ -1736,15 +1738,18 @@ pub struct GroupedCancellation {
 ///
 /// 1. **tous les refus, avant toute écriture** — par facture (créditée, solde
 ///    existant) et sur l'écriture (exercice clos, lettrage figé par la période,
-///    autre transaction liée, compte archivé, pas d'exercice ouvert au jour) ;
-///    le premier rendu, en [`DbError::ReconciliationNotCancellable`].
+///    autre transaction liée, compte archivé, écriture dans une période
+///    verrouillée — Story 53-6a) ; le premier rendu, en
+///    [`DbError::ReconciliationNotCancellable`] (409, sans `details`) : à la
+///    différence de l'unitaire, aucun rang n'est laissé au socle.
 ///    `expect_unlink_only = Some(true)` → `ReconciliationCancelChanged` : un
 ///    groupe n'est jamais un retrait seul ;
 /// 2. le lien défait, comme l'unitaire ;
 /// 3. le délettrage de chaque facture ;
 /// 4. la suppression des lignes `invoice_settlements` de l'écriture ;
 /// 5. la contre-passation de l'écriture devenue sans propriétaire
-///    (`journal_entries::reverse_in_tx`, D4 : aucune autorité neuve) ;
+///    (`journal_entries::reverse_in_tx`, D4 : aucune autorité neuve), **datée
+///    de l'écriture**, dans son exercice (`OriginDate`, Story 53-6a, #1674) ;
 /// 6. chaque facture : `paid_at` projeté, `version + 1` ;
 /// 7. `recheck_open_locked_in_tx`, puis l'audit — une
 ///    `invoice.settlement_cancelled` par facture et `reconciliation.cancelled`.
@@ -1757,7 +1762,6 @@ pub async fn cancel_in_tx(
     entry_id: i64,
     acteur: Acteur,
     expect_unlink_only: Option<bool>,
-    aujourd_hui: NaiveDate,
 ) -> Result<GroupedCancellation, DbError> {
     // ⛔ L'ordre de l'unitaire (`reconciliation_cancel::cancel_in_tx`, étape 2) :
     // **aucune lecture non verrouillante avant le verrou de l'exercice** (revue
@@ -1769,16 +1773,8 @@ pub async fn cancel_in_tx(
     if tenus.is_empty() {
         // Story 43-1b (AC6) : sans règlement client, le groupe est fournisseur
         // (C-e431a-9 : l'`Invariant` d'avant est remplacé par ce bras).
-        return supplier_cancel_in_tx(
-            tx,
-            company_id,
-            bt,
-            entry_id,
-            acteur,
-            expect_unlink_only,
-            aujourd_hui,
-        )
-        .await;
+        return supplier_cancel_in_tx(tx, company_id, bt, entry_id, acteur, expect_unlink_only)
+            .await;
     }
     // Les factures, par identifiant croissant.
     for (_, invoice_id) in &tenus {
@@ -1809,8 +1805,10 @@ pub async fn cancel_in_tx(
     if expect_unlink_only == Some(true) {
         return Err(DbError::ReconciliationCancelChanged { unlink_only: false });
     }
+    // ⛔ Sans filtre : tout motif de la queue est refusé ici, `PeriodLocked`
+    // compris (409 sans `details`) — Story 53-6a, D5.
     if let Some(((blocker, _, _), _)) =
-        group_cancel_blocker(tx, company_id, entry_id, bt.id, aujourd_hui).await?
+        group_cancel_blocker(tx, company_id, entry_id, bt.id).await?
     {
         return Err(DbError::ReconciliationNotCancellable { blocker });
     }
@@ -1842,10 +1840,15 @@ pub async fn cancel_in_tx(
         )));
     }
 
-    // (5) La contre-passation.
-    let reversal =
-        super::journal_entries::reverse_in_tx(tx, company_id, entry_id, acteur, aujourd_hui)
-            .await?;
+    // (5) La contre-passation, datée de l'écriture (Story 53-6a).
+    let reversal = super::journal_entries::reverse_in_tx(
+        tx,
+        company_id,
+        entry_id,
+        acteur,
+        super::journal_entries::CancellationDating::OriginDate,
+    )
+    .await?;
 
     // (6) Chaque facture : `paid_at` projeté, version.
     let mut invoices = Vec::with_capacity(members.len());
@@ -1957,7 +1960,6 @@ async fn supplier_cancel_in_tx(
     entry_id: i64,
     acteur: Acteur,
     expect_unlink_only: Option<bool>,
-    aujourd_hui: NaiveDate,
 ) -> Result<GroupedCancellation, DbError> {
     use super::supplier_invoices::CLEAR_SETTLEMENT_SQL;
 
@@ -1985,8 +1987,9 @@ async fn supplier_cancel_in_tx(
     if expect_unlink_only == Some(true) {
         return Err(DbError::ReconciliationCancelChanged { unlink_only: false });
     }
+    // ⛔ Sans filtre, comme le bras client (Story 53-6a, D5).
     if let Some(((blocker, _, _), _)) =
-        supplier_group_cancel_blocker(tx, company_id, entry_id, bt.id, aujourd_hui).await?
+        supplier_group_cancel_blocker(tx, company_id, entry_id, bt.id).await?
     {
         return Err(DbError::ReconciliationNotCancellable { blocker });
     }
@@ -2026,10 +2029,15 @@ async fn supplier_cancel_in_tx(
         }
     }
 
-    // (5) La contre-passation de l'écriture entière.
-    let reversal =
-        super::journal_entries::reverse_in_tx(tx, company_id, entry_id, acteur, aujourd_hui)
-            .await?;
+    // (5) La contre-passation de l'écriture entière, datée d'elle (Story 53-6a).
+    let reversal = super::journal_entries::reverse_in_tx(
+        tx,
+        company_id,
+        entry_id,
+        acteur,
+        super::journal_entries::CancellationDating::OriginDate,
+    )
+    .await?;
 
     // (6) La revérification du compte, puis l'audit.
     super::bank_accounts::recheck_open_locked_in_tx(tx, company_id, bt.bank_account_id).await?;

@@ -1,0 +1,13 @@
+﻿Section;NumeroCompte;NomCompte;Solde;Devise;SoldeDevise
+Actifs;1020;Banque;18138.00;;
+Actifs;1025;Banque USD;912.00;USD;1000.00
+Actifs;1100;Débiteurs;8000.00;;
+Actifs;1520;Informatique;4000.00;;
+Total actifs;;;31050.00;;
+Passifs;2000;Créanciers;3000.00;;
+Passifs;2400;Emprunts bancaires;4000.00;;
+Total passifs;;;7000.00;;
+CapitauxPropres;2800;Capital social;20000.00;;
+CapitauxPropres;;Résultat de l'exercice;4050.00;;
+Total capitaux propres;;;24050.00;;
+Total passifs + capitaux propres;;;31050.00;;

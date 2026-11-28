@@ -616,7 +616,7 @@ async fn sub_centime_remainders_go_to_rounding_and_the_gap_to_the_chosen_account
             assert_eq!(reste(&pool, id).await, Decimal::ZERO);
         }
         // La vue relit le compte d'écart sur sa ligne (C-e431a-8).
-        let view = reconciliation_cancel::get_view(&pool, m.s.company_id, bt, jour(11, 17))
+        let view = reconciliation_cancel::get_view(&pool, m.s.company_id, bt)
             .await
             .unwrap()
             .unwrap();
@@ -1084,7 +1084,7 @@ async fn unreconciling_a_group_undoes_it_entirely(pool: MySqlPool) {
         .expect("réglé");
 
     // La vue : la variante et la liste.
-    let view = reconciliation_cancel::get_view(&pool, m.s.company_id, bt, jour(11, 17))
+    let view = reconciliation_cancel::get_view(&pool, m.s.company_id, bt)
         .await
         .unwrap()
         .unwrap();
@@ -1112,22 +1112,16 @@ async fn unreconciling_a_group_undoes_it_entirely(pool: MySqlPool) {
     };
     // Un groupe n'est jamais un retrait seul.
     let mut tx = pool.begin().await.unwrap();
-    let changed = reconciliation_cancel::cancel_in_tx(
-        &mut tx,
-        m.s.company_id,
-        bt,
-        acteur_cle,
-        Some(true),
-        jour(11, 17),
-    )
-    .await;
+    let changed =
+        reconciliation_cancel::cancel_in_tx(&mut tx, m.s.company_id, bt, acteur_cle, Some(true))
+            .await;
     assert!(matches!(
         changed,
         Err(DbError::ReconciliationCancelChanged { unlink_only: false })
     ));
     drop(tx);
 
-    let undone = reconciliation_cancel::cancel(&pool, m.s.company_id, bt, acteur_cle, jour(11, 17))
+    let undone = reconciliation_cancel::cancel(&pool, m.s.company_id, bt, acteur_cle)
         .await
         .expect("dé-rapproché");
     assert_eq!(undone.grouped_invoices.len(), 2);
@@ -1689,14 +1683,7 @@ async fn a_concurrent_close_waits_for_the_group_unreconciliation(pool: MySqlPool
     let p = pool.clone();
     let (company_id, user_id) = (m.s.company_id, m.s.admin_user_id);
     let annulation = tokio::spawn(async move {
-        reconciliation_cancel::cancel(
-            &p,
-            company_id,
-            bt,
-            Acteur::utilisateur(user_id),
-            jour(11, 17),
-        )
-        .await
+        reconciliation_cancel::cancel(&p, company_id, bt, Acteur::utilisateur(user_id)).await
     });
     // Synchronisation déterministe : la clôture n'est validée qu'une fois le
     // geste VU en attente du `FOR UPDATE` de l'exercice.
@@ -1767,16 +1754,16 @@ async fn groupe_regle(pool: &MySqlPool, m: &Montage, prefixe: &str) -> (i64, i64
 }
 
 /// Le dé-rapprochement refusé par `attendu`, rien d'écrit, et la vue qui nomme
-/// le motif et une facture du groupe (`cancelBlockedInvoice`, 43-2).
+/// le motif et une facture du groupe (`cancelBlockedInvoice`, 43-2). Sans date
+/// du jour depuis la Story 53-6a (D6).
 async fn refus_du_derapprochement(
     pool: &MySqlPool,
     m: &Montage,
     bt: i64,
-    aujourd_hui: NaiveDate,
     attendu: kesh_db::errors::SettlementCancelBlocker,
 ) -> Option<GroupedDocument> {
     let avant = empreinte(pool).await;
-    let res = reconciliation_cancel::cancel(pool, m.s.company_id, bt, acteur(m), aujourd_hui).await;
+    let res = reconciliation_cancel::cancel(pool, m.s.company_id, bt, acteur(m)).await;
     match res {
         Err(DbError::ReconciliationNotCancellable { blocker }) => {
             assert_eq!(blocker, attendu, "motif du refus")
@@ -1788,7 +1775,7 @@ async fn refus_du_derapprochement(
         avant,
         "rien d'écrit après {attendu:?}"
     );
-    let view = reconciliation_cancel::get_view(pool, m.s.company_id, bt, aujourd_hui)
+    let view = reconciliation_cancel::get_view(pool, m.s.company_id, bt)
         .await
         .unwrap()
         .unwrap();
@@ -1813,7 +1800,7 @@ async fn group_unreconciliation_refuses_a_closed_year(pool: MySqlPool) {
         .execute(&pool)
         .await
         .unwrap();
-    let nommee = refus_du_derapprochement(&pool, &m, bt, jour(11, 17), B::FiscalYearClosed).await;
+    let nommee = refus_du_derapprochement(&pool, &m, bt, B::FiscalYearClosed).await;
     assert_eq!(
         nommee,
         Some(GroupedDocument::Invoice(a)),
@@ -1832,14 +1819,9 @@ async fn group_unreconciliation_refuses_a_lettering_frozen_by_the_period(pool: M
         .execute(&pool)
         .await
         .unwrap();
-    refus_du_derapprochement(
-        &pool,
-        &m,
-        bt,
-        jour(11, 17),
-        B::DocumentLetteringInClosedPeriods,
-    )
-    .await;
+    // Story 53-6a (AC-9) : test de PRÉCÉDENCE sous `OriginDate` — l'écriture
+    // du 15 juin est aussi sous la borne, et le rang 2 bis répond d'abord.
+    refus_du_derapprochement(&pool, &m, bt, B::DocumentLetteringInClosedPeriods).await;
 }
 
 #[sqlx::test(migrations = "./test-schema")]
@@ -1856,7 +1838,7 @@ async fn group_unreconciliation_refuses_another_linked_transaction(pool: MySqlPo
     .execute(&pool)
     .await
     .unwrap();
-    refus_du_derapprochement(&pool, &m, bt, jour(11, 17), B::MatchedBankTransaction).await;
+    refus_du_derapprochement(&pool, &m, bt, B::MatchedBankTransaction).await;
 }
 
 #[sqlx::test(migrations = "./test-schema")]
@@ -1869,17 +1851,164 @@ async fn group_unreconciliation_refuses_an_archived_account(pool: MySqlPool) {
         .execute(&pool)
         .await
         .unwrap();
-    refus_du_derapprochement(&pool, &m, bt, jour(11, 17), B::AccountArchived).await;
+    refus_du_derapprochement(&pool, &m, bt, B::AccountArchived).await;
 }
 
+/// Story 53-6a (#1674, AC-9, D5) — **l'écriture du groupe sous la borne du
+/// verrou** : refus `PeriodLocked` par le geste groupé lui-même
+/// (`ReconciliationNotCancellable`, 409 à la route), la vue le dit avec la
+/// borne ; au lendemain de la borne, l'annulation passe. Montage par les
+/// chemins réels (D5) : les factures du 16 juin, payées le 15 (tolérance d'un
+/// jour), le groupe de lettrage `document` n'est pas figé (la ligne de la
+/// facture est en période ouverte). Remplace le test du rang 5
+/// (`…_without_an_open_year_today`), sans objet sous `OriginDate`. Tue M6
+/// (rang retiré), M11 (seuil strict) et M4 (date du jour).
 #[sqlx::test(migrations = "./test-schema")]
-async fn group_unreconciliation_refuses_without_an_open_year_today(pool: MySqlPool) {
+async fn s536a_group_unreconciliation_refuses_an_entry_under_the_period_lock(pool: MySqlPool) {
     use kesh_db::errors::SettlementCancelBlocker as B;
     let m = monter(&pool).await;
-    let (_, _, bt, _) = groupe_regle(&pool, &m, "J").await;
-    // Le seed couvre 2020-2030 : le 15 janvier 2031 n'a pas d'exercice ouvert.
-    let hors = NaiveDate::from_ymd_opt(2031, 1, 15).unwrap();
-    refus_du_derapprochement(&pool, &m, bt, hors, B::NoOpenFiscalYearToday).await;
+    let a = facture(&pool, &m, "P-1", dec!(100.00), jour(6, 16), None).await;
+    let b = facture(&pool, &m, "P-2", dec!(200.00), jour(6, 16), None).await;
+    let bt = transaction(&pool, &m, dec!(300.00), jour(6, 15)).await;
+    let done = regler(&pool, &m, bt, &[a, b], None).await.expect("réglé");
+    let verrou = |date: NaiveDate| {
+        let pool = pool.clone();
+        let c = m.s.company_id;
+        async move {
+            sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+                .bind(date)
+                .bind(c)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    };
+    // Le jour de la borne : refusé (seuil inclusif).
+    verrou(jour(6, 15)).await;
+    refus_du_derapprochement(&pool, &m, bt, B::PeriodLocked).await;
+    let vue = reconciliation_cancel::get_view(&pool, m.s.company_id, bt)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        vue.cancel_blocker,
+        Some((B::PeriodLocked, None, Some("2026-06-15".to_string()))),
+        "la borne en étiquette"
+    );
+    assert_eq!(vue.reversal_date, Some(jour(6, 15)));
+    // Au lendemain de la borne : l'annulation passe, datée de l'écriture.
+    verrou(jour(6, 14)).await;
+    let undone = reconciliation_cancel::cancel(&pool, m.s.company_id, bt, acteur(&m))
+        .await
+        .expect("dé-rapproché au lendemain de la borne");
+    let date: NaiveDate = sqlx::query_scalar("SELECT entry_date FROM journal_entries WHERE id = ?")
+        .bind(undone.reversal_journal_entry_id.expect("contre-passée"))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_ne!(crate::jour::aujourd_hui_test(), jour(6, 15));
+    assert_eq!(
+        date,
+        jour(6, 15),
+        "datée de l'écriture {}",
+        done.journal_entry_id
+    );
+}
+
+/// Story 53-6a (#1674, AC-7, R4) — **un groupe dont l'écriture est dans un
+/// exercice antérieur encore ouvert** (2019), le jour dans l'exercice du seed :
+/// l'inverse est datée de l'écriture (15 juin 2019), dans 2019 ; rien n'est
+/// écrit dans l'exercice du jour ; les deux factures redeviennent à régler.
+/// Tue M4.
+#[sqlx::test(migrations = "./test-schema")]
+async fn s536a_group_unreconciliation_reverses_in_the_entry_year(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let fy = exercice_2019(&pool, m.s.company_id).await;
+    let a = facture(&pool, &m, "O-1", dec!(100.00), en_2019(6, 1), None).await;
+    let b = facture(&pool, &m, "O-2", dec!(200.00), en_2019(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(300.00), en_2019(6, 15)).await;
+    regler(&pool, &m, bt, &[a, b], None).await.expect("réglé");
+    let du_jour: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE fiscal_year_id = ?")
+            .bind(m.s.fiscal_year_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    let undone = reconciliation_cancel::cancel(&pool, m.s.company_id, bt, acteur(&m))
+        .await
+        .expect("dé-rapproché");
+    let (date, exercice): (NaiveDate, i64) =
+        sqlx::query_as("SELECT entry_date, fiscal_year_id FROM journal_entries WHERE id = ?")
+            .bind(undone.reversal_journal_entry_id.expect("contre-passée"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((date, exercice), (en_2019(6, 15), fy));
+    let apres: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE fiscal_year_id = ?")
+            .bind(m.s.fiscal_year_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(apres, du_jour, "rien dans l'exercice du jour");
+    for id in [a, b] {
+        let paid_at: Option<chrono::NaiveDateTime> =
+            sqlx::query_scalar("SELECT paid_at FROM invoices WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(paid_at, None, "la facture {id} redevient à régler");
+    }
+}
+
+/// Story 53-6a (#1674, AC-3, AC-7, R4) — **l'exercice du groupe clôturé puis
+/// rouvert** : l'inverse y est datée de l'écriture (15 juin 2019), comme à
+/// l'exercice jamais clôturé ; rien dans l'exercice du jour ; puis 2019 se
+/// clôture de nouveau sans obstacle nouveau. Tue M4.
+#[sqlx::test(migrations = "./test-schema")]
+async fn s536a_group_unreconciliation_reverses_in_a_reopened_year(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let fy = exercice_2019(&pool, m.s.company_id).await;
+    let a = facture(&pool, &m, "R-1", dec!(100.00), en_2019(6, 1), None).await;
+    let b = facture(&pool, &m, "R-2", dec!(200.00), en_2019(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(300.00), en_2019(6, 15)).await;
+    regler(&pool, &m, bt, &[a, b], None).await.expect("réglé");
+    let (c, u) = (m.s.company_id, m.s.admin_user_id);
+    kesh_db::repositories::fiscal_years::close(&pool, u, c, fy)
+        .await
+        .expect("clôture de 2019");
+    kesh_db::repositories::fiscal_years::reopen(&pool, u, c, fy, "correction".into())
+        .await
+        .expect("réouverture de 2019");
+    let du_jour: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE fiscal_year_id = ?")
+            .bind(m.s.fiscal_year_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    let undone = reconciliation_cancel::cancel(&pool, c, bt, acteur(&m))
+        .await
+        .expect("dé-rapproché dans l'exercice rouvert");
+    let (date, exercice): (NaiveDate, i64) =
+        sqlx::query_as("SELECT entry_date, fiscal_year_id FROM journal_entries WHERE id = ?")
+            .bind(undone.reversal_journal_entry_id.expect("contre-passée"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((date, exercice), (en_2019(6, 15), fy));
+    let apres: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE fiscal_year_id = ?")
+            .bind(m.s.fiscal_year_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(apres, du_jour, "rien dans l'exercice du jour");
+    kesh_db::repositories::fiscal_years::close(&pool, u, c, fy)
+        .await
+        .expect("2019 se clôture de nouveau");
 }
 
 #[sqlx::test(migrations = "./test-schema")]
@@ -1893,7 +2022,7 @@ async fn group_unreconciliation_refuses_a_credited_invoice_and_names_it(pool: My
         .execute(&pool)
         .await
         .unwrap();
-    let nommee = refus_du_derapprochement(&pool, &m, bt, jour(11, 17), B::InvoiceCredited).await;
+    let nommee = refus_du_derapprochement(&pool, &m, bt, B::InvoiceCredited).await;
     assert_eq!(
         nommee,
         Some(GroupedDocument::Invoice(b)),
@@ -2474,7 +2603,7 @@ async fn every_invoice_head_comes_before_the_entry_ranks(pool: MySqlPool) {
         .execute(&pool)
         .await
         .unwrap();
-    let nommee = refus_du_derapprochement(&pool, &m, bt, jour(11, 17), B::InvoiceCredited).await;
+    let nommee = refus_du_derapprochement(&pool, &m, bt, B::InvoiceCredited).await;
     assert_eq!(
         nommee,
         Some(GroupedDocument::Invoice(b)),
@@ -2525,7 +2654,7 @@ async fn a_missing_gap_line_is_an_invariant_for_the_view(pool: MySqlPool) {
         .await
         .expect("réglé avec écart");
     // Sonde positive : la vue relit le compte d'écart.
-    let vue = reconciliation_cancel::get_view(&pool, m.s.company_id, bt, jour(11, 17))
+    let vue = reconciliation_cancel::get_view(&pool, m.s.company_id, bt)
         .await
         .unwrap()
         .unwrap();
@@ -2541,7 +2670,7 @@ async fn a_missing_gap_line_is_an_invariant_for_the_view(pool: MySqlPool) {
     .execute(&pool)
     .await
     .unwrap();
-    let res = reconciliation_cancel::get_view(&pool, m.s.company_id, bt, jour(11, 17)).await;
+    let res = reconciliation_cancel::get_view(&pool, m.s.company_id, bt).await;
     assert!(
         matches!(&res, Err(DbError::Invariant(msg)) if msg.contains("ligne d'écart absente")),
         "{res:?}"
@@ -2597,7 +2726,7 @@ async fn a_malformed_supplier_group_is_an_invariant_for_the_view(pool: MySqlPool
         .execute(&pool)
         .await
         .unwrap();
-    let res = reconciliation_cancel::get_view(&pool, m.s.company_id, bt, jour(11, 17)).await;
+    let res = reconciliation_cancel::get_view(&pool, m.s.company_id, bt).await;
     assert!(matches!(&res, Err(DbError::Invariant(_))), "{res:?}");
 }
 
@@ -2776,7 +2905,7 @@ async fn unreconciling_a_group_leaves_the_characterised_state(pool: MySqlPool) {
     let intact = empreinte_du_groupe(&pool, done2.journal_entry_id, bt2, &[c, d]).await;
     let avant = caracterisation::dernier_audit(&pool).await;
 
-    let undone = reconciliation_cancel::cancel(&pool, m.s.company_id, bt, cle, jour(11, 17))
+    let undone = reconciliation_cancel::cancel(&pool, m.s.company_id, bt, cle)
         .await
         .expect("dé-rapproché");
     let reversal = undone.reversal_journal_entry_id.expect("contre-passée");
@@ -2860,8 +2989,10 @@ async fn unreconciling_a_group_leaves_the_characterised_state(pool: MySqlPool) {
                 ligne(4, "4000", "0.4000", "0.0000", None),
             ],
         },
+        // Story 53-6a (#1674) : datée de l'écriture du groupe (15 juin), non du
+        // jour — seul changement d'attendu de ce relevé, avec `dating` ci-dessous.
         "reversal": {
-            "entry_number": 7, "entry_date": "2026-11-17", "fiscal_year_id": fy,
+            "entry_number": 7, "entry_date": "2026-06-15", "fiscal_year_id": fy,
             "journal": "OD", "description": "Contre-passation écriture n° 3",
             "reverses_entry_id": entry, "version": 1,
             "lines": [
@@ -2896,7 +3027,7 @@ async fn unreconciling_a_group_leaves_the_characterised_state(pool: MySqlPool) {
                 ],
             })),
             acte("journal_entry.created", "journal_entry", reversal, json!({
-                "id": reversal, "entryNumber": 7, "entryDate": "2026-11-17", "journal": "OD",
+                "id": reversal, "entryNumber": 7, "entryDate": "2026-06-15", "journal": "OD",
                 "description": "Contre-passation écriture n° 3", "version": 1,
                 "lines": [
                     { "lineOrder": 1, "accountId": m.bank_ledger, "debit": "0.0000", "credit": "299.6000", "projectId": null },
@@ -2906,7 +3037,7 @@ async fn unreconciling_a_group_leaves_the_characterised_state(pool: MySqlPool) {
                 ],
             })),
             acte("journal_entry.reversed", "journal_entry", entry, json!({
-                "reversalJournalEntryId": reversal,
+                "reversalJournalEntryId": reversal, "dating": "originDate",
             })),
             acte("lettering.created", "lettering", g2, json!({
                 "accountId": receivable, "accountNumber": "1100", "code": "F", "origin": "reversal",

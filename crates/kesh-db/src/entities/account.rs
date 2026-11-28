@@ -468,3 +468,64 @@ pub struct AccountUpdate {
     /// refus d'un cycle (cf. `repositories::accounts::update`).
     pub parent: ParentChange,
 }
+
+/// Nombre maximal de propositions d'une demande de la route groupée du plan
+/// (Story 46-5a) ; au-delà, `ACCOUNT_GROUP_INVALID` `tooMany`.
+pub const MAX_GROUP_PROPOSALS: usize = 100;
+
+/// Nombre maximal de membres, toutes propositions réunies, d'une demande de la
+/// route groupée du plan (Story 46-5a) ; au-delà, `tooMany`.
+pub const MAX_GROUP_MEMBERS: usize = 1000;
+
+/// Ce que devient le compte de groupe d'une proposition (Story 46-5a).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GroupKind {
+    /// Un groupe à créer : numéro et nom déjà contrôlés par l'appelant (non
+    /// vides après `trim`, longueurs de `POST /accounts`), parent facultatif.
+    /// Type déduit des membres ; devise principale, aucun rôle, non imputable.
+    Create {
+        number: String,
+        name: String,
+        parent_id: Option<i64>,
+    },
+    /// Un compte de groupe existant (actif, au moins un sous-compte actif).
+    Attach { account_id: i64 },
+    /// Un compte actif sans sous-compte actif, qui devient groupe.
+    Reuse { account_id: i64 },
+}
+
+impl GroupKind {
+    /// Le compte existant visé par un rattachement ou une réutilisation.
+    pub fn target(&self) -> Option<i64> {
+        match self {
+            Self::Create { .. } => None,
+            Self::Attach { account_id } | Self::Reuse { account_id } => Some(*account_id),
+        }
+    }
+}
+
+/// Un compte à ranger sous le groupe d'une proposition, avec la `version` lue
+/// à l'aperçu (comparée sous verrou : `OPTIMISTIC_LOCK_CONFLICT` s'il a changé).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GroupMember {
+    pub id: i64,
+    pub version: i32,
+}
+
+/// Une proposition de la route groupée du plan : un groupe et ses membres.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupProposal {
+    pub kind: GroupKind,
+    pub members: Vec<GroupMember>,
+}
+
+/// Ce qu'a fait une demande groupée acceptée : les groupes créés, les comptes
+/// réutilisés comme groupe (devenus non imputables) et les comptes réellement
+/// déplacés (un membre déjà sous son groupe n'y figure pas), chacun par `id`
+/// croissant.
+#[derive(Debug, Clone, Default)]
+pub struct GroupsOutcome {
+    pub created: Vec<Account>,
+    pub reused: Vec<Account>,
+    pub moved: Vec<Account>,
+}
