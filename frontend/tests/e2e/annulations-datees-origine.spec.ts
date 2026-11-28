@@ -353,7 +353,7 @@ test.describe.serial('63-1 — annuler depuis la fiche, daté de l’origine', (
 			await page.goto(`/invoices/${client}`);
 			await expect(page.getByTestId('invoice-settlement-cancel')).toHaveCount(0);
 			const motifClient = page.getByTestId('invoice-settlement-cancel-blocked');
-			await expect(motifClient).toContainText('Ce règlement est dans une période verrouillée');
+			await expect(motifClient).toContainText('Cette écriture est dans une période verrouillée');
 			await expect(motifClient).toContainText(
 				"La période est verrouillée jusqu'au 31.12.2025 inclus.",
 			);
@@ -363,6 +363,67 @@ test.describe.serial('63-1 — annuler depuis la fiche, daté de l’origine', (
 			await ctx.post('/api/v1/companies/current/books-lock/release', {
 				data: { through: null, motif: 'Fin du test E2E 63-1' },
 			});
+			await disposeContextSafe(ctx);
+		}
+	});
+
+	// Revue P1 de la 63-1 (L3, L4) — le verrou posé ENTRE la lecture de la fiche et le clic : le
+	// serveur refuse en `400 PERIOD_LOCKED`, et la fiche le dit comme son motif, en date suisse.
+	test('(3) verrou posé entre la lecture et le clic : le refus dit le motif de la fiche, en date suisse', async ({
+		page,
+	}, testInfo) => {
+		await login(page);
+		const ctx = await authedApiContext(page);
+		const poserLeVerrou = async () => {
+			const lock = await ctx.post('/api/v1/companies/current/books-lock', {
+				data: { through: LOCK_THROUGH },
+			});
+			expect(lock.ok(), `verrou : ${lock.status()} ${await lock.text()}`).toBeTruthy();
+		};
+		const leverLeVerrou = async () => {
+			await ctx.post('/api/v1/companies/current/books-lock/release', {
+				data: { through: null, motif: 'Fin du test E2E 63-1' },
+			});
+		};
+		try {
+			const client = await factureReglee(ctx, '40.00');
+			const fournisseur = await factureFournisseur(ctx, false);
+
+			// Fiche client : le dialogue est ouvert AVANT le verrou, le clic de confirmation APRÈS.
+			await page.goto(`/invoices/${client}`);
+			await page.getByTestId('invoice-settlement-cancel').click();
+			await expect(page.getByRole('dialog')).toBeVisible();
+			await poserLeVerrou();
+			await page.getByTestId('invoice-settlement-cancel-confirm').click();
+			const refusClient = page.getByTestId('invoice-settlement-cancel-error');
+			await expect(refusClient).toContainText('Cette écriture est dans une période verrouillée');
+			await expect(refusClient).toContainText(
+				"La période est verrouillée jusqu'au 31.12.2025 inclus.",
+			);
+			await expect(refusClient).not.toContainText('2025-12-31');
+			await capture(page, testInfo, 'refus-au-clic-reglement-client');
+			await leverLeVerrou();
+
+			// Fiche fournisseur : le bouton est offert à la lecture, le verrou posé avant le clic ; la
+			// facture est relue (le bouton cède la place au motif) et le refus reste affiché.
+			await page.goto(`/supplier-invoices/${fournisseur}`);
+			await expect(page.getByTestId('supplier-invoice-cancel')).toBeVisible();
+			await poserLeVerrou();
+			const confirmation = accepterEtNoter(page, testInfo, 'refus-au-clic-facture-fournisseur');
+			await page.getByTestId('supplier-invoice-cancel').click();
+			await confirmation;
+			const refusFournisseur = page.getByTestId('supplier-invoice-cancel-error');
+			await expect(refusFournisseur).toContainText(
+				"La période est verrouillée jusqu'au 31.12.2025 inclus.",
+			);
+			await expect(refusFournisseur).not.toContainText('2025-12-31');
+			// La relecture a remplacé le bouton par le motif (L3).
+			await expect(page.getByTestId('supplier-invoice-cancel')).toHaveCount(0);
+			await expect(page.getByTestId('supplier-invoice-cancel-blocked')).toContainText('31.12.2025');
+			await capture(page, testInfo, 'refus-au-clic-facture-fournisseur');
+		} finally {
+			// Un verrou laissé en place verrouillerait les specs suivantes.
+			await leverLeVerrou();
 			await disposeContextSafe(ctx);
 		}
 	});
