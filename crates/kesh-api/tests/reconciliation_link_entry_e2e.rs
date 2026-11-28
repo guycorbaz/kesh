@@ -3083,6 +3083,10 @@ async fn s34_11b_ac4_annuler_un_cote_puis_l_autre(pool: MySqlPool) {
     assert_eq!(vue["cancellable"], true, "{vue}");
     assert_eq!(vue["unlinkOnly"], true, "{vue}");
     assert!(vue["cancelBlockedBy"].is_null(), "{vue}");
+    // Story 53-6a (AC-10, revue P1 L8) — un retrait seul n'écrit aucune
+    // contre-passation : la vue ne dit ni date ni exercice.
+    assert!(vue["reversalDate"].is_null(), "{vue}");
+    assert!(vue["reversalFiscalYearName"].is_null(), "{vue}");
     let ecritures = ctx.ecritures().await;
     let (s, b) = ctx.annuler_rapprochement(credit).await;
     assert_eq!(s, 200, "{b}");
@@ -3109,6 +3113,8 @@ async fn s34_11b_ac4_annuler_un_cote_puis_l_autre(pool: MySqlPool) {
     let vue = ctx.vue(debit).await;
     assert_eq!(vue["cancellable"], true, "{vue}");
     assert_eq!(vue["unlinkOnly"], false, "{vue}");
+    assert!(vue["reversalDate"].is_string(), "le dernier côté : {vue}");
+    assert!(vue["reversalFiscalYearName"].is_string(), "{vue}");
     let (s, b) = ctx.annuler_rapprochement(debit).await;
     assert_eq!(s, 200, "{b}");
     assert!(b["reversalJournalEntryId"].as_i64().is_some(), "{b}");

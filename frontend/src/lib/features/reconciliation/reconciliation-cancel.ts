@@ -86,12 +86,20 @@ export function reconciliationCancelMessage(
 		}
 		case 'PERIOD_LOCKED': {
 			// Story 53-6a (#1674, D5) — clé sans variable (le serveur la rend telle quelle) ; la
-			// borne s'ajoute comme le numéro du compte archivé, en date suisse.
+			// borne s'ajoute en une phrase à part, qui la nomme comme borne du verrou : accolée entre
+			// parenthèses après « avant sa date. », elle se lisait comme la date de l'écriture
+			// (revue P1, L1) — et l'administrateur aurait reculé le verrou d'un jour seulement.
 			const base = i18nMsg(
 				'reconciliation-cancel-blocked-period-locked',
 				"L'écriture de ce rapprochement est dans une période verrouillée : pour pouvoir l'annuler, un administrateur doit faire reculer le verrou avant sa date.",
 			);
-			return label ? `${base} (${formatSwissDate(label)})` : base;
+			if (!label) return base;
+			const through = i18nMsg(
+				'reconciliation-cancel-blocked-period-locked-through',
+				"La période est verrouillée jusqu'au { $date } inclus.",
+				{ date: formatSwissDate(label) },
+			);
+			return `${base} ${through}`;
 		}
 		// Inatteignable pour le dé-rapprochement depuis la Story 53-6a ; clé et repli gardés.
 		case 'FISCAL_YEAR_INVALID':

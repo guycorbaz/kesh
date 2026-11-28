@@ -139,12 +139,14 @@
 		}
 		// Story 53-6a (#1674, D4) — la contre-passation est datée de l'écriture du rapprochement,
 		// dans son exercice : la confirmation les nomme, au lieu de « aujourd'hui ».
-		const date = view?.reversalDate ? formatSwissDate(view.reversalDate) : '';
-		const fiscalYear = view?.reversalFiscalYearName ?? '';
+		// Une vue rendue par un serveur antérieur ne porte ni l'un ni l'autre : un tiret plutôt
+		// qu'un blanc, qui laisserait une phrase tronquée (revue P1, L4).
+		const date = view?.reversalDate ? formatSwissDate(view.reversalDate) : '—';
+		const fiscalYear = view?.reversalFiscalYearName ?? '—';
 		if (view?.kind === 'invoice_settlement') {
 			return i18nMsg(
 				'reconciliation-cancel-confirm-invoice',
-				"Une écriture inverse datée du { $date } (date de l'écriture du rapprochement) sera passée dans l'exercice { $fiscalYear }, le règlement de la facture { $invoice } sera retiré et la facture redeviendra à régler ; la transaction redeviendra à rapprocher.",
+				"Une écriture inverse datée du { $date } (date de l'écriture du rapprochement) sera passée dans l'exercice « { $fiscalYear } », le règlement de la facture { $invoice } sera retiré et la facture redeviendra à régler ; la transaction redeviendra à rapprocher.",
 				{ date, fiscalYear, invoice: view.invoiceNumber ?? String(view.invoiceId ?? '') },
 			);
 		}
@@ -153,7 +155,7 @@
 		if (view?.kind === 'supplier_settlement') {
 			return i18nMsg(
 				'reconciliation-cancel-confirm-supplier-invoice',
-				"Une écriture inverse datée du { $date } (date de l'écriture du rapprochement) sera passée dans l'exercice { $fiscalYear }, le paiement de la facture fournisseur { $invoice } sera retiré et la facture redeviendra validée, à payer ; la transaction redeviendra à rapprocher.",
+				"Une écriture inverse datée du { $date } (date de l'écriture du rapprochement) sera passée dans l'exercice « { $fiscalYear } », le paiement de la facture fournisseur { $invoice } sera retiré et la facture redeviendra validée, à payer ; la transaction redeviendra à rapprocher.",
 				{
 					date,
 					fiscalYear,
@@ -172,19 +174,19 @@
 			if ((view.groupedInvoices ?? []).some((g) => g.kind === 'supplier_invoice')) {
 				return i18nMsg(
 					'reconciliation-cancel-confirm-group-supplier',
-					"Une écriture inverse datée du { $date } (date de l'écriture du rapprochement) sera passée dans l'exercice { $fiscalYear }, le paiement des factures fournisseur { $invoices } sera retiré et elles redeviendront validées, à payer ; la transaction redeviendra à rapprocher.",
+					"Une écriture inverse datée du { $date } (date de l'écriture du rapprochement) sera passée dans l'exercice « { $fiscalYear } », le paiement des factures fournisseur { $invoices } sera retiré et elles redeviendront validées, à payer ; la transaction redeviendra à rapprocher.",
 					{ date, fiscalYear, invoices },
 				);
 			}
 			return i18nMsg(
 				'reconciliation-cancel-confirm-group',
-				"Une écriture inverse datée du { $date } (date de l'écriture du rapprochement) sera passée dans l'exercice { $fiscalYear }, le règlement des factures { $invoices } sera retiré et elles redeviendront à régler ; la transaction redeviendra à rapprocher.",
+				"Une écriture inverse datée du { $date } (date de l'écriture du rapprochement) sera passée dans l'exercice « { $fiscalYear } », le règlement des factures { $invoices } sera retiré et elles redeviendront à régler ; la transaction redeviendra à rapprocher.",
 				{ date, fiscalYear, invoices },
 			);
 		}
 		return i18nMsg(
 			'reconciliation-cancel-confirm-entry',
-			"Une écriture inverse datée du { $date } (date de l'écriture du rapprochement) sera passée dans l'exercice { $fiscalYear }, et la transaction redeviendra à rapprocher.",
+			"Une écriture inverse datée du { $date } (date de l'écriture du rapprochement) sera passée dans l'exercice « { $fiscalYear } », et la transaction redeviendra à rapprocher.",
 			{ date, fiscalYear },
 		);
 	});
@@ -199,7 +201,7 @@
 		view && !view.unlinkOnly
 			? i18nMsg(
 					'reconciliation-cancel-confirm-vat',
-					"Les totaux de cette période changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période.",
+					"Les totaux de cette période changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
 				)
 			: null,
 	);

@@ -82,6 +82,7 @@ async function settledFromTheInvoice(
 	bankAccountId: number;
 	importId: number;
 	txId: number;
+	invoiceId: number;
 	settlementId: number;
 	journalEntryId: number;
 	settled: string;
@@ -144,6 +145,7 @@ async function settledFromTheInvoice(
 			bankAccountId,
 			importId,
 			txId: detail.transactions[0].id,
+			invoiceId,
 			settlementId,
 			journalEntryId,
 			settled,
@@ -212,6 +214,25 @@ for (const [colorScheme, suffixe] of [
 			).json()) as { kind: string; matchedEntryId: number | null };
 			expect(tx.kind).toBe('invoice_settlement');
 			expect(tx.matchedEntryId).toBe(d.journalEntryId);
+
+			// Story 53-6a (#1674, AC-14, revue P1 L11) — le dialogue d'annulation OUVERT DEPUIS LA FICHE
+			// de la facture client : même texte daté (la date du règlement, 16.05.2026), même exercice.
+			// Recette visuelle, thème clair seulement ; le dialogue se referme sans rien annuler.
+			if (colorScheme === 'light') {
+				await page.goto(`/invoices/${d.invoiceId}`);
+				await page.getByTestId('invoice-settlement-cancel-reconciliation').click();
+				const dialogue = page.getByTestId('reconciliation-cancel-dialog');
+				const texte = dialogue.getByTestId('reconciliation-cancel-confirm-text');
+				await expect(texte).toContainText('datée du 16.05.2026');
+				await expect(texte).toContainText("dans l'exercice « Exercice CI 2020-2030 »");
+				await expect(texte).not.toContainText("aujourd'hui");
+				await page.screenshot({
+					path: capturePath(testInfo, '53-6a-dialogue-depuis-la-fiche-facture'),
+					animations: 'disabled',
+				});
+				await page.keyboard.press('Escape');
+				await expect(dialogue).toBeHidden();
+			}
 		} finally {
 			// Annuler le rapprochement annule aussi le règlement (AC3), puis l'import se supprime.
 			await ctx.post(`/api/v1/reconciliation/transactions/${d.txId}/cancel`, { data: {} });

@@ -232,3 +232,55 @@ test('un débit déjà comptabilisé au journal se rattache à son écriture (#6
 		await disposeContextSafe(ctx);
 	}
 });
+
+// ---------------------------------------------------------------------------
+// Story 53-6a (#1674, revue P1 L11) — une candidate dont l'écriture est sous la borne du verrou
+// ---------------------------------------------------------------------------
+
+test('53-6a — une écriture candidate sous la borne du verrou : le motif nomme la borne, Rattacher attend la case', async ({
+	page,
+}, testInfo) => {
+	await login(page);
+	const d = await decor(page);
+	const ctx = await authedApiContext(page);
+	try {
+		// L'écriture de la dépense est du 14.05.2026 ; la borne (31.05) lui est postérieure : le
+		// motif doit dire jusqu'où la période est verrouillée, non la date de l'écriture.
+		const lock = await ctx.post('/api/v1/companies/current/books-lock', {
+			data: { through: '2026-05-31' },
+		});
+		expect(lock.ok(), `verrou : ${lock.status()} ${await lock.text()}`).toBeTruthy();
+
+		await page.goto('/reconciliation');
+		await page.getByTestId('bank-account-select').selectOption(d.bankAccountId.toString());
+		const ligne = page.locator(`[data-testid="reconciliation-row"][data-tx-id="${d.txId}"]`);
+		await expect(ligne).toBeVisible({ timeout: 10000 });
+		await ligne.getByTestId('link-settlement-button').click();
+		const modal = page.getByTestId('link-settlement-modal');
+		const choix = modal.locator(
+			`[data-testid="entry-candidate-radio"][data-entry-id="${d.journalEntryId}"]`,
+		);
+		await expect(choix).toBeVisible({ timeout: 10000 });
+		await choix.check();
+
+		const obstacle = modal.getByTestId('entry-candidate-cancel-blocked');
+		const raison = obstacle.getByTestId('entry-cancel-blocked-reason');
+		await expect(raison).toContainText('période verrouillée');
+		await expect(raison).toContainText("La période est verrouillée jusqu'au 31.05.2026 inclus.");
+		await expect(raison).not.toContainText('(31.05.2026)');
+		await expect(modal.getByTestId('link-submit')).toBeDisabled();
+		await modal.screenshot({
+			path: capturePath(testInfo, '53-6a-rattachement-candidate-sous-la-borne'),
+			animations: 'disabled',
+		});
+		await page.keyboard.press('Escape');
+		await expect(modal).toBeHidden();
+	} finally {
+		// Un verrou laissé en place verrouillerait les specs suivantes ; l'import se supprime.
+		await ctx.post('/api/v1/companies/current/books-lock/release', {
+			data: { through: null, motif: 'Fin du test E2E 53-6a' },
+		});
+		await ctx.delete(`/api/v1/bank-imports/${d.importId}`);
+		await disposeContextSafe(ctx);
+	}
+});

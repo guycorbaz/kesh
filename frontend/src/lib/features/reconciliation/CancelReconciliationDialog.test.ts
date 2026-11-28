@@ -126,11 +126,22 @@ describe('CancelReconciliationDialog', () => {
 		const { findByTestId } = monter();
 		const t = (await findByTestId('reconciliation-cancel-confirm-text')).textContent ?? '';
 		expect(t).toContain('datée du 20.12.2025');
-		expect(t).toContain("dans l'exercice FY 2025");
+		expect(t).toContain("dans l'exercice « FY 2025 »");
 		expect(t).not.toContain("aujourd'hui");
-		expect((await findByTestId('reconciliation-cancel-vat')).textContent).toContain(
-			'TVA comprise',
+		const tva = (await findByTestId('reconciliation-cancel-vat')).textContent ?? '';
+		expect(tva).toContain('TVA comprise');
+		// Revue P1, L2 — le conseil dit aussi ce qui s'ensuit : un refus, qui protège la déclaration.
+		expect(tva).toContain("l'annulation sera alors refusée, ce qui protège la déclaration");
+	});
+
+	it('Revue P1 (L4) — une vue sans date ni exercice (serveur antérieur) ne tronque pas la phrase', async () => {
+		mockApi.getReconciliationTransaction.mockResolvedValue(
+			view({ reversalDate: undefined, reversalFiscalYearName: undefined }),
 		);
+		const { findByTestId } = monter();
+		const t = (await findByTestId('reconciliation-cancel-confirm-text')).textContent ?? '';
+		expect(t).toContain('datée du —');
+		expect(t).toContain("dans l'exercice « — »");
 	});
 
 	it('Story 53-6a — les cinq genres nomment la date (mutation : un message oublié)', async () => {
@@ -152,7 +163,7 @@ describe('CancelReconciliationDialog', () => {
 			const { findByTestId } = monter();
 			const t = (await findByTestId('reconciliation-cancel-confirm-text')).textContent ?? '';
 			expect(t, JSON.stringify(partial)).toContain('datée du 14.03.2026');
-			expect(t, JSON.stringify(partial)).toContain("dans l'exercice 2026");
+			expect(t, JSON.stringify(partial)).toContain("dans l'exercice « 2026 »");
 			cleanup();
 		}
 	});
@@ -165,7 +176,7 @@ describe('CancelReconciliationDialog', () => {
 		const { findByTestId, queryByTestId } = monter();
 		const motif = (await findByTestId('reconciliation-cancel-motif')).textContent ?? '';
 		expect(motif).toContain('période verrouillée');
-		expect(motif).toContain('(30.06.2026)');
+		expect(motif).toContain("verrouillée jusqu'au 30.06.2026 inclus");
 		expect(queryByTestId('reconciliation-cancel-submit')).toBeNull();
 		expect(queryByTestId('reconciliation-cancel-vat')).toBeNull();
 	});
@@ -182,7 +193,7 @@ describe('CancelReconciliationDialog', () => {
 		await fireEvent.click(await findByTestId('reconciliation-cancel-submit'));
 		const erreur = (await findByTestId('reconciliation-cancel-error')).textContent ?? '';
 		expect(erreur).toContain('période verrouillée');
-		expect(erreur).toContain('(30.06.2026)');
+		expect(erreur).toContain("verrouillée jusqu'au 30.06.2026 inclus");
 	});
 });
 

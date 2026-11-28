@@ -576,7 +576,7 @@ describe('LinkSettlementModal — écritures existantes (Story v017-3a)', () => 
 			'[data-testid="entry-cancel-blocked-reason"]',
 		);
 		expect(raison?.textContent).toContain('période verrouillée');
-		expect(raison?.textContent).toContain('(30.06.2026)');
+		expect(raison?.textContent).toContain("verrouillée jusqu'au 30.06.2026 inclus");
 		expect((getByTestId('link-submit') as HTMLButtonElement).disabled).toBe(true);
 	});
 
