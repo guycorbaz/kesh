@@ -1353,7 +1353,7 @@ development_status:
   epic-65: backlog
   58-4-textes-interface-i18n: backlog  # → Epic 65 (2026-11-28) ; 10 issues ; catalogues des quatre locales
   58-5-cosmetique-ecrans: backlog  # → Epic 65 (2026-11-28) ; 10 issues ; recette visuelle
-  58-6-tests-frontend-reconciliation: backlog  # → Epic 65 (2026-11-28) ; 10 issues
+  58-6-tests-frontend-reconciliation: drafted  # fiche rédigée le 2026-11-28, Epic 65 ; 10 issues ; #1088 : retrait de la garde (D2)
   epic-65-retrospective: optional
 
   # 2026-11-27 — Epic 64 « Corrections de la v0.20.1 » : une story de correction (#1178 P2, #1758 P3, #1712 P3), sans migration ; release visée dimanche 2026-11-29 ou lundi 2026-11-30 (décision du Project Lead du 2026-11-27) ; fichier epic-64-corrections-0201.md
