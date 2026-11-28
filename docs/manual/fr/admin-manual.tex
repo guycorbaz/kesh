@@ -239,7 +239,7 @@ cd /opt/kesh
 Télécharger le fichier de référence depuis le dépôt officiel, \textbf{au tag de la version que décrit ce manuel} (\texttt{v\keshVersion}) --- non à la branche \texttt{main}, qui peut être en avance sur l'image publiée ; pour une autre version, remplacez le tag dans l'adresse :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.20.0/docker-compose.yml \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.20.1/docker-compose.yml \
     -o docker-compose.yml
 \end{lstlisting}
 
@@ -250,7 +250,7 @@ Ce fichier désigne l'image publiée \texttt{gcorbaz/kesh:latest} : \keshcommand
 Copier le fichier d'exemple et l'adapter :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.20.0/.env.example \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.20.1/.env.example \
     -o .env
 \end{lstlisting}
 
@@ -586,7 +586,7 @@ Télécharger le \keshpath{docker-compose.yml} canonique depuis le dépôt Kesh,
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.20.0
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.20.1
 curl -fsSL "$DEPOT/docker-compose.prod.yml" -o docker-compose.yml
 curl -fsSL "$DEPOT/.env.example" -o .env
 
@@ -1926,7 +1926,7 @@ Les exports ne doivent pas rester dans le dossier de téléchargements : Synolog
 \Needspace{15\baselineskip}
     \item \textbf{Compose et \keshpath{.env.example} au tag de la version relevée, et variables qu'il lit.} Remplacez \texttt{0.15.0} par la version relevée. Les exemples de cette sous-section portent \texttt{0.15.0}, la version de ce manuel ; une production qui satisfait le prérequis porte \textbf{0.15.0 ou plus} : à une version suivante, l'exemple recopié tel quel donnerait une copie qui n'est pas celle de la production. Le contrôle~9 arrête une \textbf{image} d'une autre version ; le tag de \keshcommand{DEPOT}, lui, n'est contrôlé par rien : remplacez les deux.
 \begin{lstlisting}[language=bash]
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.20.0
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.20.1
 curl -fsSL "$DEPOT/docker-compose.yml" -o "$COPIE/docker-compose.yml"
 curl -fsSL "$DEPOT/.env.example" -o "$COPIE/.env"
 grep -oE '\$\{?[A-Za-z_][A-Za-z0-9_]*' "$COPIE/docker-compose.yml" \
@@ -2245,7 +2245,7 @@ Les deux scripts sont des fichiers du dépôt Kesh, \keshpath{scripts/synology/k
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.20.0
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.20.1
 curl -fsSLO "$DEPOT/scripts/synology/kesh-dump.sh"
 curl -fsSLO "$DEPOT/scripts/synology/kesh-restore.sh"
 chmod 700 kesh-dump.sh kesh-restore.sh
@@ -2729,6 +2729,21 @@ Le numéro de version de Kesh s'écrit \texttt{a.b.c}, et chacun de ses chiffres
 \end{itemize}
 
 Le numéro ne suit pas le calendrier : plusieurs versions peuvent paraître dans la même semaine, et une version qui porte une migration paraît de préférence un vendredi.
+
+\subsubsection{Passer à la 0.20.1}\label{sec:maj-0-20-1}
+\sloppy
+
+La 0.20.1 se pose sur la 0.20.0 : elle n'exige ni nouveau compose ni nouvelle variable de \keshpath{.env} ; on tire l'image et on redémarre (\S\ref{sec:mise-a-jour}). Depuis une version antérieure à la 0.20.0, appliquez d'abord les sections suivantes (\S\ref{sec:maj-0-20-0}). \textbf{Prenez avant la mise à jour la sauvegarde complète} --- la base, un \keshcommand{.keshbackup} et le dossier des documents ---, comme avant toute mise à jour d'une installation qui tient des livres : la 0.20.1 n'a pas de migration, mais c'est cette sauvegarde qui rattrape un imprévu.
+
+\paragraph{Aucune migration, retour à la 0.20.0 sans restauration.} \textbf{La 0.20.1 n'a aucune migration} : elle ne modifie pas le schéma, \texttt{kesh\_version\_min\_required} reste à \texttt{0.17.6}, et Kesh n'écrit \textbf{aucune} sauvegarde dans \keshpath{backup/pre-upgrade/} à cette mise à jour (il n'en écrit qu'avant une migration, \S\ref{sec:sauvegarde-avant-maj}). \textbf{Le retour à la 0.20.0 se fait sans restauration} : reprenez l'image \texttt{gcorbaz/kesh:0.20.0} dans le compose et redémarrez ; la 0.20.0 démarre sur la base telle que la 0.20.1 l'a laissée, et ce qui a été saisi entre-temps reste. Une sauvegarde \keshcommand{.keshbackup} prise en 0.20.0 s'importe dans la 0.20.1.
+
+\paragraph{Ce qu'il faut savoir.} Rien n'est à régler. \textbf{Les lignes d'une facture en brouillon se réordonnent} d'un rang par les boutons $\uparrow$ et $\downarrow$ de chaque ligne ; l'ordre devient celui du PDF et de l'avoir, et ne change ni le total, ni la TVA, ni l'écriture. \textbf{Les rapports sont navigables} : le retour et le suivant du navigateur ramènent au rapport précédent avec sa présentation, le numéro d'un compte ouvre son grand livre, et les justificatifs d'une écriture (le PDF de la facture, de l'avoir ou le document du fournisseur) s'ouvrent depuis les journaux et le grand livre sans figer une facture. \textbf{Le mode d'interface (Guidé ou Expert) de l'installation ne se change plus que par l'Administrateur} : un Comptable ou un Consultation ne voit plus la bascule dans le menu utilisateur. \textbf{La page des taux de TVA} enregistre de nouveau un taux créé ou changé, et la page de modification d'une facture refuse d'entrée une facture validée ou annulée. \textbf{Aucune facture, aucun avoir et aucun PDF déjà émis ne change.}
+
+\begin{sloppypar}
+\paragraph{Pour les intégrations.} \texttt{PUT /api/v1/profile/mode} est \textbf{réservé à l'Administrateur} : un Comptable ou un Consultation reçoit \texttt{403 FORBIDDEN}, une clé d'API \texttt{read-write} reçoit \texttt{403 API\_KEY\_ADMIN\_FORBIDDEN} et une clé \texttt{read}, comme pour toute écriture, \texttt{403 API\_KEY\_READ\_ONLY}. Changement de contrat sous \texttt{/api/v1}, sans nouvelle version de l'API : un client qui écrivait le mode avec un autre compte doit passer par une session d'Administrateur. Les routes des rapports ajoutent, sans rien retirer, le champ \texttt{hasDocuments} aux écritures des journaux et du grand livre, et la route \texttt{GET /api/v1/journal-entries/\allowbreak\{id\}/documents} liste les justificatifs d'une écriture (guide de l'API).
+\end{sloppypar}
+
+\fussy
 
 \subsubsection{Passer à la 0.20.0}\label{sec:maj-0-20-0}
 % Issue #1242 (la migration, « Pour les intégrations ») et le reste de la
