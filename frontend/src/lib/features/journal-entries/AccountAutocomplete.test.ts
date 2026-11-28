@@ -125,6 +125,35 @@ describe('AccountAutocomplete — consommateurs stricts (Story 16-1b, AC13 ; Sto
 		expect(onSelect).not.toHaveBeenCalled();
 	});
 
+	// Story 58-6 (#1084) : on FIXE le comportement, on ne le change pas (D2 de la 35-7). Tab ne
+	// choisit rien : un numéro complet tapé, option désignée et liste ouverte, puis Tab, ne
+	// sélectionne pas le compte ; le champ strict, quitté, jette le brouillon et réaffiche le compte
+	// retenu. Faire choisir l'unique correspondance exacte serait une règle d'interface nouvelle.
+	it('sans `allowClear` : un numéro complet tapé puis Tab ne choisit rien, le champ réaffiche le compte (Story 58-6, #1084)', async () => {
+		const onSelect = vi.fn();
+		const comptes = [...accounts, acc({ id: 69, number: '6900', name: 'Frais financiers', accountType: 'Expense' })];
+		const { getByRole, queryAllByRole } = render(AccountAutocomplete, {
+			accounts: comptes,
+			value: 1,
+			onSelect,
+		});
+
+		const input = getByRole('textbox') as HTMLInputElement;
+		await fireEvent.focus(input);
+		await fireEvent.input(input, { target: { value: '6900' } });
+		// Prémisse : la liste est ouverte et propose le compte, désigné par la saisie.
+		const options = queryAllByRole('option');
+		expect(options).toHaveLength(1);
+		expect(options[0].textContent).toContain('6900');
+		expect(options[0].getAttribute('aria-selected')).toBe('true');
+
+		await fireEvent.keyDown(input, { key: 'Tab' });
+		await fireEvent.blur(input);
+
+		expect(onSelect).not.toHaveBeenCalled();
+		expect(input.value).toBe('1000 — Caisse');
+	});
+
 	it('sans `allowClear`, valeur nulle : un texte libre est jeté au `blur`, le champ reste vide (Story 35-7, AC1)', async () => {
 		const onSelect = vi.fn();
 		const { getByRole } = render(AccountAutocomplete, { accounts, value: null, onSelect });
