@@ -875,7 +875,7 @@ verrouillée ne s'annule donc pas sans faire reculer le verrou --- la fiche le d
 C'est notamment le cas d'une facture fournisseur d'un trimestre TVA déjà verrouillé~: une fois le
 verrou reculé et l'annulation passée, les totaux de ce trimestre changent (charge, impôt
 préalable), et Kesh ne garde pas le décompte déjà déposé. L'écart se corrige auprès de l'AFC, par
-un décompte rectificatif ou dans un décompte suivant, à voir avec la fiduciaire. La
+une correction du décompte déposé (selon les formulaires de l'AFC) ou dans un décompte suivant, à voir avec la fiduciaire. La
 contre-passation depuis la fiche d'une écriture \textbf{non possédée} et non rapprochée reste
 datée du jour et passe~; celle d'une écriture rapprochée est refusée par la contre-passation
 directe, qui renvoie à l'annulation du rapprochement.
@@ -2010,10 +2010,9 @@ Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~:
     \item \textbf{un compte du règlement a été archivé}~: réactivez-le (son numéro est indiqué)~;
     \item \textbf{le règlement est dans une période verrouillée} (sa date est au plus tard la
           borne du verrou, indiquée)~: un administrateur doit faire reculer le verrou avant sa
-          date (\S\ref{sec:verrou-periode}). Si cette période a déjà été déclarée, l'annulation
-          en change les totaux (TVA comprise) et Kesh ne garde pas le décompte déposé~: l'écart
-          se corrige auprès de l'AFC, par un décompte rectificatif ou dans un décompte suivant,
-          à voir avec la fiduciaire.
+          date (\S\ref{sec:verrou-periode}). Un règlement ne porte pas de TVA~: l'annuler ne change
+          aucun décompte de TVA déjà déclaré, seulement les soldes de la période (banque,
+          débiteurs).
 \end{itemize}
 
 \textbf{Lettrage.} Une facture \textbf{soldée} --- par ses règlements, par le solde de son reste
@@ -2660,9 +2659,8 @@ verrouillée} (sa date est au plus tard la borne du verrou, indiquée~: un admin
 reculer le verrou avant sa date), ou le paiement est \textbf{rapproché} d'une transaction bancaire --- la
 réconciliation l'a réglée (\S\ref{sec:matching-fournisseur})~: annulez d'abord le rapprochement,
 depuis le détail de l'import bancaire (\S\ref{sec:annuler-rapprochement}), qui retire aussi le
-paiement. Si le trimestre du paiement a déjà été déclaré, le recul du verrou en change les
-totaux, et Kesh ne garde pas le décompte déposé~: l'écart se corrige auprès de l'AFC, par un
-décompte rectificatif ou dans un décompte suivant, à voir avec la fiduciaire.
+paiement. Un paiement ne porte pas de TVA~: l'annuler ne change aucun décompte de TVA déjà
+déclaré, seulement les soldes de la période (banque, créanciers).
 
 \subsubsection{Une facture fournisseur au total sous le centime}\label{sec:facture-fournisseur-sous-centime}
 
@@ -2729,7 +2727,7 @@ sera alors refusée, ce qui protège la déclaration. Une facture d'un trimestre
 s'annule donc qu'après que l'administrateur a fait reculer le verrou avant la date de l'achat
 (\S\ref{sec:verrou-periode}). \textbf{Le trimestre déjà déclaré change alors} : sa charge et son
 impôt préalable ne sont plus ceux du décompte déposé, et Kesh ne garde pas ce décompte. L'écart se
-corrige auprès de l'AFC, par un décompte rectificatif ou dans un décompte suivant, à voir avec la
+corrige auprès de l'AFC, par une correction du décompte déposé (selon les formulaires de l'AFC) ou dans un décompte suivant, à voir avec la
 fiduciaire~; l'administrateur repose ensuite le verrou.
 
 \textbf{Annuler ou repasser en brouillon~?} Annulez une facture qui \textbf{n'était pas due}~:
@@ -4790,7 +4788,7 @@ période par période. Si la période du solde a déjà été déclarée, elle c
 tient aucun décompte déposé~: seul le verrou de période la protège (faites-la verrouiller avant
 d'annuler~; l'annulation est alors refusée). Pour l'annuler quand même, l'administrateur fait
 reculer le verrou~: le décompte de la période change, et l'écart se corrige auprès de l'AFC, par
-un décompte rectificatif ou dans un décompte suivant, à voir avec la fiduciaire.
+une correction du décompte déposé (selon les formulaires de l'AFC) ou dans un décompte suivant, à voir avec la fiduciaire.
 \textbf{Un solde annulé avant la version~0.21.0}
 garde l'ancien défaut~: sa contre-passation, datée du jour de l'annulation, n'est reprise
 nulle part, \textbf{la TVA reprise n'apparaît dans aucun décompte}, et l'alerte reste muette~;
