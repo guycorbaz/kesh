@@ -19,11 +19,11 @@ chips sélectionnés soient lisibles au seuil AA, afin de lire les écrans sans 
 
 Chaque issue a été relue (`gh issue view`, lecture seule) puis cherchée au code de `287deea33` (`grep -n`, lignes lues). Les issues voisines ouvertes : #645
 (jetons de couleur non définis, dont `bg-warning-soft`) est **hors de cette story** (une issue par problème) ; aucun commit depuis le tag précédent ne cite
-l'une des dix issues (`git log 287deea33..HEAD --format=%B | grep -oE '#(253|933|996|1008|1015|1016|1096|1153|1154|1184|1549)\b'` : vide au 2026-11-28, à rejouer au développement). Les doublons #1548, #1550 et #1551 sont déjà fermés vers #1154, #933 et #1016.
+l'une des dix issues (`git log 287deea33..origin/main --format=%B | grep -oE '#(253|933|996|1008|1015|1016|1096|1153|1154|1184|1549)\b'` : vide au 2026-11-28, à rejouer au développement). Les doublons #1548, #1550 et #1551 sont déjà fermés vers #1154, #933 et #1016.
 
 | # | Constat relu au code | Verdict |
 |---|---|---|
-| #253 | Le fond `bg-primary-light` (#3b82f6) porte du texte foncé sur **cinq sites** : `settings/email-templates/+page.svelte:253`, `:276`, `:319` (chips type, niveau, onglets de langue), `:298` (badge « Personnalisé », texte `text-primary`), `invoices/due-dates/+page.svelte:498` (onglets de statut). Les sites que l'issue listait en plus — `(app)/+layout.svelte` (nav), `onboarding/*`, `bank-accounts/+page.svelte` — n'emploient plus le fond plein : `hover:bg-primary-light/10`, `/5`, `/20` avec `text-primary` (≥ 6,9:1), **hors défaut**. `design-system/+page.svelte:41` : étiquette `text-white` sur `bg-primary-light` (3,68:1), page de démonstration des jetons, hors des écrans de l'utilisateur (voir D3). Le contournement existe toujours : `email-templates.spec.ts:203` et `reminders.spec.ts:301` ne passent qu'avec `.disableRules(['color-contrast'])`. | **gardée** |
+| #253 | Le fond `bg-primary-light` (#3b82f6) porte du texte foncé sur **cinq sites** : `settings/email-templates/+page.svelte:253`, `:276`, `:319` (chips type, niveau, onglets de langue), `invoices/due-dates/+page.svelte:498` (onglets de statut) — quatre états sélectionnés — et `:298` (badge « Personnalisé », texte `text-primary`). Les sites que l'issue listait en plus — `(app)/+layout.svelte` (nav), `onboarding/*`, `bank-accounts/+page.svelte` — n'emploient plus le fond plein : `hover:bg-primary-light/10`, `/5`, `/20` avec `text-primary` (≥ 6,9:1), **hors défaut**. `design-system/+page.svelte:41` : étiquette `text-white` sur `bg-primary-light` (3,68:1), page de démonstration des jetons, hors des écrans de l'utilisateur (voir D3). Le contournement existe toujours : `email-templates.spec.ts:203` et `reminders.spec.ts:301` ne passent qu'avec `.disableRules(['color-contrast'])`. | **gardée** |
 | #933 | `bank-import/BankImportUpload.svelte:872-873` et `:880-881` (aperçu, table `preview-tx-table`) : `<th class="text-right">Montant</th>` puis `<th class="text-left">Détails</th>`, **aucun** espacement de cellule (Tailwind en préflight remet `padding` à zéro). Même motif au tableau des lignes signalées « ressemblent à une ligne déjà importée » : `:685-686` et `:698-699` (colonne Montant à gauche, suivie de Détails). | **gardée** (deux tableaux du même écran) |
 | #996 | `app.css:27` : `--color-warning: #d97706` = **3,19:1** sur blanc (recalcul : 3,19). `text-warning` : **18 sites** (le relevé de l'issue disait 11 ; inventaire en D2). Aucun test de contraste du jeton. | **gardée** |
 | #1008 | `homepage/BankAccountsCard.svelte:37` : `<div class="min-w-0 flex-1">` (nom du compte, `<p class="font-medium">` à `:38`) à côté de `:42` `<div class="text-right">` sans borne de largeur : sa largeur est celle de la ligne la plus longue, « Solde non disponible — lier au plan comptable » (`:58-62`, une seule ligne ; branche `currentBalance === null` à `:43`), et le nom, `min-w-0`, déborde dessus. | **gardée** (mécanisme à **confirmer** à la capture d'avant, D5) |
@@ -36,7 +36,7 @@ l'une des dix issues (`git log 287deea33..HEAD --format=%B | grep -oE '#(253|933
 
 | #1549 | `bank-import/[id]/+page.svelte:170-171` (`th` Montant `text-right` puis Référence) et `:183-184` (`td`) : aucun espacement ; issue ouverte (`bug`, P4), **même module** (`bank-import`) et **même correctif** que #933 ; décision de l'orchestrateur du 2026-11-28 (validation P1, F4) : retenue. | **gardée**, ajoutée à la story |
 
-**Bilan : dix issues retenues** (les neuf de l'epic moins #1096, plus #1549), **une sortie (#1096, déjà corrigée et fermée)**. Aucune ne révèle de défaut de production ni de règle métier. Dans la borne de cinq à dix issues par story. **#1552** (écriture, « Crédit » et « Compte analytique » collés) est du même genre mais d'un **autre module** (`journal-entries`) : **angle mort assumé**, elle reste ouverte, hors de cette story.
+**Bilan : dix issues retenues** (les dix de l'epic, #1096 comprise, moins #1096, plus #1549), **une sortie (#1096, déjà corrigée et fermée)**. Aucune ne révèle de défaut de production ni de règle métier. Dans la borne de cinq à dix issues par story. **#1552** (écriture, « Crédit » et « Compte analytique » collés) est du même genre mais d'un **autre module** (`journal-entries`) : **angle mort assumé**, elle reste ouverte, hors de cette story.
 
 ## Choix consignés (autonomie : aucune question à Guy)
 
@@ -51,12 +51,12 @@ l'une des dix issues (`git log 287deea33..HEAD --format=%B | grep -oE '#(253|933
   (`app.css:84`, `outline: 2px solid var(--color-primary-light)`) et aux survols `/10`, `/20` ; le changer élargit la story pour rien. Le **badge**
   « Personnalisé » (`:298`) devient `bg-primary-light/20 text-primary` (patron du badge de `bank-accounts/+page.svelte:1447` ; **6,92:1**), non plein : un
   badge n'est pas un état sélectionné.
-- **C-58-5-3 — l'espacement des colonnes se pose par `pr-4` sur chaque colonne sauf la dernière** (en-tête **et** cellules), **dans les cinq tableaux que la
-  story touche** (aperçu d'import, lignes signalées, détail d'import, réconciliation, journal d'audit) — jamais par une marge globale sur `th`/`td` (les autres tableaux de
+- **C-58-5-3 — l'espacement des colonnes se pose par `pr-4` sur chaque colonne sauf la dernière** (en-tête **et** cellules), **dans les huit tableaux que la
+  story touche** (les cinq de `BankImportUpload.svelte` — `:503`, `:604`, `:680`, `:730`, `:868` —, le détail d'import, la réconciliation, le journal d'audit) — jamais par une marge globale sur `th`/`td` (les autres tableaux de
   l'application ont déjà leurs `py-2 pr-2`/`pr-4`, ex. `reconciliation/wise/+page.svelte:133`). Même module, même correctif (décision de l'orchestrateur du
   2026-11-28) : les couples voisins du couple nommé par l'issue — journal d'audit, **toutes** les colonnes (`audit-log/+page.svelte:358-363`, `py-2` seul) ; lignes
   « ressemblent à… » (`BankImportUpload.svelte:683-687`) ; réconciliation, Contrepartie → Candidate → Score (`:709-711`) — se corrigent avec lui, sinon le même défaut
-  reste à côté. **Pas au-delà de ces cinq tableaux** : #1552 et les autres tableaux collés de l'application restent hors de la story. Seize pixels, comme les tableaux voisins.
+  reste à côté. **Pas au-delà de ces huit tableaux** (décision de l'orchestrateur du 2026-11-28 : les trois tables d'erreurs, de doublons et de lignes refusées de `BankImportUpload.svelte`, même fichier, même correctif, entrent) : #1552 et les autres tableaux collés de l'application restent hors de la story. Seize pixels, comme les tableaux voisins.
 - **C-58-5-4 — « Candidate » devient « Proposition » en fr-CH seulement** (`Kandidat`, `Candidato`, `Candidate` restent justes dans leurs langues, et le
   français ne les imite pas). Le mot est celui que l'écran emploie ailleurs : l'astuce `reconciliation-labels-priority-hint` (« Une seule **proposition** est
   affichée par transaction », `ReconciliationProposals.svelte:697`). Cette story est la **seule** de l'epic hors 58-4 à écrire dans un catalogue : elle ne touche
@@ -66,7 +66,7 @@ l'une des dix issues (`git log 287deea33..HEAD --format=%B | grep -oE '#(253|933
 
 ## Acceptance Criteria
 
-1. **Chips (#253).** Les cinq sites de `bg-primary-light` en fond plein (`email-templates/+page.svelte:253`, `:276`, `:319`, `due-dates/+page.svelte:498`) n'en
+1. **Chips (#253).** Les quatre sites de `bg-primary-light` en fond plein d'un état sélectionné (`email-templates/+page.svelte:253`, `:276`, `:319`, `due-dates/+page.svelte:498`) n'en
    portent plus : l'état sélectionné est `bg-primary text-primary-foreground` ; le badge `:298` est `bg-primary-light/20 text-primary`. Un état non sélectionné
    ne change pas. Ratio mesuré par `contrastRatio` : **≥ 4,5:1** (attendu 8,72 et 6,92), écrit au Dev Agent Record.
    **Test et mutation** : (a) `due-dates-page.test.ts` (rendu Vitest) : l'onglet sélectionné porte `bg-primary` et `text-primary-foreground` et **non**
@@ -78,7 +78,7 @@ l'une des dix issues (`git log 287deea33..HEAD --format=%B | grep -oE '#(253|933
    deux tests passent. Si la règle remonte un autre défaut de contraste hors des chips (`reminders-list` porte des badges), il s'ouvre en **issue** (« on trace »)
    et le `disableRules` de ce seul test reste, avec son commentaire corrigé pour citer la nouvelle issue au lieu de #253 ; le commentaire de #253 disparaît dans
    les deux cas. Les onglets de langue et le badge `data-testid="email-template-badge"` (hors du `.include` actuel) passent sous axe dans un test neuf.
-   **Mutation** : remettre `class:bg-primary-light` au chip sélectionné : l'axe (3,98:1) rougit (AC1 le prouve déjà par la valeur calculée ; l'axe le double).
+   **Troisième site (`invoices.spec.ts:440-462`)** : le test « axe-core sans violations sur la fiche (badge suspendu + historique) » cite #253 et #256 et neutralise `.disableRules(['color-contrast', 'button-name'])` ; #256 est close et le test voisin (`:219-224`) enforce déjà les deux règles : retirer `color-contrast` et `button-name` si le test passe ; sinon, issue neuve citée au commentaire (qui, dans tous les cas, ne renvoie plus à #253 ni à #256 comme dettes ouvertes). Au Dev Agent Record : `grep -rn "#253" frontend/tests frontend/src` avant et après (trois fichiers de tests aujourd'hui : `email-templates.spec.ts:200`, `reminders.spec.ts:298`, `invoices.spec.ts:440`). **Mutation** : remettre `class:bg-primary-light` au chip sélectionné : l'axe (3,98:1) rougit (AC1 le prouve déjà par la valeur calculée ; l'axe le double).
 3. **Jeton d'avertissement (#996).** `--color-warning` vaut `#92400e` (`app.css:27`), et une garde Vitest nouvelle (`jetons-contraste.test.ts`, patron de
    `account-autocomplete-classes.test.ts`, lisant `app.css` par `blocTheme`/`jetonDans`) établit que ce jeton atteint **≥ 4,5:1** sur `--color-surface`, sur
    `--color-surface-alt` **et** sur sa propre teinte à 5, 10, 20 et 22 % posée sur `--color-surface` (les alphas des sites : `login` 5 %, `InvoiceForm` 10 %,
@@ -94,19 +94,15 @@ l'une des dix issues (`git log 287deea33..HEAD --format=%B | grep -oE '#(253|933
    = `rgb(30, 41, 59)`) — *mutation* : remettre `text-text-muted` à la ligne 295.
 5. **Aperçu d'import (#933).** Dans `BankImportUpload.svelte`, **chaque colonne sauf la dernière** des deux tableaux (principal `:871-881` ; lignes signalées
    `:683-700`, C-58-5-3) porte `pr-4` en en-tête **et** en cellule : à 1280 px, « 100.00 CHF » et son libellé sont séparés d'au moins 16 px ; aucun test existant
-   ne casse. **Test et mutation** : `BankImportUpload.test.ts` : le `th` **et** le `td` de la colonne Montant portent `pr-4` — *mutation* : retirer `pr-4` du `td`
-   seul, puis du `th` seul (chacune rougit).
+   ne casse. **Test et mutation** : `BankImportUpload.test.ts` : **pour chacun des cinq tableaux** (principal, lignes signalées, erreurs, doublons, lignes refusées), toute cellule `th` et `td` de chaque rangée **sauf la dernière** porte `pr-4` — *mutations* : retirer `pr-4` du `td` Montant seul, du `th` Montant seul, de la **deuxième colonne** d'un des trois petits tableaux (chacune rougit).
 6. **Réconciliation (#1016).** `ReconciliationProposals.svelte:704-711` et `:752-770` : `pr-4` en en-tête **et** en cellule sur chaque colonne sauf la dernière
-   (Montant, Contrepartie, Candidate, Score compris) ; capture : « -1450 CHF » et « Régie du Lac » séparés, en-tête compris. **Test et mutation** :
-   `ReconciliationProposals.test.ts` : le `th` et le `td` Montant portent `pr-4` — *mutation* : retirer `pr-4` du `td` seul.
+   (Montant, Contrepartie, Candidate, Score compris) ; capture : « -1450 CHF » et « Régie du Lac » séparés, en-tête compris. **Test et mutation** : `ReconciliationProposals.test.ts` : toute cellule `th`/`td` d'une rangée sauf la dernière (Actions) porte `pr-4`, **y compris les `td colspan="2"`** (notice et « Aucune correspondance », qui couvrent Candidate+Score et précèdent Actions : **tranché, ils portent `pr-4`**, étant suivis d'une cellule) — *mutations* : retirer `pr-4` du `td` Montant seul ; de la **deuxième colonne** ; d'un `td colspan`.
 7. **Libellé (#1153).** `fr-CH/messages.ftl:1718` : `reconciliation-cols-candidate = Proposition` ; repli de `ReconciliationProposals.svelte:710` :
    `'Proposition'` ; les trois autres catalogues **inchangés** ; le manuel (`docs/manual/fr/user-manual.tex:3893`) nomme la colonne (§ Tâches). La garde i18n
    (`i18n-keys.test.ts`, `sitesTotal`) ne bouge pas (une valeur change, aucune clé). **Test et mutation** : `ReconciliationProposals.test.ts` asserte que l'en-tête de
-   la colonne se lit « Proposition » (rendu avec le repli) ; un test Rust sur le catalogue (`textes_coherents` ou un test `kesh-i18n` qui lit `fr-CH`) asserte la
-   valeur — *mutations* : remettre « Candidate » au seul repli Svelte, puis au seul catalogue (chacune rougit un des deux).
+   la colonne se lit « Proposition » (rendu avec le repli) ; un test Rust **neuf** — `la_colonne_de_la_reconciliation_se_dit_proposition_en_fr_ch`, dans `crates/kesh-api/tests/textes_coherents.rs`, sur `catalogue_fr()` (`:101`) — asserte que `reconciliation-cols-candidate` vaut « Proposition » (aucun test existant ne lit cette clé : `grep -rnF reconciliation-cols-candidate crates frontend --include=*.rs --include=*.ts` est vide) ; **tranché** : test de catalogue Rust, non assertion Vitest sur un catalogue chargé (Vitest mocke `i18nMsg` sur le repli) ; la valeur — *mutations* : remettre « Candidate » au seul repli Svelte, puis au seul catalogue (chacune rougit un des deux).
 8. **Journal d'audit (#1154).** `audit-log/+page.svelte:358-363` et `:374-388` : `pr-4` en en-tête et en cellule sur chaque colonne sauf la dernière (N° compris) ;
-   capture : « N° » et « Détails » séparés. **Test et mutation** : `audit-log-page.test.ts` : le `th` et le `td` « N° » portent `pr-4` — *mutation* : retirer `pr-4`
-   du `td` seul.
+   capture : « N° » et « Détails » séparés. **Test et mutation** : `audit-log-page.test.ts` : toute cellule `th`/`td` d'une rangée sauf la dernière porte `pr-4` — *mutations* : retirer `pr-4` du `td` « N° » seul ; de la **deuxième colonne**.
 9. **Tuile des comptes bancaires (#1008).** À 1280 px **et** à 1920 px, le lien « Solde non disponible — lier au plan comptable » ne recouvre ni le nom ni
    l'identifiant court du compte : il passe à la ligne dans sa colonne. Correctif attendu (à confirmer à la capture d'avant, D5) : colonne de droite
    `min-w-0 max-w-[60%] text-right` (`BankAccountsCard.svelte:42`) et nom `break-words` (`:38`). **Test et mutation** : `HomepageCards.test.ts` : la colonne de droite
@@ -126,8 +122,7 @@ l'une des dix issues (`git log 287deea33..HEAD --format=%B | grep -oE '#(253|933
 13. **Recette visuelle** (D6) : captures avant/après de chaque état listé, thème clair, base de démonstration, rangées dans
     `/home/gcorbaz/devel/kesh-gate-logs/e65/58-5/captures/`, jointes au Dev Agent Record et au prompt de la revue de code.
 14. **Détail d'un import bancaire (#1549).** `bank-import/[id]/+page.svelte:167-184` : `pr-4` en en-tête et en cellule sur chaque colonne sauf la dernière
-    (Montant et Référence, mais aussi Date, Détails, Statut) ; capture : « Montant » et « Référence » séparés. **Test et mutation** : `bank-import-detail-page.test.ts` :
-    le `th` et le `td` Montant portent `pr-4` — *mutation* : retirer `pr-4` du `td` seul.
+    (Montant et Référence, mais aussi Date, Détails, Statut) ; capture : « Montant » et « Référence » séparés. **Test et mutation** : `bank-import-detail-page.test.ts` : toute cellule `th`/`td` d'une rangée sauf la dernière porte `pr-4` — *mutations* : retirer `pr-4` du `td` Montant seul ; de la **deuxième colonne**.
 
 ## Tasks / Subtasks
 
@@ -142,13 +137,12 @@ l'une des dix issues (`git log 287deea33..HEAD --format=%B | grep -oE '#(253|933
   - [ ] Retirer les deux `.disableRules(['color-contrast'])` (AC2) ; ajouter le test axe des onglets de langue et du badge.
   - [ ] Mesurer au navigateur (`getComputedStyle`) **tout** texte non `--color-text` posé sur une teinte d'avertissement (D2) avec `contrast.ts` ; corriger
         `settings/dunning/+page.svelte:295` (`text-text`) ; écrire le tableau au Dev Agent Record.
-- [ ] **Tâche 2 — Colonnes collées (AC : 5, 6, 8, 14).** `pr-4` sur chaque colonne sauf la dernière des cinq tableaux de D1, en-tête et cellule ; une assertion de
-      classe **par `th` et par `td` Montant/N°** (jamais le seul `th`) dans `audit-log-page.test.ts`, `ReconciliationProposals.test.ts`, `BankImportUpload.test.ts`,
-      `bank-import-detail-page.test.ts` ; mutations de l'AC jouées.
+- [ ] **Tâche 2 — Colonnes collées (AC : 5, 6, 8, 14).** `pr-4` sur chaque colonne sauf la dernière des huit tableaux de D1, en-tête et cellule (`td colspan` compris) ; **une assertion générique par tableau** (toute cellule `th`/`td` d'une rangée sauf la dernière porte `pr-4`) dans `audit-log-page.test.ts`, `ReconciliationProposals.test.ts`, `BankImportUpload.test.ts` (cinq tableaux), `bank-import-detail-page.test.ts` ; mutations de l'AC jouées.
 - [ ] **Tâche 3 — Libellé et manuel (AC : 7).** `fr-CH/messages.ftl:1718`, repli Svelte `:710` ; `user-manual.tex:3893` (colonne) **et** `:2814` (« bordé d'orange »,
-      D4) ; **ne pas régénérer les PDF** (règle des fichiers communs : seul le `.tex` change dans une branche de story).
+      D4) ; **le test Rust ci-dessus** (`textes_coherents.rs`, seul `.rs` de la story : un fichier de test) ; **ne pas régénérer les PDF** (règle des fichiers communs : seul le `.tex` change dans une branche de story).
 - [ ] **Tâche 4 — Débordements (AC : 9, 10, 11).** `BankAccountsCard.svelte`, `CompanyConflictNotice.svelte`, `AccountAutocomplete.svelte` ; une assertion de
       classe pour chacun (`HomepageCards.test.ts`, `settings-page.test.ts`, `AccountAutocomplete.test.ts`) et les mutations de l'AC ; mesures de largeur de D5.
+- [ ] **Tâche 5bis — Notes de version.** Vérifier que la section *Notes de version* dit ce qui a été livré (une ligne par changement visible) ; la reporter au Dev Agent Record.
 - [ ] **Tâche 5 — Recette visuelle et gates (AC : 12, 13).** Captures « après », comparaison, gate frontend, gate Rust ciblé (D7), E2E complet (une fois, au dernier
       commit de code), Dev Agent Record.
 
@@ -156,12 +150,15 @@ l'une des dix issues (`git log 287deea33..HEAD --format=%B | grep -oE '#(253|933
 
 ### D1 — Sites exacts des colonnes (AC 5, 6, 7, 8, 14)
 
-**Règle (C-58-5-3)** : `pr-4` sur **chaque colonne sauf la dernière** des cinq tableaux touchés, en-tête **et** cellule. Le tableau garde ses `text-left`/`text-right` ;
+**Règle (C-58-5-3)** : `pr-4` sur **chaque colonne sauf la dernière** des huit tableaux touchés, en-tête **et** cellule. Le tableau garde ses `text-left`/`text-right` ;
 un `<td>` sans classe devient `<td class="pr-4">`.
 
 | Écran | Fichier:ligne (en-tête, cellule) | Colonnes à marge |
 |---|---|---|
 | Aperçu d'import, table principale (`preview-tx-table`) | `BankImportUpload.svelte:871-873`, `:879-881` | Date, Montant (3 colonnes) |
+| Aperçu d'import, erreurs de lecture (Ligne, Code, Valeur) | `BankImportUpload.svelte:503-520` | Ligne, Code (3 colonnes) |
+| Aperçu d'import, doublons (Ligne, ID existant, Clé) | `:604-618` | Ligne, ID existant (3 colonnes) |
+| Aperçu d'import, lignes refusées (Ligne, Code, Valeur) | `:730-747` | Ligne, Code (3 colonnes) |
 | Aperçu d'import, lignes signalées (« ressemblent à… ») | `:683-687`, `:696-700` | Ligne, Date, Montant, Détails (5 colonnes) |
 | Détail d'un import (`detail-tx-table`, #1549) | `bank-import/[id]/+page.svelte:167-184` | Date, Montant, Référence, Détails, Statut (6 colonnes ; la dernière, Rapprochement, porte des boutons) |
 | Réconciliation (`reconciliation-table`) | `ReconciliationProposals.svelte:706-714`, `:752-770` | case, Date, Montant, Contrepartie, Candidate/Proposition, Score (7 colonnes ; la dernière, Actions) |
@@ -170,7 +167,7 @@ un `<td>` sans classe devient `<td class="pr-4">`.
 ⚠️ La marge se pose en **en-tête et en cellule** : un en-tête sans la marge de la cellule décale les colonnes l'une de l'autre. Le tableau de
 `ReconciliationProposals` fusionne des cellules (`colspan="2"`, `:730-770`) **sous** Contrepartie/Candidate : ne pas toucher aux `colspan`. `table-auto` répartit la
 largeur : vérifier à 1280 px que les tables ne débordent pas de leur carte avec les marges de plus. **Angle mort assumé** : #1552 (écriture, autre module) et tout
-tableau de l'application que la story ne touche pas. Si la capture d'avant montre un autre couple collé **dans ces cinq tableaux** que le tableau ci-dessus ne
+tableau de l'application que la story ne touche pas. Si la capture d'avant montre un autre couple collé **dans ces huit tableaux** que le tableau ci-dessus ne
 couvre pas, il se corrige avec ; ailleurs, il s'ouvre en issue.
 
 ### D2 — Inventaire des usages de `--color-warning` (AC 3, 4 ; effet de bord de C-58-5-1)
@@ -187,7 +184,7 @@ Relevé `grep -rn "text-warning\|bg-warning\|border-warning\|color-warning" fron
   (22 %, texte `--color-text`), `McpSendsList.svelte:131`, `McpPromptVersion.svelte:91`, `McpPromptsList.svelte:297`, `McpPromptDetail.svelte:780` (22 %, texte
   foncé). Ceux dont le texte est `--color-text` **ne se mesurent pas** : seul l'aspect change (D6). **Tout autre texte sur une teinte d'avertissement se mesure** : `settings/dunning/+page.svelte:295` (`text-text-muted` sur `border-warning/30 bg-warning/5` : 4,51:1 aujourd'hui, **4,40:1** avec `#92400e` ; à passer en `text-text`), les lignes `.row-overdue` de `due-dates/+page.svelte:589` et `:677` (teinte à 10 % : les cellules à `text-text-muted` s'y mesurent), et tout texte imbriqué dans un encadré `bg-warning/N` au-delà de ce que `grep` voit en une ligne : relevé **au navigateur** (`getComputedStyle`, parcours des encadrés de D6), le `grep` ne suffisant pas.
 - **Replis littéraux** : `#f59e0b` à `due-dates/+page.svelte:678` et `PaymentStatusBadge.svelte:62-63`, `#d97706` à `ReminderTerminalBadge.svelte:26` : le repli de `var(--color-warning, …)` n'est jamais employé (le jeton est défini) ; **les laisser**, hors périmètre.
-- **Angles morts assumés (valeur `#d97706` hors de l'application)** : `docs/manual/shared/kesh-style.sty:86` (`keshWarning`, cadre et titre des encadrés d'avertissement des PDF : titre `keshWarning` sur blanc à 3,19:1), `docs/kesh-specifications.txt:2037` et `ux-design-specification.md` : hors périmètre (PDF non régénérés dans la story, spécifications historiques). Le `.sty` est suivi par une issue à ouvrir par l'orchestrateur (§ Questions).
+- **Angles morts assumés (valeur `#d97706` hors de l'application)** : `docs/manual/shared/kesh-style.sty:86` (`keshWarning`, cadre et titre des encadrés d'avertissement des PDF : titre `keshWarning` sur blanc à 3,19:1), `docs/kesh-specifications.txt:2037` et `ux-design-specification.md` : hors périmètre (PDF non régénérés dans la story, spécifications historiques). Le `.sty` est suivi par l'issue **#1782** (ouverte le 2026-11-28, `documentation`, P4).
 - `bg-warning-soft` (`bank-accounts/+page.svelte:1041`, `SupplierInvoice*.svelte`, `BankImportUpload.svelte:472…`) n'existe pas au thème : **#645**, hors
   story. Le noter : ces fonds ne se voient pas, seule la bordure change de brun.
 - Pas de thème sombre (CLAUDE.md) : une seule valeur à régler.
@@ -239,6 +236,7 @@ Nommage : `<issue>-<ecran>-<largeur>-<avant|apres>.png`. Chaque ligne = **une** 
 | #933 | Banque → Import → aperçu d'un relevé (`bank-import-confirm` visible) | 1280 | table des transactions ; **et** un relevé qui produit des « lignes qui ressemblent à une ligne déjà importée » (`warning-uncertain-legacy-lines-row`) |
 | #1016 | Réconciliation d'un compte (`reconciliation-table`) | 1280 | en-tête et une ligne avec contrepartie ; une ligne avec « Aucune correspondance » ; l'en-tête qui dit « Proposition » |
 | #1153 | idem, **en-tête** de la table | 1280 | « Proposition » (fr-CH) ; contrôle rapide du même en-tête en de-CH, it-CH, en-CH : inchangé |
+| #933 | Aperçu d'import avec **erreurs de lecture, doublons et lignes refusées** (`BankImportUpload.svelte:503`, `:604`, `:730`) | 1280 | les trois petites tables ; Ligne/Code/Valeur et Ligne/ID existant/Clé séparés |
 | #1549 | Détail d'un import bancaire (`detail-tx-table`) | 1280 | en-tête et plusieurs lignes ; Montant et Référence séparés |
 | #1154 | Administration → Journal d'audit (`audit-log-table`) | 1280 | en-tête et plusieurs lignes, dont une à n° d'entité et une à « — » |
 | #1008 | Accueil, tuile Comptes bancaires | **1280** et **1920** | un compte lié, un compte **non lié** au nom long (« Solde non disponible… ») |
@@ -259,7 +257,7 @@ son ratio dans son nom de fichier ou le Dev Agent Record.
 - **Playwright :** `email-templates.spec.ts:198-208` (axe sans `disableRules`), `reminders.spec.ts:293-305` ; nouveau test axe des onglets de langue/badge ;
   E2E complet une fois, au dernier commit de code.
 - **Gates :** `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build` (voie frontend,
-  `flock …/.gate-front.lock scripts/mem-guard.sh …`) ; **gate Rust ciblé** (aucun `.rs` ne change, mais le catalogue fr-CH est lu par `kesh-i18n` et par `kesh-api/tests/textes_coherents.rs:112` et `:471`, et `reconciliation-cols-candidate` change de valeur) : `flock /tmp/station-heavy.lock flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock scripts/mem-guard.sh cargo nextest run -E 'package(kesh-i18n) | binary(textes_coherents)'` (voie base, `docs/agents-orchestration.md` § 5.1 ; `scripts/test-fast.sh` n'accepte que `--no-lint` et `--ci`, aucun filtre). Le Dev Agent Record dit ce qui a tourné ; le story file n'affirme que ce qui a tourné.
+  `flock …/.gate-front.lock scripts/mem-guard.sh …`) ; **gate Rust ciblé** (un seul `.rs` change, un fichier de test — `textes_coherents.rs`, Tâche 3 —, donc `cargo fmt --all -- --check` et `cargo clippy -p kesh-api --all-targets -- -D warnings` en plus du nextest ;  le catalogue fr-CH est lu par `kesh-i18n` et par `kesh-api/tests/textes_coherents.rs:112` et `:471`, et `reconciliation-cols-candidate` change de valeur) : `flock /tmp/station-heavy.lock flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock scripts/mem-guard.sh cargo nextest run -E 'package(kesh-i18n) | binary(textes_coherents)'` (voie base, `docs/agents-orchestration.md` § 5.1 ; `scripts/test-fast.sh` n'accepte que `--no-lint` et `--ci`, aucun filtre). Le Dev Agent Record dit ce qui a tourné ; le story file n'affirme que ce qui a tourné.
 - **Jetons non définis** : `jetons-non-definis.test.ts` doit rester vert (`wrap-anywhere`, `pr-4`, `max-w-[60%]` ne sont pas des classes de couleur) ; vérifier
   qu'aucune classe de couleur neuve n'est écrite.
 
@@ -267,7 +265,7 @@ son ratio dans son nom de fichier ou le Dev Agent Record.
 
 - Aucun fichier de production nouveau : balisage Svelte, `app.css`, une ligne de `fr-CH/messages.ftl`, `user-manual.tex`. Un fichier de test neuf
   (`jetons-contraste.test.ts`) à côté de `jetons-non-definis.test.ts`.
-- **Fichiers partagés, à déclarer** : (1) **`crates/kesh-i18n/locales/fr-CH/messages.ftl:1718`** (`reconciliation-cols-candidate`) : une ligne **existante**, hors du bloc d'un epic, que la 58-4 (#1086, espaces insécables sur tout le catalogue fr-CH) peut réécrire à côté ; la fiche 58-4 affirme que la 58-5 n'y touche pas : **l'une des deux fiches se corrige** (la 58-4, selon l'orchestrateur) et le conflit se résout à la fusion en gardant les deux côtés ; (2) **`frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte`** (production, `:704-714`, `:752-770`), que la 58-6 modifie aussi (garde de `confirmGesture`, vers `:520`) : zones **disjointes**, fusion en gardant les deux côtés. La 58-6 touche `reconciliation/*.test.ts` et `AccountAutocomplete*` : **`ReconciliationProposals.test.ts`** et **`AccountAutocomplete.test.ts`** sont
+- **Fichiers partagés, à déclarer** : (1) **`crates/kesh-i18n/locales/fr-CH/messages.ftl:1718`** (`reconciliation-cols-candidate`) : une ligne **existante**, hors du bloc d'un epic, que la 58-4 (#1086, espaces insécables sur tout le catalogue fr-CH) peut réécrire à côté ; la fiche 58-4 affirme que la 58-5 n'y touche pas : **l'une des deux fiches se corrige** (la 58-4, selon l'orchestrateur) et le conflit se résout à la fusion en gardant les deux côtés ; (2) **`frontend/src/lib/features/journal-entries/AccountAutocomplete.svelte`** (production, `Input class` et dérivée de l'AC11, vers `:508-551`), que la 58-6 modifie aussi (branche `Tab` de `handleKeydown`) : régions distinctes, fusion en gardant les deux côtés ; (3) **`frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte`** (production, `:704-714`, `:752-770`), que la 58-6 modifie aussi (garde de `confirmGesture`, vers `:520`) : zones **disjointes**, fusion en gardant les deux côtés. La 58-6 touche `reconciliation/*.test.ts` et `AccountAutocomplete*` : **`ReconciliationProposals.test.ts`** et **`AccountAutocomplete.test.ts`** sont
   communs ; une assertion ajoutée ici (classe) se résout à la fusion en gardant les deux côtés. `docs/manual/fr/user-manual.tex` : la 58-4 peut y toucher.
 
 ### References
@@ -285,9 +283,13 @@ son ratio dans son nom de fichier ou le Dev Agent Record.
    solution à jeton séparé existe (alternative (b)) mais coûte 18 sites.
 4. **Risque #253 / AC2** : retirer `disableRules` peut révéler d'autres contrastes sur `reminders-list` ; règle écrite à l'AC2 (issue neuve, jamais corrigée dans
    cette story).
-5. **Issue à ouvrir (orchestrateur)** : `docs/manual/shared/kesh-style.sty:86` (`keshWarning` `#D97706`, titre des encadrés d'avertissement des PDF à 3,19:1) — hors story.
+5. **#1782** (ouverte) : `docs/manual/shared/kesh-style.sty:86` (`keshWarning` `#D97706`, titre des encadrés d'avertissement des PDF à 3,19:1) — hors story.
 6. **#1552** (écriture, « Crédit » et « Compte analytique » collés) : autre module, angle mort assumé, reste ouverte.
 7. **#1008, #1015, #1184 sont déduites du code**, non reproduites : la capture d'avant décide (D5).
+
+## Notes de version
+
+*(Matière du CHANGELOG, assemblée à l'intégration ; ni numéro d'epic ni numéro de version.)* Les colonnes de montant ne touchent plus le texte qui les suit dans les écrans de l'import bancaire (aperçu, détail), la réconciliation et le journal d'audit ; la colonne « Candidate » de la réconciliation se lit « Proposition » en français ; les valeurs longues se coupent dans leur cadre (avis de conflit de la société, tuile des comptes bancaires) et le champ de compte réserve la place du bouton d'effacement ; les chips sélectionnés des modèles d'e-mail et des échéances passent au contraste AA. *(La ligne sur la couleur d'avertissement dépend de la décision sur #996 : à compléter.)* Aucune migration, aucun changement d'API.
 
 ## Dev Agent Record
 
@@ -309,3 +311,4 @@ son ratio dans son nom de fichier ou le Dev Agent Record.
   F8 : #1096 fermée le 2026-11-28. F9 : lignes de `BankAccountsCard.svelte` corrigées (37, 38, 42, 43). F10 : décomptes (cinq tableaux ; 20 captures). F11 :
   `fiscal-year-close-checks-count`, `invoice-config-warning` dans `InvoiceForm`. F12 : `settings-page.test.ts`. F13 : replis et `#d97706` hors application en angles
   morts. F14 : parents de l'avis (flex pour l'e-mail), chemin `reconciliation/wise/+page.svelte`.
+- 2026-11-28 — **Validation P2 (Sonnet) : 0/1/5/6, remédiée hors #996 (en attente du Project Lead).** P2-2 : test Rust neuf `textes_coherents.rs` (D7, fmt et clippy ajoutés). P2-3 : `invoices.spec.ts:440-462` à l'AC2. P2-4 : les trois tables de `BankImportUpload.svelte` (`:503`, `:604`, `:730`) entrent, huit tableaux. P2-5 : assertion générique par tableau, `td colspan` tranchés (`pr-4`). P2-7 : #1782. P2-8 : `AccountAutocomplete.svelte` partagé avec la 58-6. P2-9 : grep borné à `origin/main`. P2-10 : bilan et AC1 recomptés, `sprint-status.yaml` mis à jour (les ratios arrondis de #996 restent à reprendre avec elle). P2-11 : *Notes de version*. **Non touchés, en attente de la décision sur #996 : P2-1, P2-6, P2-12 (calculé/mesuré, AC4).**
