@@ -6,8 +6,8 @@ Règles et décisions en vigueur pour travailler sur Kesh. Ce fichier ne porte n
 
 **Kesh** est un logiciel de comptabilité suisse pour particuliers et petites entreprises, développé avec le cadre BMAD. Backend Rust (Axum), frontend SvelteKit, MariaDB ; application web seulement ; configuration par variables d'environnement ; déploiement par docker-compose. PRD : `_bmad-output/planning-artifacts/prd.md` (QR-facture 2.2, pain.001.001.03, CAMT.053.001.04, FR/DE/IT/EN).
 
-- **Dernière release : [v0.19.1](https://github.com/guycorbaz/kesh/releases/tag/v0.19.1)** (2026-11-20), **sans migration** ; `kesh_version_min_required` = 0.17.6.
-- **Kesh est en production** : Guy tient ses livres réels sur le NAS depuis le 2026-10-31. Version en fonction : **0.19.1**, depuis le 2026-11-21. Ces deux lignes se mettent à jour à chaque release et à chaque mise à jour du NAS.
+- **Dernière release : [v0.20.0](https://github.com/guycorbaz/kesh/releases/tag/v0.20.0)** (2026-11-27), **trois migrations non breaking** ; `kesh_version_min_required` = 0.17.6.
+- **Kesh est en production** : Guy tient ses livres réels sur le NAS depuis le 2026-10-31. Version en fonction : **0.20.0**, depuis le 2026-11-27. Ces deux lignes se mettent à jour à chaque release et à chaque mise à jour du NAS.
 - **Jalon ouvert** : « Première clôture d'exercice tenue dans Kesh » (J9 de la fiche de projet). Le jour où il est atteint, cette section se réécrit.
 - **Les décomptes** (migrations, tests, stories, issues) ne s'écrivent pas ici : ils vont à la PR de release, au journal `kesh-gate-logs/rel<version>/` et à la rétrospective. Ils se recomptent depuis la source :
   - migrations : `ls crates/kesh-db/migrations/*.sql | wc -l` ;
@@ -25,7 +25,7 @@ Règles et décisions en vigueur pour travailler sur Kesh. Ce fichier ne porte n
 
 Guy travaille en **français** : conversation et documents en français, sauf indication contraire.
 
-**Une question à Guy ne bloque pas le travail** (décision de Guy du 2026-11-26). L'orchestrateur qui attend une réponse de Guy pose la question, puis passe à un travail qui n'en dépend pas — une autre story, un autre epic, un lot d'issues — et reprend le sujet suspendu dès la réponse. Il ne contourne jamais la question en tranchant à la place de Guy : ce qui lui revient (fusion, tag, image, priorité, périmètre, effacement) attend. *Motif : avancer même quand Guy est occupé ailleurs.*
+**Une attente ne bloque pas le travail** (décisions de Guy des 2026-11-26 et 2026-11-27). L'orchestrateur qui attend — une réponse de Guy, un gate sur le serveur d'exécution, la CI ou une revue de GitHub — passe à un travail qui n'en dépend pas — une autre story, un autre epic, un lot d'issues — et reprend le sujet suspendu dès que l'attente se lève. Il ne contourne jamais une question en tranchant à la place de Guy : ce qui lui revient (fusion, tag, image, priorité, périmètre, effacement) attend. Il ne lance pas plus de travaux qu'il ne peut finir avant la coupure de la release : les P1 d'abord, puis l'ordre des priorités. *Motif : avancer même quand Guy ou les machines sont occupés ailleurs.*
 
 ## Structure du dépôt
 
@@ -263,7 +263,7 @@ Et :
 - **À chaque release, les issues encore ouvertes mais déjà corrigées se ferment**, preuve à l'appui (commit, test, ligne de code), jamais au jugé. Deux niveaux (décision de Guy du 2026-11-26) :
   - **à chaque release** : toutes les issues ouvertes qu'un commit ou une PR cite depuis le tag précédent (`git log <tag-précédent>..HEAD --format=%B | grep -oE 'refs #[0-9]+'`), plus **une tranche des cinquante plus anciennes**, reprise là où la précédente s'est arrêtée (le dernier numéro relu s'écrit au journal du dossier) ;
   - **une fois par mois**, à la revue de portefeuille : la revue de toutes les issues ouvertes.
-- **Un LOW de revue qui touche la production peut se corriger dans la story**, suivi d'une passe ciblée de ce seul correctif ; l'issue reste le choix par défaut quand le correctif sort du périmètre (décision de Guy du 2026-11-14).
+- **Un LOW se corrige dans la story, non en issue** (décision de Guy du 2026-11-27), quand sa correction reste dans le périmètre de la story (mêmes fichiers ou même module) et ne demande aucune décision de produit. Les LOW d'une passe se corrigent en un seul lot, suivi d'une seule passe ciblée ; les LOW que celle-ci trouve encore se corrigent aussi s'ils ne portent que sur du texte (commentaire, documentation, fiche), vérifiés par un `grep`, sans passe de plus — ce qui ferme la boucle. **Un LOW va en issue** s'il sort du périmètre (autre module, décision du Project Lead, correction risquée, ou dépassement de la règle de splitting). Il en va de même des LOW d'une revue d'intégration et des relevés d'un contributeur : corrigés dans la PR quand c'est possible, sinon en issue.
 - **Une story de solde à la fin de chaque epic**, avant le tag : seulement la dette des stories de l'epic, plafonnée par un nombre d'issues fixé au kickoff (décision de Guy du 2026-11-14).
 - **L'étiquette `bug` décrit un comportement faux visible** : un test manquant, un commentaire, une phrase de fiche prennent `technical-debt` ou `documentation`. Les anciennes issues ne se réétiquettent que sur demande de Guy, et un tel réétiquetage s'écrit à côté du décompte des bugs (décision de Guy du 2026-11-14). Le 2026-11-21, les onze issues de la TVA qui étaient P1 (#390 à #397, #401, #525, #1198) et les issues #404, #235 et #98 ont été reclassées P2, la conformité légale ne relevant plus du P1 (décision du Project Lead du 2026-11-21).
 
@@ -343,7 +343,7 @@ Les anciennes rétrospectives classent la dette en **A** (vraie dette), **B** (l
 
 ## Travailler à plusieurs développeurs
 
-Kesh a plusieurs développeurs depuis le 2026-11-15 : le Project Lead, l'orchestrateur qui travaille sur son mandat, et des contributeurs à qui des epics sont réservés (37 à 40, 46, 47) ; les epics internes ouverts sont le 41 (pièces justificatives), le 45 (note interne), le 49 (types de lignes de la facture), le 50 (corrections), le 51 (réimputation), le 52 (lignes de facture, suite), le 53 (écritures justes) et le 54 (totaux du décompte de TVA) ; les stories 48-3 à 48-9 forment une liste d'attente, hors epic ; le prochain epic interne neuf est le 55. Décisions du Project Lead des 2026-11-15, 2026-11-16, 2026-11-18 et 2026-11-21 ; `docs/guide-developpeur.md` les explique à un contributeur, mais **elles font foi ici**.
+Kesh a plusieurs développeurs depuis le 2026-11-15 : le Project Lead, l'orchestrateur qui travaille sur son mandat, et des contributeurs à qui des epics sont réservés (37 à 40, 46, 47, 55, 56) ; les epics internes ouverts sont le 41 (pièces justificatives), le 45 (note interne), le 51 (réimputation), le 52 (réordonnancement des lignes de facture), le 53 (écritures justes), le 54 (totaux du décompte de TVA), le 58 (nettoyage), les 59 à 61 (corrections), le 62 (titres de section et désignations longues) et le 63 (annulations datées de l'origine) ; les stories 48-3 à 48-9 forment une liste d'attente, hors epic ; le prochain epic interne neuf est le 64. Décisions du Project Lead des 2026-11-15, 2026-11-16, 2026-11-18, 2026-11-21 et 2026-11-27 ; `docs/guide-developpeur.md` les explique à un contributeur, mais **elles font foi ici**.
 
 ### Planification — GitHub Projects
 
