@@ -164,14 +164,29 @@ async function monterLigneSignalee(
  * l'ouverture, et traite le clic après un `debounce` de 10 ms
  * (`bits-ui/…/dismissible-layer/use-dismissable-layer.svelte.js`) : un clic tiré dès que le
  * dialogue est visible peut le précéder — deux rejeux sur trois l'ont montré (C-e354-2). Aucun
- * clic humain ne tombe dans cette fenêtre ; le clic est donc réessayé jusqu'à la fermeture, qui
- * reste exigée.
+ * clic humain ne tombe dans cette fenêtre.
+ *
+ * Story 58-6 (#1090) : on attend d'abord un état observable, la fin des animations du dialogue
+ * (`duration-100`), puis on tire UN SEUL clic et on exige la fermeture. Une boucle de clics
+ * réessayés masquerait un dialogue qui ne se ferme pas au premier clic (clic traité deux fois,
+ * fermeture tardive). L'attente des animations n'est qu'un indice de la pose des écouteurs de
+ * bits-ui, non une mesure : c'est le rejeu `--repeat-each=10` qui l'éprouve.
  */
 async function cliquerHors(page: Page, confirmation: ReturnType<Page['getByTestId']>) {
-	await expect(async () => {
-		await page.mouse.click(5, 5);
-		await expect(confirmation).toHaveCount(0, { timeout: 500 });
-	}).toPass({ timeout: 5000 });
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					document
+						.getAnimations()
+						.filter(
+							(a) => a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity,
+						).length,
+			),
+		)
+		.toBe(0);
+	await page.mouse.click(5, 5);
+	await expect(confirmation).toHaveCount(0);
 }
 
 /** Contre-passe l'écriture saisie et supprime les imports, quoi qu'il en soit du test. */
@@ -239,7 +254,7 @@ test('Rejeter une ligne signalée demande confirmation ; Annuler et le clic hors
 		// Rejeter quand même → la ligne quitte la liste.
 		await rejeter.click();
 		await confirmation.getByTestId('already-booked-confirm-continue').click();
-		await expect(page.getByTestId('reconciliation-success')).toContainText('1');
+		await expect(page.getByTestId('reconciliation-success')).toHaveText(/^\s*1\s+\D/);
 		await expect(ligne).toHaveCount(0);
 		await expect(confirmation).toHaveCount(0);
 

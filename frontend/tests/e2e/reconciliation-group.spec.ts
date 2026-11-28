@@ -301,7 +301,7 @@ test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 			await expect(champ).toHaveValue(`${rounding.number} — ${rounding.name}`);
 			// Choisir un autre compte : les frais bancaires.
 			await champ.fill(fees.number);
-			await modal.getByRole('option', { name: new RegExp(fees.number) }).first().dispatchEvent('mousedown');
+			await modal.getByRole('option', { name: new RegExp(fees.number) }).first().click();
 			await expect(champ).toHaveValue(`${fees.number} — ${fees.name}`);
 			await modal.screenshot({ path: capturePath(testInfo, '43-3-trop-percu') });
 			const accept = page.waitForRequest((r) => r.url().includes('/api/v1/reconciliation/accept'));
@@ -391,7 +391,7 @@ test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 			await add(modal, s.fb.number, s.fb.id);
 			const champ = modal.locator('input[aria-autocomplete="list"]');
 			await champ.fill('1100');
-			await modal.getByRole('option', { name: /1100/ }).first().dispatchEvent('mousedown');
+			await modal.getByRole('option', { name: /1100/ }).first().click();
 			await modal.getByTestId('group-submit').click();
 			await expect(modal.getByTestId('group-account-error')).toHaveText(
 				'Le compte choisi pour l’écart est le compte de créance (ou de dette) d’une facture du groupe : choisissez-en un autre.',
@@ -749,7 +749,7 @@ test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 			await add(modal, s.fb.number, s.fb.id);
 			const champ = modal.locator('input[aria-autocomplete="list"]');
 			await champ.fill(neutre.number);
-			await modal.getByRole('option', { name: new RegExp(neutre.number) }).first().dispatchEvent('mousedown');
+			await modal.getByRole('option', { name: new RegExp(neutre.number) }).first().click();
 			await expect(champ).toHaveValue(`${neutre.number} — ${neutre.name}`);
 			const causes: [string, string, Record<string, unknown>, string][] = [
 				['banque', 'VALIDATION_ERROR', { reason: 'counterparty_equals_bank_ledger' }, 'compte de la banque'],

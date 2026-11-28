@@ -142,7 +142,7 @@ test('au-delà de 100 : l’avis et le bouton ; au plafond de 500 : l’avis seu
 		await page.getByTestId('bank-account-select').selectOption(baId.toString());
 		const lignes = page.getByTestId('reconciliation-row');
 		await expect(lignes).toHaveCount(100, { timeout: 15000 });
-		await expect(page.getByTestId('reconciliation-more')).toContainText('100');
+		await expect(page.getByTestId('reconciliation-more')).toContainText(/\b100\b/);
 		const bouton = page.getByTestId('reconciliation-show-older-btn');
 		await expect(bouton).toBeVisible();
 		await expect(page.locator(`[data-testid="reconciliation-row"][data-tx-id="${cent50e!.id}"]`)).toHaveCount(0);
@@ -176,7 +176,7 @@ test('au-delà de 100 : l’avis et le bouton ; au plafond de 500 : l’avis seu
 		await bouton.click();
 		await expect(lignes).toHaveCount(500, { timeout: 15000 });
 		const plafond = page.getByTestId('reconciliation-more-capped');
-		await expect(plafond).toContainText('500');
+		await expect(plafond).toContainText(/\b500\b/);
 		await expect(page.getByTestId('reconciliation-show-older-btn')).toHaveCount(0);
 		await expect(page.locator(`[data-testid="reconciliation-row"][data-tx-id="${cent50e!.id}"]`)).toHaveCount(1);
 

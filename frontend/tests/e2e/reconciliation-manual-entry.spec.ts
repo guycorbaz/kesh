@@ -130,7 +130,9 @@ test('une écriture manuelle se passe sur un compte de classe 2, jamais sur celu
 		await champ.fill('2000');
 		const option = modal.getByRole('option').filter({ hasText: '2000' });
 		await expect(option).toHaveCount(1);
-		await option.dispatchEvent('mousedown');
+		// Un vrai clic (Story 58-6, #1082) : `dispatchEvent('mousedown')` déclenche le gestionnaire
+		// sans passer par la cible et ne voit pas une option qui ne reçoit pas le pointeur.
+		await option.click();
 		await modal.getByTestId('manual-match-description-input').fill(`Épargne ${unique}`);
 		const valider = modal.getByTestId('manual-match-submit');
 		await expect(valider).toHaveText("Passer l'écriture");
@@ -217,7 +219,8 @@ test('le champ quitté sans choisir réaffiche le compte qui part au serveur (#1
 		await champ.fill('2000');
 		const option = modal.getByRole('option').filter({ hasText: '2000' });
 		await expect(option).toHaveCount(1);
-		await option.dispatchEvent('mousedown');
+		// Un vrai clic (Story 58-6, #1082), comme l'utilisateur.
+		await option.click();
 		await expect(champ).toHaveValue(/^2000 — /);
 		const libelle = await champ.inputValue();
 		// Une description : le serveur refuse l'écriture sans elle (« Valeur invalide »).
@@ -236,7 +239,16 @@ test('le champ quitté sans choisir réaffiche le compte qui part au serveur (#1
 		);
 		await valider.click();
 		const corps = (await requete).postDataJSON() as { counterpartyAccountId: number };
-		expect(corps.counterpartyAccountId).toBe(capital!.id);
+		// Story 58-6 (#1078) : le compte AFFICHÉ est le compte ENVOYÉ — on retrouve, par le numéro
+		// que porte le libellé du champ, l'identifiant du compte, et on le compare au corps du POST.
+		// ⚠️ Cette assertion ne rougit PAS sur le code d'avant la 35-7 : l'ancien code envoyait déjà
+		// le compte 2000 pendant que le champ montrait `zzz` ; c'est `toHaveValue(libelle)`, plus
+		// haut, qui porte ce rouge. Elle garde le défaut inverse : un champ qui montre un compte et
+		// en envoie un autre.
+		const numeroAffiche = libelle.split(' — ')[0];
+		const compteAffiche = accounts.find((a) => a.number === numeroAffiche);
+		expect(compteAffiche, `le compte ${numeroAffiche} du libellé affiché existe`).toBeTruthy();
+		expect(corps.counterpartyAccountId).toBe(compteAffiche!.id);
 		await expect(modal).toBeHidden();
 	} finally {
 		if (txId !== null) {

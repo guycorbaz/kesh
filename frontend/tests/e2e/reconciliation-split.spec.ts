@@ -142,14 +142,14 @@ function optionsDeCompte(modal: Locator, ligne: number): Locator {
 	return modal.getByTestId(`split-row-${ligne}`).getByRole('listbox').getByRole('option');
 }
 
-/** Choisit le compte `numero` dans la liste, à la souris (`mousedown` sur l'option). */
+/** Choisit le compte `numero` dans la liste, par un vrai clic sur l'option (Story 58-6, #1082). */
 async function choisirCompte(modal: Locator, ligne: number, numero: string): Promise<void> {
 	const champ = champCompte(modal, ligne);
 	await champ.click();
 	await champ.fill(numero);
 	const option = optionsDeCompte(modal, ligne).filter({ hasText: numero });
 	await expect(option.first()).toBeVisible();
-	await option.first().dispatchEvent('mousedown');
+	await option.first().click();
 	await expect(champ).toHaveValue(new RegExp(`^${numero}`));
 }
 

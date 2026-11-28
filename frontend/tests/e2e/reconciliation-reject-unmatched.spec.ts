@@ -170,7 +170,7 @@ for (const [colorScheme, suffixe] of [
 			).toHaveCount(0);
 			await page.getByTestId('reconciliation-reject-btn').click();
 			await expect(page.getByTestId('already-booked-confirm')).toHaveCount(0);
-			await expect(page.getByTestId('reconciliation-success')).toContainText('1');
+			await expect(page.getByTestId('reconciliation-success')).toHaveText(/^\s*1\s+\D/);
 			await expect(ligne).toHaveCount(0);
 			await expect(indication).toHaveCount(0);
 			await page.getByTestId('reconciliation-proposals').screenshot({
