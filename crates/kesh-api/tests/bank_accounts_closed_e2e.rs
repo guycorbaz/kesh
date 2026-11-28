@@ -1731,15 +1731,11 @@ impl Annulation {
                 .await
                 .map(|_| ())
             }
-            Annulation::FactureFournisseur(f) => supplier_invoices::cancel_in_tx(
-                tx,
-                company_id,
-                f,
-                user_id,
-                crate::common::jour::aujourd_hui_test(),
-            )
-            .await
-            .map(|_| ()),
+            Annulation::FactureFournisseur(f) => {
+                supplier_invoices::cancel_in_tx(tx, company_id, f, user_id)
+                    .await
+                    .map(|_| ())
+            }
             Annulation::ReglementFournisseur(f) => supplier_invoices::cancel_settlement_in_tx(
                 tx,
                 company_id,

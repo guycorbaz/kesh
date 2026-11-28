@@ -1664,7 +1664,6 @@ async fn lettering_invariants(pool: MySqlPool) {
         m.company(),
         annulee,
         sid,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation d'un règlement d'une facture soldée");
@@ -1754,34 +1753,21 @@ async fn lettering_invariants(pool: MySqlPool) {
         m.company(),
         reglement_annule,
         Acteur::utilisateur(m.s.admin_user_id),
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("paiement annulé");
     let annulee_payee =
         facture_fournisseur(&pool, &m.s, &ach, dec!(70), d(2026, 7, 1), Some("P-3")).await;
     let detache = payer(&pool, &m.s, &ach, annulee_payee, le).await;
-    supplier_invoices::cancel(
-        &pool,
-        m.company(),
-        annulee_payee,
-        m.s.admin_user_id,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect("facture payée annulée");
+    supplier_invoices::cancel(&pool, m.company(), annulee_payee, m.s.admin_user_id)
+        .await
+        .expect("facture payée annulée");
     let detache_contre_passe =
         facture_fournisseur(&pool, &m.s, &ach, dec!(80), d(2026, 7, 1), Some("P-4")).await;
     let detache2 = payer(&pool, &m.s, &ach, detache_contre_passe, le).await;
-    supplier_invoices::cancel(
-        &pool,
-        m.company(),
-        detache_contre_passe,
-        m.s.admin_user_id,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect("facture payée annulée");
+    supplier_invoices::cancel(&pool, m.company(), detache_contre_passe, m.s.admin_user_id)
+        .await
+        .expect("facture payée annulée");
     journal_entries::reverse(
         &pool,
         m.company(),
@@ -2298,15 +2284,9 @@ async fn group_detail_of_reversal_pairs(pool: MySqlPool) {
     let s = societe(&pool).await;
     let a = achats(&pool, &s).await;
     let si = facture_fournisseur(&pool, &s, &a, dec!(60.00), jours_avant(100), Some("FF-12")).await;
-    supplier_invoices::cancel(
-        &pool,
-        s.company_id,
-        si,
-        s.admin_user_id,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect("annulation de la facture fournisseur");
+    supplier_invoices::cancel(&pool, s.company_id, si, s.admin_user_id)
+        .await
+        .expect("annulation de la facture fournisseur");
     let achat = achat(&pool, si).await;
     let (ligne_achat, cle): (i64, Option<i64>) = sqlx::query_as(
         "SELECT id, lettering_key FROM journal_entry_lines WHERE entry_id = ? AND account_id = ?",
@@ -2360,7 +2340,6 @@ async fn group_detail_of_reversal_pairs(pool: MySqlPool) {
         s.company_id,
         inv,
         sid,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation du règlement");
@@ -2389,8 +2368,9 @@ async fn group_detail_of_reversal_pairs(pool: MySqlPool) {
 
     // Paire possédée ET toute close (revue P1, E LOW-2) : le refus 2 parle
     // avant le 3, à la lecture comme à la dissolution.
-    // La contre-passation de l'annulation est datée du jour : la borne (seuil
-    // inclusif, posée en SQL de montage) la couvre.
+    // La contre-passation de l'annulation est datée de l'achat (Story 63-1 ;
+    // du jour avant la v0.21.0) : la borne au jour (seuil inclusif, posée en
+    // SQL de montage) la couvre de toute façon.
     poser_borne(&pool, s.company_id, crate::jour::aujourd_hui_test()).await;
     let det = detail(&pool, s.company_id, cle_achat).await.unwrap();
     assert!(

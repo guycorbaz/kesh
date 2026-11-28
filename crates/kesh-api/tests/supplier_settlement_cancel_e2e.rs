@@ -403,7 +403,6 @@ async fn cancel_settlement_roles_and_refusals(pool: MySqlPool) {
         },
         NaiveDate::from_ymd_opt(2026, 6, 20).unwrap(),
         seeded.admin_user_id,
-        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -454,7 +453,6 @@ async fn pay_then_cancel_the_invoice(pool: MySqlPool) {
         },
         NaiveDate::from_ymd_opt(2026, 6, 20).unwrap(),
         seeded.admin_user_id,
-        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -816,7 +814,6 @@ async fn cancel_blocked_by_closed_lettering(pool: MySqlPool) {
         },
         paid_on,
         seeded.admin_user_id,
-        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();

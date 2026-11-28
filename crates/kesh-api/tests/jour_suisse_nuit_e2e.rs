@@ -311,6 +311,25 @@ impl Ctx {
         );
     }
 
+    /// Story 63-1 (AC-11) — l'inverse de `entry_id` est datée **de l'origine**,
+    /// dans son exercice (2025), et non du jour (le 1er janvier 2026).
+    async fn assert_contre_passee_a_l_origine(&self, entry_id: i64, chemin: &str) {
+        let inverse = self
+            .inverse_de(entry_id)
+            .await
+            .unwrap_or_else(|| panic!("{chemin} : aucune contre-passation de {entry_id}"));
+        let origine = self.date_et_exercice(entry_id).await;
+        assert_eq!(
+            origine.1, self.fy_2025,
+            "{chemin} : montage, l'origine est dans 2025"
+        );
+        assert_eq!(
+            self.date_et_exercice(inverse).await,
+            origine,
+            "{chemin} : la contre-passation est datée de l'origine, dans son exercice"
+        );
+    }
+
     /// Une écriture OD de 100.– au `2025-06-01`, passée par le dépôt.
     async fn ecriture(&self) -> i64 {
         journal_entries::create(
@@ -635,8 +654,12 @@ async fn ac3_contre_passation_la_nuit_du_nouvel_an(pool: MySqlPool) {
         .await;
 }
 
-/// AC3 — annulation d'un règlement de facture client (rang 5 jugé au jour
-/// suisse, puis la contre-passation datée du même jour). Tue M7.
+/// AC3 — annulation d'un règlement de facture client, la nuit du Nouvel An.
+///
+/// Story 63-1 (#1752, AC-11) : l'annulation depuis la fiche n'est plus datée du
+/// jour, mais du règlement, dans son exercice (2025) — la nuit ne change plus
+/// rien à sa date. Le test ne tue plus M7 de la 35-5a0 (ce geste ne lit plus le
+/// jour) ; il fixe la date de l'origine.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac3_annulation_d_un_reglement_client_la_nuit(pool: MySqlPool) {
     let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
@@ -650,11 +673,14 @@ async fn ac3_annulation_d_un_reglement_client_la_nuit(pool: MySqlPool) {
         ))
         .await;
     assert_eq!(s, 200, "{b}");
-    ctx.assert_contre_passee_le_1er_janvier(ecriture, "règlement client")
+    ctx.assert_contre_passee_a_l_origine(ecriture, "règlement client")
         .await;
 }
 
-/// AC3 — annulation d'une facture fournisseur validée. Tue M7.
+/// AC3 — annulation d'une facture fournisseur validée, la nuit du Nouvel An.
+///
+/// Story 63-1 (#1754, AC-11) : l'inverse de l'achat est datée de l'achat, dans
+/// 2025. Ne tue plus M7 de la 35-5a0.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac3_annulation_d_une_facture_fournisseur_la_nuit(pool: MySqlPool) {
     let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
@@ -665,11 +691,15 @@ async fn ac3_annulation_d_une_facture_fournisseur_la_nuit(pool: MySqlPool) {
         .post(&format!("/api/v1/supplier-invoices/{id}/cancel"), json!({}))
         .await;
     assert_eq!(s, 200, "{b}");
-    ctx.assert_contre_passee_le_1er_janvier(achat.unwrap(), "facture fournisseur")
+    ctx.assert_contre_passee_a_l_origine(achat.unwrap(), "facture fournisseur")
         .await;
 }
 
-/// AC3 — annulation du règlement d'une facture fournisseur. Tue M7.
+/// AC3 — annulation du règlement d'une facture fournisseur, la nuit du Nouvel
+/// An.
+///
+/// Story 63-1 (#1753, AC-11) : l'inverse est datée du paiement, dans 2025. Ne
+/// tue plus M7 de la 35-5a0.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac3_annulation_d_un_reglement_fournisseur_la_nuit(pool: MySqlPool) {
     let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
@@ -696,7 +726,7 @@ async fn ac3_annulation_d_un_reglement_fournisseur_la_nuit(pool: MySqlPool) {
         )
         .await;
     assert_eq!(s, 200, "{b}");
-    ctx.assert_contre_passee_le_1er_janvier(reglement.unwrap(), "règlement fournisseur")
+    ctx.assert_contre_passee_a_l_origine(reglement.unwrap(), "règlement fournisseur")
         .await;
 }
 
@@ -747,49 +777,46 @@ async fn ac3_annulation_d_un_rapprochement_la_nuit(pool: MySqlPool) {
     );
 }
 
-/// AC3 — le refus : seul l'exercice 2025 existe ; aucun ne couvre le
-/// `2026-01-01`. L'annulation du règlement est refusée au rang 5 par son refus
-/// nommé, et rien n'est écrit (le jour UTC acceptait et contre-passait au
-/// 31 décembre).
+/// AC3 — seul l'exercice 2025 existe ; aucun ne couvre le `2026-01-01`.
+///
+/// Story 63-1 (#1752, AC-9, AC-11) : l'ancien refus du rang 5
+/// (`FISCAL_YEAR_INVALID`, « aucun exercice ouvert ne couvre la date du jour »)
+/// ne s'annonce plus depuis la fiche — l'annulation est datée du règlement, dont
+/// l'exercice 2025 est ouvert : la liste ne rend aucun motif, et l'annulation
+/// **passe**, datée du règlement. Tue M1 (clic) et M4 (lecture).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn ac3_sans_exercice_au_jour_suisse_l_annulation_est_refusee(pool: MySqlPool) {
+async fn ac3_sans_exercice_au_jour_suisse_l_annulation_passe(pool: MySqlPool) {
     let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, None).await;
     let bank = ctx.compte_bancaire(IBAN_A, true, ctx.ledger).await;
     let facture = ctx.facture_validee().await;
     let (reglement, ecriture) = ctx.regler(facture, bank).await;
 
-    // Le motif annoncé par la liste (AC7 en partie) : le rang 5.
     let (s, b) = ctx
         .app
         .get(&format!("/api/v1/invoices/{facture}/settlements"))
         .await;
     assert_eq!(s, 200, "{b}");
-    assert_eq!(b[0]["cancelBlockedBy"], json!("FISCAL_YEAR_INVALID"), "{b}");
+    assert_eq!(b[0]["cancellable"], json!(true), "{b}");
+    assert_eq!(b[0]["cancelBlockedBy"], json!(null), "{b}");
 
-    let avant = ctx.nombre_d_ecritures().await;
     let (s, b) = ctx
         .app
         .post_vide(&format!(
             "/api/v1/invoices/{facture}/settlements/{reglement}/cancel"
         ))
         .await;
-    // Le refus du rang 5 au clic (`docs/api-external.md`, table de l'annulation) :
-    // `400 FISCAL_YEAR_INVALID`.
-    assert_eq!(
-        (s, b["error"]["code"].clone()),
-        (400, json!("FISCAL_YEAR_INVALID")),
-        "refus du rang 5 attendu : {b}"
-    );
-    assert_eq!(ctx.nombre_d_ecritures().await, avant, "rien n'est écrit");
-    assert_eq!(ctx.inverse_de(ecriture).await, None);
+    assert_eq!(s, 200, "{b}");
+    ctx.assert_contre_passee_a_l_origine(ecriture, "règlement client")
+        .await;
 }
 
-/// Story 53-6a (AC-11, revue P1 L12, R8) — le même rang 5 pour l'annulation du
-/// règlement d'une facture **fournisseur** depuis sa fiche (geste qui garde la
-/// datation du jour, Q3) : sans exercice au jour suisse, le refus est nommé et
-/// rien n'est écrit.
+/// Story 63-1 (#1753, #1754, AC-9, AC-11) — sans exercice au jour suisse, ni le
+/// paiement d'une facture **fournisseur** ni la facture elle-même ne
+/// s'annoncent plus refusés au rang 5 : la vue ne rend aucun motif, les deux
+/// annulations passent, datées de leur origine dans 2025. Tue M2, M3 (clics),
+/// M5 et M6 (lectures).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn ac3_sans_exercice_au_jour_suisse_l_annulation_d_un_paiement_fournisseur_est_refusee(
+async fn ac3_sans_exercice_au_jour_suisse_l_annulation_d_un_paiement_fournisseur_passe(
     pool: MySqlPool,
 ) {
     let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, None).await;
@@ -807,8 +834,15 @@ async fn ac3_sans_exercice_au_jour_suisse_l_annulation_d_un_paiement_fournisseur
         )
         .await;
     assert_eq!(s, 200, "paiement : {b}");
-    let (_, reglement) = ctx.ecritures_fournisseur(id).await;
-    let avant = ctx.nombre_d_ecritures().await;
+    let (achat, reglement) = ctx.ecritures_fournisseur(id).await;
+    let (s, vue) = ctx
+        .app
+        .get(&format!("/api/v1/supplier-invoices/{id}"))
+        .await;
+    assert_eq!(s, 200, "{vue}");
+    assert_eq!(vue["settlementCancelBlockedBy"], json!(null), "{vue}");
+    assert_eq!(vue["cancelBlockedBy"], json!(null), "{vue}");
+
     let (s, b) = ctx
         .app
         .post(
@@ -816,13 +850,16 @@ async fn ac3_sans_exercice_au_jour_suisse_l_annulation_d_un_paiement_fournisseur
             json!({}),
         )
         .await;
-    assert_eq!(
-        (s, b["error"]["code"].clone()),
-        (400, json!("FISCAL_YEAR_INVALID")),
-        "refus du rang 5 attendu : {b}"
-    );
-    assert_eq!(ctx.nombre_d_ecritures().await, avant, "rien n'est écrit");
-    assert_eq!(ctx.inverse_de(reglement.unwrap()).await, None);
+    assert_eq!(s, 200, "{b}");
+    ctx.assert_contre_passee_a_l_origine(reglement.unwrap(), "règlement fournisseur")
+        .await;
+    let (s, b) = ctx
+        .app
+        .post(&format!("/api/v1/supplier-invoices/{id}/cancel"), json!({}))
+        .await;
+    assert_eq!(s, 200, "{b}");
+    ctx.assert_contre_passee_a_l_origine(achat.unwrap(), "facture fournisseur")
+        .await;
 }
 
 // ============================================================
@@ -924,9 +961,14 @@ fn assert_borne_refusee(s: u16, b: &Value) {
 // ============================================================
 
 /// AC7 — **aucun exercice ouvert ne couvre le jour suisse** (pas d'exercice
-/// 2026) : à 00 h 30 le 1er janvier à Zurich, le règlement de décembre ne
-/// s'annule pas depuis sa fiche (rang 5), et la liste des règlements le dit. Le
-/// jour UTC (31 décembre, exercice 2025 ouvert) n'annonçait aucun motif.
+/// 2026), à 00 h 30 le 1er janvier à Zurich.
+///
+/// Story 63-1 (#1752, AC-11) : la liste des règlements ne lit plus le jour —
+/// l'annulation depuis la fiche est datée du règlement (décembre, exercice 2025
+/// ouvert) : `cancellable: true`, aucun motif, là où le rang 5 répondait avant.
+/// Ce service ne lit donc plus le jour suisse pour ce motif : la forme
+/// « services » de M7 de la 35-5a0 n'y a plus de prise (cf. Dev Agent Record de
+/// la 63-1).
 ///
 /// Story 53-6a (#1674) : la candidate au rattachement d'une transaction
 /// (`entry_cancel_outlook`) ne lit plus le jour — l'annulation d'un
@@ -984,8 +1026,8 @@ async fn ac7_les_services_jugent_au_jour_suisse(pool: MySqlPool) {
         .get(&format!("/api/v1/invoices/{facture}/settlements"))
         .await;
     assert_eq!(s, 200, "{b}");
-    assert_eq!(b[0]["cancellable"], json!(false), "{b}");
-    assert_eq!(b[0]["cancelBlockedBy"], json!("FISCAL_YEAR_INVALID"), "{b}");
+    assert_eq!(b[0]["cancellable"], json!(true), "{b}");
+    assert_eq!(b[0]["cancelBlockedBy"], json!(null), "{b}");
 
     let (s, b) = ctx
         .app
@@ -2160,5 +2202,649 @@ async fn s536a_ac5_un_reglement_qui_solde_la_facture_la_rend_a_regler(pool: MySq
         ctx.date_et_exercice(lettrees[0].0).await.1,
         ctx.fy_2025,
         "le lettrage est dans 2025"
+    );
+}
+
+// ============================================================
+// Story 63-1 (#1752, #1753, #1754) — les annulations depuis la fiche, datées
+// de l'écriture d'origine, dans son exercice
+// ============================================================
+//
+// Même montage que la 53-6a : l'horloge au 1er janvier 2026 (Zurich), les
+// pièces en décembre 2025 dans un exercice 2025 encore ouvert, un exercice
+// 2026 ouvert où la contre-passation datée du jour tombait. Le jour diffère
+// toujours de la date de l'origine : un test de la date de l'origine ne passe
+// pas à vide sous `Today`.
+
+impl Ctx {
+    /// Paie la facture fournisseur `id` le `date` par virement sur `bank`.
+    async fn payer_fournisseur(&self, id: i64, bank: i64, date: &str) {
+        let (s, b) = self
+            .app
+            .post(
+                &format!("/api/v1/supplier-invoices/{id}/pay"),
+                json!({
+                    "settlementType": "bank_transfer",
+                    "bankAccountId": bank,
+                    "paymentDate": date
+                }),
+            )
+            .await;
+        assert_eq!(s, 200, "paiement : {b}");
+    }
+
+    /// Le détail de `journal_entry.reversed` le plus récent pour `entry_id`.
+    async fn audit_contre_passation(&self, entry_id: i64) -> Value {
+        sqlx::query_scalar(
+            "SELECT details_json FROM audit_log WHERE action = 'journal_entry.reversed' \
+             AND entity_id = ? ORDER BY id DESC LIMIT 1",
+        )
+        .bind(entry_id)
+        .fetch_one(&self.pool)
+        .await
+        .unwrap()
+    }
+
+    /// Les lignes lettrées de `entry_id` : `(clé, origine du lettrage)`.
+    async fn lettrage_de(&self, entry_id: i64) -> Vec<(i64, Option<String>)> {
+        sqlx::query_as(
+            "SELECT l.lettering_key, l.lettering_origin FROM journal_entry_lines l \
+             WHERE l.entry_id = ? AND l.lettering_key IS NOT NULL ORDER BY l.id",
+        )
+        .bind(entry_id)
+        .fetch_all(&self.pool)
+        .await
+        .unwrap()
+    }
+
+    /// Le refus `400 PERIOD_LOCKED` du socle, borne et date tentée.
+    fn assert_periode_verrouillee(s: u16, b: &Value, borne: &str) {
+        assert_eq!(s, 400, "{b}");
+        assert_eq!(b["error"]["code"], json!("PERIOD_LOCKED"), "{b}");
+        assert_eq!(b["error"]["details"]["lockedThrough"], json!(borne), "{b}");
+        assert_eq!(b["error"]["details"]["attempted"], json!(borne), "{b}");
+    }
+}
+
+/// AC-1 (#1752, R7) — **règlement client d'un exercice antérieur encore
+/// ouvert**, annulé depuis la fiche le 1er janvier 2026 : l'inverse est datée du
+/// règlement (20 décembre 2025), dans 2025 ; aucune écriture dans 2026 ; le
+/// règlement est retiré, la facture redevient à régler ; le lettrage `reversal`
+/// est dans 2025 ; `journal_entry.reversed` porte `"dating": "originDate"`.
+/// Tue M1.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s631_ac1_un_reglement_client_se_contre_passe_dans_son_exercice(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+    let fy_2026 = ctx.fy_2026.unwrap();
+    let bank = ctx.compte_bancaire(IBAN_A, true, ctx.ledger).await;
+    let facture = ctx.facture_validee().await;
+    let (reglement, ecriture) = ctx.regler(facture, bank).await;
+    assert!(ctx.soldee_le(facture).await.is_some(), "facture soldée");
+    let dans_2026 = ctx.ecritures_de(fy_2026).await;
+
+    let (s, b) = ctx
+        .app
+        .post_vide(&format!(
+            "/api/v1/invoices/{facture}/settlements/{reglement}/cancel"
+        ))
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let inverse = ctx.inverse_de(ecriture).await.expect("contre-passée");
+    assert_eq!(b["reversalJournalEntryId"], json!(inverse), "{b}");
+    assert_eq!(
+        ctx.date_et_exercice(inverse).await,
+        (jour(2025, 12, 20), ctx.fy_2025),
+        "datée du règlement, dans 2025 (non du jour, dans 2026)"
+    );
+    assert_eq!(ctx.ecritures_de(fy_2026).await, dans_2026, "rien dans 2026");
+    assert_eq!(
+        ctx.reglements_de(facture).await,
+        0,
+        "le règlement est retiré"
+    );
+    assert_eq!(ctx.soldee_le(facture).await, None, "facture à régler");
+    let lettrage = ctx.lettrage_de(inverse).await;
+    assert_eq!(lettrage.len(), 1, "{lettrage:?}");
+    assert_eq!(lettrage[0].1.as_deref(), Some("reversal"));
+    assert_eq!(
+        ctx.audit_contre_passation(ecriture).await,
+        json!({ "reversalJournalEntryId": inverse, "dating": "originDate" })
+    );
+}
+
+/// AC-2 (#1752, Q1) — **le même exercice** : le règlement du 20 décembre 2025
+/// annulé le 22 décembre 2025 : l'inverse est datée du 20, non du 22. Tue M1
+/// sur la date (sous `Today`, l'exercice 2025 couvre le 22 : seule la date
+/// diffère).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s631_ac2_un_reglement_client_du_meme_exercice_se_contre_passe_a_sa_date(pool: MySqlPool) {
+    let ctx = monter(&pool, "2025-12-22T10:00:00Z", Some("Open")).await;
+    let bank = ctx.compte_bancaire(IBAN_A, true, ctx.ledger).await;
+    let facture = ctx.facture_validee().await;
+    let (reglement, ecriture) = ctx.regler_montant(facture, bank, "42.00").await;
+    let (s, b) = ctx
+        .app
+        .post_vide(&format!(
+            "/api/v1/invoices/{facture}/settlements/{reglement}/cancel"
+        ))
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let inverse = ctx.inverse_de(ecriture).await.expect("contre-passée");
+    assert_eq!(
+        ctx.date_et_exercice(inverse).await,
+        (jour(2025, 12, 20), ctx.fy_2025),
+        "datée du règlement (ni le jour du 22)"
+    );
+}
+
+/// AC-4 (#1753, R8) — **le paiement d'une facture fournisseur** du 20 décembre
+/// 2025, annulé depuis la fiche le 1er janvier 2026 : l'inverse est datée du
+/// paiement, dans 2025 ; rien dans 2026 ; la facture redevient `open`, ses
+/// colonnes de règlement à `null` ; audit `"dating": "originDate"`. Tue M2.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s631_ac4_un_paiement_fournisseur_se_contre_passe_dans_son_exercice(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+    let fy_2026 = ctx.fy_2026.unwrap();
+    let bank = ctx.compte_bancaire(IBAN_A, true, ctx.ledger).await;
+    let id = ctx.facture_fournisseur().await;
+    ctx.payer_fournisseur(id, bank, "2025-12-20").await;
+    let (_, reglement) = ctx.ecritures_fournisseur(id).await;
+    let reglement = reglement.expect("écriture de règlement");
+    let dans_2026 = ctx.ecritures_de(fy_2026).await;
+
+    let (s, b) = ctx
+        .app
+        .post(
+            &format!("/api/v1/supplier-invoices/{id}/settlement/cancel"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let inverse = ctx.inverse_de(reglement).await.expect("contre-passée");
+    assert_eq!(
+        ctx.date_et_exercice(inverse).await,
+        (jour(2025, 12, 20), ctx.fy_2025),
+        "datée du paiement, dans 2025"
+    );
+    assert_eq!(ctx.ecritures_de(fy_2026).await, dans_2026, "rien dans 2026");
+    assert_eq!(b["reversalJournalEntryId"], json!(inverse), "{b}");
+    assert_eq!(b["invoice"]["status"], json!("open"), "{b}");
+    assert_eq!(b["invoice"]["settlementJournalEntryId"], json!(null), "{b}");
+    assert_eq!(b["invoice"]["paidAt"], json!(null), "{b}");
+    assert_eq!(
+        ctx.audit_contre_passation(reglement).await,
+        json!({ "reversalJournalEntryId": inverse, "dating": "originDate" })
+    );
+}
+
+/// AC-5 (#1754, R9) — **une facture fournisseur validée**, annulée le
+/// 1er janvier 2026 : l'inverse de l'achat est datée de l'achat (15 décembre
+/// 2025), dans 2025 ; la charge nette à zéro dans 2025 ; rien dans 2026 ; la
+/// facture est `cancelled`. Tue M3.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s631_ac5_une_facture_fournisseur_validee_se_contre_passe_a_la_date_de_l_achat(
+    pool: MySqlPool,
+) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+    let fy_2026 = ctx.fy_2026.unwrap();
+    let id = ctx.facture_fournisseur().await;
+    let (achat, _) = ctx.ecritures_fournisseur(id).await;
+    let achat = achat.expect("écriture d'achat");
+    let dans_2026 = ctx.ecritures_de(fy_2026).await;
+
+    let (s, b) = ctx
+        .app
+        .post(&format!("/api/v1/supplier-invoices/{id}/cancel"), json!({}))
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["status"], json!("cancelled"), "{b}");
+    let inverse = ctx.inverse_de(achat).await.expect("contre-passée");
+    assert_eq!(
+        ctx.date_et_exercice(inverse).await,
+        (jour(2025, 12, 15), ctx.fy_2025),
+        "datée de l'achat, dans 2025"
+    );
+    assert_eq!(ctx.ecritures_de(fy_2026).await, dans_2026, "rien dans 2026");
+    let charge_2025: rust_decimal::Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(l.debit - l.credit), 0) FROM journal_entry_lines l \
+         JOIN journal_entries e ON e.id = l.entry_id \
+         WHERE l.account_id = ? AND e.fiscal_year_id = ?",
+    )
+    .bind(ctx.s.accounts["4000"])
+    .bind(ctx.fy_2025)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(charge_2025, dec!(0), "la charge nette à zéro dans 2025");
+    assert_eq!(
+        ctx.audit_contre_passation(achat).await,
+        json!({ "reversalJournalEntryId": inverse, "dating": "originDate" })
+    );
+}
+
+/// AC-5 (#1754, P7) — **une facture fournisseur payée**, annulée le
+/// 1er janvier 2026 : l'inverse de l'achat est datée de l'achat, dans 2025 ; le
+/// règlement reste au grand livre, à sa date, **détaché**
+/// (`settlementJournalEntryId` à `null`), nommé par l'audit du geste. Tue M3.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s631_ac5_une_facture_fournisseur_payee_se_contre_passe_a_la_date_de_l_achat(
+    pool: MySqlPool,
+) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+    let bank = ctx.compte_bancaire(IBAN_A, true, ctx.ledger).await;
+    let id = ctx.facture_fournisseur().await;
+    ctx.payer_fournisseur(id, bank, "2025-12-20").await;
+    let (achat, reglement) = ctx.ecritures_fournisseur(id).await;
+    let (achat, reglement) = (achat.unwrap(), reglement.unwrap());
+
+    let (s, b) = ctx
+        .app
+        .post(&format!("/api/v1/supplier-invoices/{id}/cancel"), json!({}))
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["status"], json!("cancelled"), "{b}");
+    assert_eq!(b["settlementJournalEntryId"], json!(null), "{b}");
+    let inverse = ctx.inverse_de(achat).await.expect("contre-passée");
+    assert_eq!(
+        ctx.date_et_exercice(inverse).await,
+        (jour(2025, 12, 15), ctx.fy_2025),
+        "datée de l'achat, dans 2025"
+    );
+    assert_eq!(
+        ctx.inverse_de(reglement).await,
+        None,
+        "règlement non contre-passé"
+    );
+    assert_eq!(
+        ctx.date_et_exercice(reglement).await,
+        (jour(2025, 12, 20), ctx.fy_2025),
+        "le règlement reste, à sa date"
+    );
+    let details: Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'supplier_invoice.cancelled' \
+         AND entity_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        details["settlementJournalEntryId"],
+        json!(reglement),
+        "{details}"
+    );
+    assert_eq!(
+        details["reversalJournalEntryId"],
+        json!(inverse),
+        "{details}"
+    );
+}
+
+/// AC-6 (#1754, Q6) — **l'exercice de l'achat clôturé puis rouvert** :
+/// l'annulation se date dans 2025 rouvert ; rien dans 2026 ; 2025 se reclôture
+/// ensuite sans obstacle nouveau. Tue M3.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s631_ac6_une_facture_fournisseur_d_un_exercice_rouvert_s_y_contre_passe(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+    let fy_2026 = ctx.fy_2026.unwrap();
+    let id = ctx.facture_fournisseur().await;
+    let (achat, _) = ctx.ecritures_fournisseur(id).await;
+    ctx.cloturer_puis_rouvrir(ctx.fy_2025).await;
+    let dans_2026 = ctx.ecritures_de(fy_2026).await;
+
+    let (s, b) = ctx
+        .app
+        .post(&format!("/api/v1/supplier-invoices/{id}/cancel"), json!({}))
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let inverse = ctx.inverse_de(achat.unwrap()).await.expect("contre-passée");
+    assert_eq!(
+        ctx.date_et_exercice(inverse).await,
+        (jour(2025, 12, 15), ctx.fy_2025)
+    );
+    assert_eq!(ctx.ecritures_de(fy_2026).await, dans_2026, "rien dans 2026");
+    kesh_db::repositories::fiscal_years::close(
+        &pool,
+        ctx.s.admin_user_id,
+        ctx.s.company_id,
+        ctx.fy_2025,
+    )
+    .await
+    .expect("2025 se clôture de nouveau");
+}
+
+/// AC-7 (Q6, P5) — **l'exercice de l'origine clos**, pour chacun des trois
+/// gestes : la vue l'annonce (`FISCAL_YEAR_CLOSED`), le clic est refusé
+/// `409 FISCAL_YEAR_CLOSED`, rien n'est écrit. Inchangé par la story (rang 2).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s631_ac7_un_exercice_d_origine_clos_refuse_les_trois_gestes(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+    let bank = ctx.compte_bancaire(IBAN_A, true, ctx.ledger).await;
+    let facture = ctx.facture_validee().await;
+    let (reglement, _) = ctx.regler_montant(facture, bank, "42.00").await;
+    let payee = ctx.facture_fournisseur().await;
+    ctx.payer_fournisseur(payee, bank, "2025-12-20").await;
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(ctx.fy_2025)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (_, b) = ctx
+        .app
+        .get(&format!("/api/v1/invoices/{facture}/settlements"))
+        .await;
+    assert_eq!(b[0]["cancelBlockedBy"], json!("FISCAL_YEAR_CLOSED"), "{b}");
+    let (_, vue) = ctx
+        .app
+        .get(&format!("/api/v1/supplier-invoices/{payee}"))
+        .await;
+    assert_eq!(
+        vue["settlementCancelBlockedBy"],
+        json!("FISCAL_YEAR_CLOSED"),
+        "{vue}"
+    );
+    assert_eq!(vue["cancelBlockedBy"], json!("FISCAL_YEAR_CLOSED"), "{vue}");
+
+    let avant = ctx.nombre_d_ecritures().await;
+    for (chemin, corps) in [
+        (
+            format!("/api/v1/invoices/{facture}/settlements/{reglement}/cancel"),
+            None,
+        ),
+        (
+            format!("/api/v1/supplier-invoices/{payee}/settlement/cancel"),
+            Some(json!({})),
+        ),
+        (
+            format!("/api/v1/supplier-invoices/{payee}/cancel"),
+            Some(json!({})),
+        ),
+    ] {
+        let (s, b) = match corps {
+            None => ctx.app.post_vide(&chemin).await,
+            Some(c) => ctx.app.post(&chemin, c).await,
+        };
+        assert_eq!(
+            (s, b["error"]["code"].clone()),
+            (409, json!("FISCAL_YEAR_CLOSED")),
+            "{chemin} : {b}"
+        );
+    }
+    assert_eq!(ctx.nombre_d_ecritures().await, avant, "rien n'est écrit");
+}
+
+/// AC-8 (a, c, d) (#1752) — **un règlement client partiel sous la borne**
+/// (seuil inclusif, au jour de la borne) : la liste des règlements rend
+/// `cancellable: false`, `PERIOD_LOCKED` et la borne ; le clic forcé est refusé
+/// par le socle en `400 PERIOD_LOCKED`, rien n'est écrit ; au **lendemain** de
+/// la borne, la liste l'annonce possible et l'annulation passe, datée du
+/// règlement. Tue M1 (clic) et M4 (lecture).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s631_ac8_un_reglement_client_sous_le_verrou_est_annonce_et_refuse(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+    let bank = ctx.compte_bancaire(IBAN_A, true, ctx.ledger).await;
+    let facture = ctx.facture_validee().await;
+    let (reglement, ecriture) = ctx.regler_montant(facture, bank, "42.00").await;
+    ctx.verrouiller(jour(2025, 12, 20)).await;
+
+    let (s, b) = ctx
+        .app
+        .get(&format!("/api/v1/invoices/{facture}/settlements"))
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b[0]["cancellable"], json!(false), "{b}");
+    assert_eq!(b[0]["cancelBlockedBy"], json!("PERIOD_LOCKED"), "{b}");
+    assert_eq!(b[0]["cancelBlockedLabel"], json!("2025-12-20"), "{b}");
+
+    let avant = ctx.nombre_d_ecritures().await;
+    let (s, b) = ctx
+        .app
+        .post_vide(&format!(
+            "/api/v1/invoices/{facture}/settlements/{reglement}/cancel"
+        ))
+        .await;
+    Ctx::assert_periode_verrouillee(s, &b, "2025-12-20");
+    assert_eq!(ctx.nombre_d_ecritures().await, avant, "rien d'écrit");
+    assert_eq!(ctx.inverse_de(ecriture).await, None);
+    assert_eq!(ctx.reglements_de(facture).await, 1, "le règlement reste");
+
+    ctx.verrouiller(jour(2025, 12, 19)).await;
+    let (_, b) = ctx
+        .app
+        .get(&format!("/api/v1/invoices/{facture}/settlements"))
+        .await;
+    assert_eq!(b[0]["cancellable"], json!(true), "au lendemain : {b}");
+    assert_eq!(b[0]["cancelBlockedBy"], json!(null), "{b}");
+    let (s, b) = ctx
+        .app
+        .post_vide(&format!(
+            "/api/v1/invoices/{facture}/settlements/{reglement}/cancel"
+        ))
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let inverse = ctx.inverse_de(ecriture).await.expect("contre-passée");
+    assert_eq!(
+        ctx.date_et_exercice(inverse).await,
+        (jour(2025, 12, 20), ctx.fy_2025)
+    );
+}
+
+/// AC-8 (b, c, d) (#1753, D4) — **le paiement fournisseur sous la borne,
+/// l'achat au-dessus** : la facture validée au 15 décembre, payée au 10 (`pay`
+/// l'accepte), **puis** le verrou posé jusqu'au 10 — le groupe {achat,
+/// paiement} n'est pas figé (l'achat est en période ouverte), le rang 2 bis ne
+/// répond pas. La vue rend `settlementCancelBlockedBy: "PERIOD_LOCKED"` et la
+/// borne ; le clic forcé est refusé `400 PERIOD_LOCKED` ; au lendemain, il
+/// passe, daté du paiement. Tue M2 (clic) et M5 (lecture).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s631_ac8_un_paiement_fournisseur_sous_le_verrou_est_annonce_et_refuse(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+    let bank = ctx.compte_bancaire(IBAN_A, true, ctx.ledger).await;
+    let id = ctx.facture_fournisseur().await;
+    ctx.payer_fournisseur(id, bank, "2025-12-10").await;
+    let (_, reglement) = ctx.ecritures_fournisseur(id).await;
+    let reglement = reglement.unwrap();
+    ctx.verrouiller(jour(2025, 12, 10)).await;
+
+    let (s, vue) = ctx
+        .app
+        .get(&format!("/api/v1/supplier-invoices/{id}"))
+        .await;
+    assert_eq!(s, 200, "{vue}");
+    assert_eq!(vue["settlementCancellable"], json!(false), "{vue}");
+    assert_eq!(
+        vue["settlementCancelBlockedBy"],
+        json!("PERIOD_LOCKED"),
+        "{vue}"
+    );
+    assert_eq!(
+        vue["settlementCancelBlockedLabel"],
+        json!("2025-12-10"),
+        "{vue}"
+    );
+
+    let avant = ctx.nombre_d_ecritures().await;
+    let (s, b) = ctx
+        .app
+        .post(
+            &format!("/api/v1/supplier-invoices/{id}/settlement/cancel"),
+            json!({}),
+        )
+        .await;
+    Ctx::assert_periode_verrouillee(s, &b, "2025-12-10");
+    assert_eq!(ctx.nombre_d_ecritures().await, avant, "rien d'écrit");
+    assert_eq!(ctx.inverse_de(reglement).await, None);
+
+    ctx.verrouiller(jour(2025, 12, 9)).await;
+    let (_, vue) = ctx
+        .app
+        .get(&format!("/api/v1/supplier-invoices/{id}"))
+        .await;
+    assert_eq!(
+        vue["settlementCancellable"],
+        json!(true),
+        "au lendemain : {vue}"
+    );
+    let (s, b) = ctx
+        .app
+        .post(
+            &format!("/api/v1/supplier-invoices/{id}/settlement/cancel"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let inverse = ctx.inverse_de(reglement).await.expect("contre-passée");
+    assert_eq!(
+        ctx.date_et_exercice(inverse).await,
+        (jour(2025, 12, 10), ctx.fy_2025)
+    );
+}
+
+/// AC-8 (b, c, d) (#1754, D4, Q-A) — **une facture fournisseur validée, non
+/// payée, dont l'achat est sous la borne** (au jour de la borne) : la vue rend
+/// `cancelBlockedBy: "PERIOD_LOCKED"` et la borne ; le clic forcé est refusé
+/// `400 PERIOD_LOCKED`, rien n'est écrit, la facture reste validée ; au
+/// lendemain de la borne, l'annulation passe, datée de l'achat. Tue M3 (clic)
+/// et M6 (lecture).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s631_ac8_une_facture_fournisseur_sous_le_verrou_est_annoncee_et_refusee(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+    let id = ctx.facture_fournisseur().await;
+    let (achat, _) = ctx.ecritures_fournisseur(id).await;
+    let achat = achat.unwrap();
+    ctx.verrouiller(jour(2025, 12, 15)).await;
+
+    let (s, vue) = ctx
+        .app
+        .get(&format!("/api/v1/supplier-invoices/{id}"))
+        .await;
+    assert_eq!(s, 200, "{vue}");
+    assert_eq!(vue["cancellable"], json!(false), "{vue}");
+    assert_eq!(vue["cancelBlockedBy"], json!("PERIOD_LOCKED"), "{vue}");
+    assert_eq!(vue["cancelBlockedLabel"], json!("2025-12-15"), "{vue}");
+
+    let avant = ctx.nombre_d_ecritures().await;
+    let (s, b) = ctx
+        .app
+        .post(&format!("/api/v1/supplier-invoices/{id}/cancel"), json!({}))
+        .await;
+    Ctx::assert_periode_verrouillee(s, &b, "2025-12-15");
+    assert_eq!(ctx.nombre_d_ecritures().await, avant, "rien d'écrit");
+    assert_eq!(ctx.inverse_de(achat).await, None);
+    let statut: String = sqlx::query_scalar("SELECT status FROM supplier_invoices WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(statut, "open", "la facture reste validée");
+
+    ctx.verrouiller(jour(2025, 12, 14)).await;
+    let (_, vue) = ctx
+        .app
+        .get(&format!("/api/v1/supplier-invoices/{id}"))
+        .await;
+    assert_eq!(vue["cancellable"], json!(true), "au lendemain : {vue}");
+    let (s, b) = ctx
+        .app
+        .post(&format!("/api/v1/supplier-invoices/{id}/cancel"), json!({}))
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let inverse = ctx.inverse_de(achat).await.expect("contre-passée");
+    assert_eq!(
+        ctx.date_et_exercice(inverse).await,
+        (jour(2025, 12, 15), ctx.fy_2025)
+    );
+}
+
+/// AC-3 (#1752, D6) — **un escompte** (solde `write_off` avec correction de
+/// TVA) du 20 décembre 2025, annulé depuis la fiche le 1er janvier 2026 :
+/// l'inverse, **ligne de TVA comprise**, est datée du solde, dans 2025 ; rien
+/// dans 2026 ; dans 2025, les comptes du solde (nature, TVA due, débiteurs)
+/// nettent à zéro entre le solde et son inverse. Tue M1 (pour le solde).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s631_ac3_un_escompte_se_contre_passe_tva_comprise_dans_sa_periode(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+    let fy_2026 = ctx.fy_2026.unwrap();
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_discount_account_id = ? WHERE company_id = ?",
+    )
+    .bind(ctx.s.accounts["4000"])
+    .bind(ctx.s.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let facture = ctx.facture_validee().await;
+    let (s, b) = ctx
+        .app
+        .post(
+            &format!("/api/v1/invoices/{facture}/write-off"),
+            json!({
+                "nature": "discount",
+                "settledOn": "2025-12-20",
+                "version": common::invoice_version(&pool, facture).await,
+            }),
+        )
+        .await;
+    assert!((200..300).contains(&s), "escompte : {b}");
+    let (solde, ecriture): (i64, i64) = sqlx::query_as(
+        "SELECT id, journal_entry_id FROM invoice_settlements WHERE invoice_id = ? \
+         AND settlement_type = 'write_off'",
+    )
+    .bind(facture)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let tva_du_solde: rust_decimal::Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(debit - credit), 0) FROM journal_entry_lines \
+         WHERE entry_id = ? AND account_id = ?",
+    )
+    .bind(ecriture)
+    .bind(ctx.s.accounts["2000"])
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        tva_du_solde,
+        dec!(8.10),
+        "montage : la correction de TVA de l'escompte"
+    );
+    let dans_2026 = ctx.ecritures_de(fy_2026).await;
+
+    let (s, b) = ctx
+        .app
+        .post_vide(&format!(
+            "/api/v1/invoices/{facture}/settlements/{solde}/cancel"
+        ))
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let inverse = ctx.inverse_de(ecriture).await.expect("contre-passée");
+    assert_eq!(
+        ctx.date_et_exercice(inverse).await,
+        (jour(2025, 12, 20), ctx.fy_2025),
+        "datée du solde, dans 2025"
+    );
+    assert_eq!(ctx.ecritures_de(fy_2026).await, dans_2026, "rien dans 2026");
+    // Par compte, le solde et son inverse nettent à zéro **dans 2025** : la somme est
+    // bornée à l'exercice (revue P1 de la 63-1, L8) — sans borne, elle serait nulle sous
+    // toute datation, l'inverse du jour comprise.
+    let nets: Vec<(i64, rust_decimal::Decimal)> = sqlx::query_as(
+        "SELECT l.account_id, SUM(l.debit - l.credit) FROM journal_entry_lines l \
+         JOIN journal_entries je ON je.id = l.entry_id \
+         WHERE l.entry_id IN (?, ?) AND je.entry_date BETWEEN '2025-01-01' AND '2025-12-31' \
+         GROUP BY l.account_id ORDER BY l.account_id",
+    )
+    .bind(ecriture)
+    .bind(inverse)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert!(
+        nets.iter().any(|(a, _)| *a == ctx.s.accounts["2000"]),
+        "la ligne de TVA est contre-passée : {nets:?}"
+    );
+    assert!(
+        nets.iter().all(|(_, n)| n.is_zero()),
+        "solde et inverse nettent à zéro : {nets:?}"
     );
 }

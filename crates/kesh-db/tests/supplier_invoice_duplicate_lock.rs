@@ -204,15 +204,9 @@ async fn annulee(
     )
     .await
     .unwrap();
-    let x = supplier_invoices::cancel(
-        pool,
-        seeded.company_id,
-        v.invoice.id,
-        seeded.admin_user_id,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .unwrap();
+    let x = supplier_invoices::cancel(pool, seeded.company_id, v.invoice.id, seeded.admin_user_id)
+        .await
+        .unwrap();
     (x.invoice.id, x.invoice.version)
 }
 
@@ -231,7 +225,6 @@ async fn concurrent_unvalidation_waits_for_the_supplier_then_refuses(pool: MySql
             id,
             v,
             Acteur::utilisateur(u),
-            crate::jour::aujourd_hui_test(),
             DuplicatePolicy::Refuse,
         )
         .await
@@ -343,7 +336,6 @@ async fn credit_note_and_unvalidation_do_not_deadlock_on_the_purchase_year(pool:
             id,
             v,
             Acteur::utilisateur(u),
-            crate::jour::aujourd_hui_test(),
             DuplicatePolicy::Refuse,
         )
         .await

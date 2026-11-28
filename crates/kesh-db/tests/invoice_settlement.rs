@@ -761,7 +761,8 @@ async fn count(pool: &MySqlPool, sql: &str) -> i64 {
     sqlx::query_scalar(sql).fetch_one(pool).await.expect(sql)
 }
 
-/// ⛔ **Le geste nominal** : contre-passation datée du jour, ligne retirée,
+/// ⛔ **Le geste nominal** : contre-passation datée du règlement (Story 63-1 ;
+/// datée du jour avant la v0.21.0), ligne retirée,
 /// facture remise « à régler », deux lignes d'audit — et l'écriture d'origine
 /// comme sa contre-passation deviennent définitivement intouchables.
 #[sqlx::test(migrations = "./test-schema")]
@@ -782,7 +783,6 @@ async fn annuler_l_unique_reglement_remet_la_facture_a_regler(pool: MySqlPool) {
         seeded.company_id,
         inv_id,
         sid,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation");
@@ -881,7 +881,6 @@ async fn annuler_un_reglement_parmi_deux(pool: MySqlPool) {
         seeded.company_id,
         inv_id,
         s2,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation");
@@ -962,7 +961,6 @@ async fn residuel_reste_nul_laisse_paid_at(pool: MySqlPool) {
         seeded.company_id,
         inv_id,
         s1,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation");
@@ -988,26 +986,12 @@ async fn double_annulation_rend_not_found(pool: MySqlPool) {
         inv_id,
         sid,
     );
-    invoice_settlements_write::cancel_settlement(
-        &pool,
-        args.0,
-        args.1,
-        args.2,
-        args.3,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect("première");
-    let err = invoice_settlements_write::cancel_settlement(
-        &pool,
-        args.0,
-        args.1,
-        args.2,
-        args.3,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect_err("seconde");
+    invoice_settlements_write::cancel_settlement(&pool, args.0, args.1, args.2, args.3)
+        .await
+        .expect("première");
+    let err = invoice_settlements_write::cancel_settlement(&pool, args.0, args.1, args.2, args.3)
+        .await
+        .expect_err("seconde");
     assert!(matches!(err, DbError::NotFound), "got {err:?}");
 }
 
@@ -1173,7 +1157,6 @@ async fn une_autre_societe_ne_peut_pas_annuler(pool: MySqlPool) {
         other,
         inv_id,
         sid,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("autre société");
@@ -1454,9 +1437,24 @@ fn ecriture_attendue(motif: SettlementCancelBlocker, err: &DbError, origine: boo
 /// plus fort, et l'écriture refuse pour CE MÊME motif.** C'est ce qui prouve
 /// que la lecture suit l'écriture — en particulier la paire 4-5, où le socle
 /// contrôle les comptes archivés avant l'exercice du jour.
+///
+/// Story 63-1 (AC-11) : la queue sous `Today` reste testée (D7, #1759), mais le
+/// geste de la fiche ne la reçoit plus — la branche `Today` clique par la forme
+/// `_in_tx` sous `Today`, comme la branche `OriginDate` ; le geste public est
+/// joué par [`s631_la_precedence_du_geste_de_la_fiche`].
 #[sqlx::test(migrations = "./test-schema")]
 async fn la_precedence_de_l_annulation_lecture_et_ecriture(pool: MySqlPool) {
-    precedence(&pool, &RANGS, false).await;
+    precedence(&pool, &RANGS, false, false).await;
+}
+
+/// Story 63-1 (#1752, AC-11, D2) — **le geste de la fiche**
+/// (`invoice_settlements_write::cancel_settlement`, sans date) refuse comme la
+/// lecture sous `OriginDate` annonce : une seule fonction pour lire et pour
+/// écrire, à la datation du geste. `PeriodLocked` est refusé par le socle
+/// (`DbError::PeriodLocked`). Tue M1 et M4 au niveau du dépôt.
+#[sqlx::test(migrations = "./test-schema")]
+async fn s631_la_precedence_du_geste_de_la_fiche(pool: MySqlPool) {
+    precedence(&pool, &RANGS_ORIGINE, true, true).await;
 }
 
 /// Story 53-6a (#1674, AC-13) — **la même précédence sous `OriginDate`** : la
@@ -1467,12 +1465,23 @@ async fn la_precedence_de_l_annulation_lecture_et_ecriture(pool: MySqlPool) {
 /// au niveau de la queue.
 #[sqlx::test(migrations = "./test-schema")]
 async fn s536a_la_precedence_sous_la_date_de_l_origine(pool: MySqlPool) {
-    precedence(&pool, &RANGS_ORIGINE, true).await;
+    precedence(&pool, &RANGS_ORIGINE, true, false).await;
 }
 
 /// Chaque rang de `rangs` seul, puis chaque paire, lus et écrits sous la
-/// datation `Today` ou `OriginDate` (`origine`).
-async fn precedence(pool: &MySqlPool, rangs: &[SettlementCancelBlocker; 6], origine: bool) {
+/// datation `Today` ou `OriginDate` (`origine`) ; le clic par la forme `_in_tx`
+/// sous cette datation, ou — `public`, sous `OriginDate` seulement — par le geste
+/// de la fiche (Story 63-1).
+async fn precedence(
+    pool: &MySqlPool,
+    rangs: &[SettlementCancelBlocker; 6],
+    origine: bool,
+    public: bool,
+) {
+    assert!(
+        origine || !public,
+        "le geste de la fiche est daté de l'origine"
+    );
     let pool = pool.clone();
     let mut cas: Vec<Vec<SettlementCancelBlocker>> = rangs.iter().map(|r| vec![*r]).collect();
     for (i, fort) in rangs.iter().enumerate() {
@@ -1535,9 +1544,9 @@ async fn precedence(pool: &MySqlPool, rangs: &[SettlementCancelBlocker; 6], orig
             );
         }
 
-        // Sous `Today`, le geste de la fiche (R7, inchangé) ; sous `OriginDate`,
-        // la forme `_in_tx` qu'appelle le dé-rapprochement, transaction annulée.
-        let err = if origine {
+        // La forme `_in_tx` sous la datation reçue, transaction annulée ; ou le
+        // geste de la fiche (R7), daté de l'origine depuis la Story 63-1.
+        let err = if !public {
             let mut tx = pool.begin().await.unwrap();
             let err = invoice_settlements_write::cancel_settlement_in_tx(
                 &mut tx,
@@ -1558,7 +1567,6 @@ async fn precedence(pool: &MySqlPool, rangs: &[SettlementCancelBlocker; 6], orig
                 seeded.company_id,
                 inv_id,
                 sid,
-                crate::jour::aujourd_hui_test(),
             )
             .await
             .expect_err("l'annulation doit être refusée")
@@ -1649,9 +1657,13 @@ async fn la_queue_commune_se_lit_sur_l_ecriture(pool: MySqlPool) {
 /// (la clôture n'est pas validée), passe le rang 2, attend au verrou du socle…
 /// puis contre-passe un règlement d'exercice désormais clos.
 ///
-/// Le règlement est dans un exercice **autre** que celui du jour, pour que le
-/// verrou que le socle pose sur l'exercice du jour ne serve pas de garde par
-/// accident.
+/// Le règlement est dans un exercice **autre** que celui du jour. ⚠️ Story 63-1 :
+/// la contre-passation est datée du règlement — le socle verrouille alors
+/// l'exercice **du règlement** (non plus celui du jour), et, sans l'étape 2-bis,
+/// refuserait l'exercice clos par sa propre erreur (`DbError::FiscalYearClosed`,
+/// hors de la famille du geste). Le test attend le refus du **geste**
+/// (`SettlementNotCancellable`), que seul le verrou de l'étape 2-bis produit :
+/// sa preuve tient.
 #[sqlx::test(migrations = "./test-schema")]
 async fn une_cloture_concurrente_attend_l_annulation(pool: MySqlPool) {
     let (seeded, inv_id, sid) = monter(&pool, &[]).await;
@@ -1674,7 +1686,6 @@ async fn une_cloture_concurrente_attend_l_annulation(pool: MySqlPool) {
             company_id,
             inv_id,
             sid,
-            crate::jour::aujourd_hui_test(),
         )
         .await
     });
@@ -2211,7 +2222,6 @@ async fn settlement_cancel_is_refused_under_a_frozen_lettering(pool: MySqlPool) 
         seeded.company_id,
         inv_id,
         sid,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("refusée");
@@ -2376,7 +2386,6 @@ async fn later_closed_year_group_is_refused(pool: MySqlPool) {
         seeded.company_id,
         inv_id,
         sid,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("refusée");
@@ -2510,7 +2519,6 @@ mod compte_bancaire_clos {
             seeded.company_id,
             inv_id,
             sid,
-            crate::jour::aujourd_hui_test(),
         )
         .await
         .expect("l'annulation d'un règlement vers un compte archivé doit passer");
@@ -2592,7 +2600,6 @@ mod compte_bancaire_clos {
                 company_id,
                 inv_id,
                 sid,
-                today,
             )
             .await
         });
@@ -2732,7 +2739,6 @@ async fn la_sortie_de_l_annulation_porte_la_facture_relue(pool: MySqlPool) {
         seeded.company_id,
         inv,
         settlement_id,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation");

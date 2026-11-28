@@ -592,15 +592,9 @@ async fn the_classification_knows_the_supplier_settlement(pool: MySqlPool) {
     assert_eq!(kind_of(&pool, c, bt_propre).await, Some("entry"));
 
     // Le règlement détaché : la facture payée puis annulée.
-    supplier_invoices::cancel(
-        &pool,
-        c,
-        r.supplier_invoice_id,
-        seeded.admin_user_id,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect("annulation de la facture payée");
+    supplier_invoices::cancel(&pool, c, r.supplier_invoice_id, seeded.admin_user_id)
+        .await
+        .expect("annulation de la facture payée");
     assert_eq!(
         kind_of(&pool, c, r.bank_transaction_id).await,
         Some("entry"),
@@ -1057,7 +1051,7 @@ async fn unreconciliation_and_invoice_cancellation_race_without_a_mixed_state(po
     let facture = r.supplier_invoice_id;
     let annulation = tokio::spawn(async move {
         retry_on_deadlock("test::supplier_invoices::cancel", || {
-            supplier_invoices::cancel(&p, c, facture, u, crate::jour::aujourd_hui_test())
+            supplier_invoices::cancel(&p, c, facture, u)
         })
         .await
     });

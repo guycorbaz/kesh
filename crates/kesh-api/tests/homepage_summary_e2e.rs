@@ -1077,7 +1077,6 @@ async fn cancelled_supplier_invoice_disappears(pool: MySqlPool) {
         seeded.company_id,
         validated.invoice.id,
         seeded.admin_user_id,
-        today(),
     )
     .await
     .unwrap();

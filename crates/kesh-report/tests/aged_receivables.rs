@@ -619,7 +619,6 @@ async fn aged_cancelled_settlement_no_longer_counts(pool: MySqlPool) {
         seeded.company_id,
         v.invoice.id,
         settlement_id,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation du règlement");

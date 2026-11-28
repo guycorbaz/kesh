@@ -6240,25 +6240,27 @@ impl IntoResponse for AppError {
                             "settlement-cancel-blocked-account-archived",
                             "Un compte de ce règlement a été archivé : réactivez-le pour pouvoir annuler le règlement.",
                         ),
+                        // Inatteignable en production depuis la Story 63-1
+                        // (D7) : plus aucun geste ne passe `Today` à la queue ;
+                        // clé et repli gardés (issue #1759).
                         SettlementCancelBlocker::NoOpenFiscalYearToday => (
                             "settlement-cancel-blocked-no-fiscal-year",
                             "Aucun exercice ouvert ne couvre la date du jour : créez-le pour pouvoir annuler ce règlement.",
                         ),
+                        // Story 63-1 (#1752, #1753, D5) — `PeriodLocked`, la clé
+                        // de l'écran (queue partagée). ⚠️ Inatteignable ICI :
+                        // le `match` de refus de chaque geste est une liste
+                        // fermée, et c'est le SOCLE qui refuse ce rang au clic,
+                        // avec sa propre erreur (`400 PERIOD_LOCKED`). La lecture
+                        // l'annonce (`cancelBlockedBy`), avec ce texte.
+                        SettlementCancelBlocker::PeriodLocked => (
+                            "settlement-cancel-blocked-period-locked",
+                            "Cette écriture est dans une période verrouillée : pour pouvoir l'annuler, un administrateur doit faire reculer le verrou avant sa date.",
+                        ),
                         // Tête du dé-rapprochement : jamais produite par
                         // l'annulation d'un règlement ; son texte est celui
                         // du dé-rapprochement.
-                        //
-                        // Story 53-6a (#1674, D5) — `PeriodLocked`,
-                        // inatteignable ici pour DEUX raisons : sous
-                        // `OriginDate` (le dé-rapprochement d'un règlement),
-                        // le `match` de refus du geste est une liste fermée et
-                        // le SOCLE refuse ce rang au clic, avec sa propre
-                        // erreur (`400 PERIOD_LOCKED`) ; sous `Today` (les
-                        // gestes depuis la fiche), la queue ne le produit pas.
-                        // Le texte est celui du dé-rapprochement, seul à
-                        // l'annoncer.
-                        SettlementCancelBlocker::BankTransactionNotReconciled
-                        | SettlementCancelBlocker::PeriodLocked => {
+                        SettlementCancelBlocker::BankTransactionNotReconciled => {
                             reconciliation_cancel_blocked_text(blocker)
                         }
                         // Motifs propres à l'annulation d'une FACTURE
@@ -7032,23 +7034,33 @@ fn supplier_invoice_cancel_blocked_text(
             "supplier-invoices-cancel-blocked-account-archived",
             "Un compte de l'écriture d'achat de cette facture a été archivé : réactivez-le pour pouvoir annuler la facture.",
         ),
+        // Inatteignable depuis la Story 63-1 (D7) : l'annulation d'une facture
+        // est datée de l'achat, dont l'exercice, ouvert, couvre la date ; clé et
+        // repli gardés (issue #1759).
         SettlementCancelBlocker::NoOpenFiscalYearToday => (
             "supplier-invoices-cancel-blocked-no-fiscal-year",
             "Aucun exercice ouvert ne couvre la date du jour : créez-le pour pouvoir annuler cette facture.",
+        ),
+        // Story 63-1 (#1754, D5) — la clé de l'écran. ⚠️ Inatteignable ICI : la
+        // liste fermée de `cancel_in_tx` ne l'admet pas, et c'est le SOCLE qui
+        // refuse ce rang au clic (`400 PERIOD_LOCKED`) ; la lecture l'annonce
+        // (`cancelBlockedBy`), avec ce texte.
+        SettlementCancelBlocker::PeriodLocked => (
+            "supplier-invoices-cancel-blocked-period-locked",
+            "L'écriture d'achat de cette facture est dans une période verrouillée : pour pouvoir l'annuler, un administrateur doit faire reculer le verrou avant sa date.",
         ),
         SettlementCancelBlocker::SupplierInvoiceInPaymentBatch => (
             "supplier-invoices-cancel-blocked-in-payment-batch",
             "Cette facture figure dans un lot de paiement en cours : annulez d'abord le lot.",
         ),
         // Têtes d'autres gestes : jamais produites par l'annulation d'une
-        // facture fournisseur ; leurs textes sont les leurs. `PeriodLocked`
-        // (Story 53-6a) : l'annulation d'une facture est datée du jour, sa queue
-        // ne produit pas ce rang.
+        // facture fournisseur ; leurs textes sont les leurs.
         SettlementCancelBlocker::BankTransactionNotReconciled
         | SettlementCancelBlocker::InvoiceCredited
         | SettlementCancelBlocker::WriteOffExists
-        | SettlementCancelBlocker::SupplierInvoiceNotPaid
-        | SettlementCancelBlocker::PeriodLocked => reconciliation_cancel_blocked_text(blocker),
+        | SettlementCancelBlocker::SupplierInvoiceNotPaid => {
+            reconciliation_cancel_blocked_text(blocker)
+        }
     }
 }
 

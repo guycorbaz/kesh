@@ -11306,7 +11306,6 @@ async fn each_supplier_refusal_lands_in_failed(pool: MySqlPool) {
         },
         day_301b(6, 2),
         c.seeded.admin_user_id,
-        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();

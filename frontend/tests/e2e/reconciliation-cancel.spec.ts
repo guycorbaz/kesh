@@ -199,7 +199,9 @@ test('53-6a — même exercice : le dialogue dit la date de l’écriture et son
 	await expect(texte).toContainText('datée du 15.05.2026');
 	await expect(texte).toContainText("dans l'exercice « Exercice CI 2020-2030 »");
 	await expect(texte).not.toContainText("aujourd'hui");
-	await expect(dialog.getByTestId('reconciliation-cancel-vat')).toContainText('TVA comprise');
+	await expect(dialog.getByTestId('reconciliation-cancel-vat')).toContainText(
+		"Si cette écriture porte le compte d'impôt préalable",
+	);
 	await expect(dialog.getByTestId('reconciliation-cancel-vat')).toContainText(
 		"l'annulation sera alors refusée, ce qui protège la déclaration",
 	);

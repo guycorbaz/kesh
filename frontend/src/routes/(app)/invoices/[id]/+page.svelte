@@ -74,6 +74,10 @@
 	} from '$lib/features/invoices/invoice-helpers';
 	import { apiClient, isApiError } from '$lib/shared/utils/api-client';
 	import {
+		cancelRefusalMessage,
+		settlementCancelTailMessage,
+	} from '$lib/shared/utils/settlement-cancel-blocked';
+	import {
 		notifyError,
 		notifyMissingFiscalYearOrFallback,
 		notifySuccess,
@@ -179,6 +183,13 @@
 	 * « règlement » pendant l'animation.
 	 */
 	let cancelIsWriteOff = $state(false);
+	/**
+	 * Story 63-1 (revue P4, M1) — le solde est-il en frais bancaires ou en reste
+	 * d'arrondi, qui n'écrivent aucune ligne de TVA (`corrects_vat`, seuls
+	 * l'escompte et la perte en écrivent) ? FIGÉ à l'ouverture, comme
+	 * `cancelIsWriteOff`. Nature absente : le texte avec TVA, par prudence.
+	 */
+	let cancelWriteOffWithoutVat = $state(false);
 	let cancelSubmitting = $state(false);
 	let cancelError = $state('');
 
@@ -239,7 +250,10 @@
 			cancelTarget = null;
 			await loadSettlements();
 		} catch (err) {
-			cancelError = isApiError(err) ? err.message : i18nMsg('common-error', 'Erreur inattendue');
+			// Revue P1 de la 63-1 (L4) : un verrou posé entre la lecture et le clic se dit comme la fiche.
+			cancelError = isApiError(err)
+				? cancelRefusalMessage(err, (through) => settlementCancelTailMessage('PERIOD_LOCKED', through))
+				: i18nMsg('common-error', 'Erreur inattendue');
 			// L'état a pu changer (autre onglet, rapprochement entre-temps) : relire. La
 			// facture aussi (Story 34-5, revue P1, E1-4) : une annulation écrite malgré une
 			// réponse perdue a incrémenté la version, et le règlement suivant partirait
@@ -1529,6 +1543,8 @@
 			onCancel={(s) => {
 				cancelError = '';
 				cancelIsWriteOff = s.settlementType === 'write_off';
+				cancelWriteOffWithoutVat =
+					s.writeOffNature === 'bank_fees' || s.writeOffNature === 'rounding';
 				cancelTarget = s;
 			}}
 			onCancelReconciliation={(txId) => (reconciliationTxId = txId)}
@@ -1861,14 +1877,19 @@
 						: i18nMsg('invoices-settlement-cancel-button', 'Annuler le règlement')}
 				</Dialog.Title>
 				<Dialog.Description>
-					{cancelIsWriteOff
+					{cancelIsWriteOff && cancelWriteOffWithoutVat
+						? i18nMsg(
+								'invoices-write-off-no-vat-cancel-confirm',
+								"Annuler ce solde ? Une écriture inverse, datée du solde, sera passée au grand livre dans son exercice, et le montant redeviendra dû. Les soldes de la période du solde changent, la TVA non : des frais bancaires ou un reste d'arrondi n'en corrigent pas. Si cette période est verrouillée, l'annulation sera refusée : un administrateur doit d'abord faire reculer le verrou.",
+							)
+						: cancelIsWriteOff
 						? i18nMsg(
 								'invoices-write-off-cancel-confirm',
-								"Annuler ce solde ? Une écriture inverse datée d'aujourd'hui sera passée au grand livre, TVA comprise, et le montant redeviendra dû.",
+								"Annuler ce solde ? Une écriture inverse, datée du solde, sera passée au grand livre dans son exercice, TVA comprise, et le montant redeviendra dû. Les totaux de la période du solde changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
 							)
 						: i18nMsg(
 								'invoices-settlement-cancel-confirm',
-								"Annuler ce règlement ? Une écriture inverse datée d'aujourd'hui sera passée au grand livre, et le montant redeviendra dû.",
+								"Annuler ce règlement ? Une écriture inverse, datée du règlement, sera passée au grand livre dans son exercice, et le montant redeviendra dû. Les soldes de la période du règlement changent, la TVA non : un règlement n'en porte pas. Si cette période est verrouillée, l'annulation sera refusée : un administrateur doit d'abord faire reculer le verrou.",
 							)}
 				</Dialog.Description>
 			</Dialog.Header>

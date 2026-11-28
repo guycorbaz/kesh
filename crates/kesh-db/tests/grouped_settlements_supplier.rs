@@ -793,7 +793,6 @@ async fn each_invoice_and_transaction_refusal_writes_nothing(pool: MySqlPool) {
         },
         jour(6, 2),
         m.s.admin_user_id,
-        aujourd_hui(),
     )
     .await
     .expect("payée depuis la fiche");
@@ -945,7 +944,6 @@ async fn fiche_payment_and_batch_creation_wait_for_the_group(pool: MySqlPool) {
                 SettlementChoice::BankTransfer { bank_account_id },
                 jour(6, 16),
                 user_id,
-                aujourd_hui(),
             )
             .await
         }
@@ -1468,7 +1466,7 @@ async fn a_detached_invoice_leaves_the_group_and_the_rest_unreconciles(pool: MyS
         .expect("payé");
 
     // Détacher la DERNIÈRE facture (sa ligne précède les lignes d'écart).
-    supplier_invoices::cancel(&pool, m.s.company_id, b, m.s.admin_user_id, aujourd_hui())
+    supplier_invoices::cancel(&pool, m.s.company_id, b, m.s.admin_user_id)
         .await
         .expect("facture payée du groupe annulée");
     let e = etat(&pool, b).await;
@@ -1535,7 +1533,7 @@ async fn a_detached_invoice_leaves_the_group_and_the_rest_unreconciles(pool: MyS
     let bt2 = transaction(&pool, &m, dec!(-150.00), jour(6, 15)).await;
     payer(&pool, &m, bt2, &[c, d], None).await.expect("payé");
     for id in [c, d] {
-        supplier_invoices::cancel(&pool, m.s.company_id, id, m.s.admin_user_id, aujourd_hui())
+        supplier_invoices::cancel(&pool, m.s.company_id, id, m.s.admin_user_id)
             .await
             .expect("détachée");
     }
@@ -1564,8 +1562,7 @@ async fn unit_gestures_on_a_grouped_invoice_are_refused(pool: MySqlPool) {
 
     let version = etat(&pool, a).await.6;
     let brouillon =
-        supplier_invoices::unvalidate(&pool, m.s.company_id, a, version, acteur(&m), aujourd_hui())
-            .await;
+        supplier_invoices::unvalidate(&pool, m.s.company_id, a, version, acteur(&m)).await;
     assert!(
         matches!(
             brouillon,
@@ -1577,8 +1574,7 @@ async fn unit_gestures_on_a_grouped_invoice_are_refused(pool: MySqlPool) {
         "{brouillon:?}"
     );
     let annulation =
-        supplier_invoices::cancel_settlement(&pool, m.s.company_id, a, acteur(&m), aujourd_hui())
-            .await;
+        supplier_invoices::cancel_settlement(&pool, m.s.company_id, a, acteur(&m)).await;
     assert!(
         matches!(
             annulation,
@@ -1637,7 +1633,7 @@ async fn a_detached_invoice_on_another_payable_account_leaves_no_false_gap(pool:
     let b = facture(&pool, &m, "W-2", dec!(50.00), jour(6, 1), None).await;
     let bt = transaction(&pool, &m, dec!(-150.00), jour(6, 15)).await;
     payer(&pool, &m, bt, &[a, b], None).await.expect("payé");
-    supplier_invoices::cancel(&pool, m.s.company_id, b, m.s.admin_user_id, aujourd_hui())
+    supplier_invoices::cancel(&pool, m.s.company_id, b, m.s.admin_user_id)
         .await
         .expect("détachée");
     let v = vue(&pool, &m, bt).await;
@@ -1656,7 +1652,7 @@ async fn a_detached_invoice_on_another_payable_account_leaves_no_false_gap(pool:
     payer(&pool, &m, bt2, &[c, d], Some(m.ecart))
         .await
         .expect("payé");
-    supplier_invoices::cancel(&pool, m.s.company_id, d, m.s.admin_user_id, aujourd_hui())
+    supplier_invoices::cancel(&pool, m.s.company_id, d, m.s.admin_user_id)
         .await
         .expect("détachée");
     let v = vue(&pool, &m, bt2).await;
@@ -1695,15 +1691,9 @@ async fn detaching_the_first_or_a_middle_invoice_keeps_the_view_right(pool: MySq
         let done = payer(&pool, &m, bt, &ids, Some(m.ecart))
             .await
             .expect("payé");
-        supplier_invoices::cancel(
-            &pool,
-            m.s.company_id,
-            ids[detachee],
-            m.s.admin_user_id,
-            aujourd_hui(),
-        )
-        .await
-        .expect("détachée");
+        supplier_invoices::cancel(&pool, m.s.company_id, ids[detachee], m.s.admin_user_id)
+            .await
+            .expect("détachée");
         let restantes: Vec<i64> = ids
             .iter()
             .enumerate()
@@ -1789,15 +1779,9 @@ async fn the_other_refusals_write_nothing(pool: MySqlPool) {
     .invoice
     .id;
     let annulee = facture(&pool, &m, "O-4", dec!(50.00), jour(6, 1), None).await;
-    supplier_invoices::cancel(
-        &pool,
-        m.s.company_id,
-        annulee,
-        m.s.admin_user_id,
-        aujourd_hui(),
-    )
-    .await
-    .expect("annulée");
+    supplier_invoices::cancel(&pool, m.s.company_id, annulee, m.s.admin_user_id)
+        .await
+        .expect("annulée");
     let fraction = facture(&pool, &m, "O-5", dec!(50.00), jour(6, 1), None).await;
     fixer_total(&pool, fraction, dec!(49.9960)).await;
     // Une AUTRE facture de 150.00, dans un lot `generated` du compte.
@@ -2095,7 +2079,7 @@ async fn a_missing_detachment_trace_makes_the_view_an_invariant(pool: MySqlPool)
     let b = facture(&pool, &m, "Z-2", dec!(50.00), jour(6, 1), None).await;
     let bt = transaction(&pool, &m, dec!(-150.00), jour(6, 15)).await;
     payer(&pool, &m, bt, &[a, b], None).await.expect("payé");
-    supplier_invoices::cancel(&pool, m.s.company_id, b, m.s.admin_user_id, aujourd_hui())
+    supplier_invoices::cancel(&pool, m.s.company_id, b, m.s.admin_user_id)
         .await
         .expect("détachée");
     let n = sqlx::query(

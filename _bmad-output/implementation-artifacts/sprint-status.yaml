@@ -1,3 +1,5 @@
+# last_updated: 2026-11-28 (Epic 63 : 63-1-annulations-datees-origine review — gates idefix verts, revue P1 à lancer)
+# last_updated: 2026-11-27 (Epic 63 ouvert : 63-1-annulations-datees-origine ready-for-dev sous réserve de validation, #1752, #1753, #1754 ; dépend de la 53-6a)
 # last_updated: 2026-11-27 (Epic 53 : 53-6 découpée en 53-6a ready-for-dev sous réserve de validation et 53-6b backlog, #1674 ; commentaire de la 53-2 : #525 et #1198 reclassées P2 le 2026-11-21)
 # last_updated: 2026-11-20 (Epic 40 : refonte KISS, décision du responsable de l'epic — phase 1 40-7a à 40-7d, phase 2 40-8a et 40-8b, drafted ; 40-1, 40-2, 40-3, 40-6 superseded ; 40-4, 40-5 deferred)
 # last_updated: 2026-11-20 (Epic 38 : phase 1 KISS, décision du responsable de l'epic — 38-11a à 38-11d drafted, 38-1 à 38-10 deferred ; branche epic/38-paypal reprise de main)
@@ -1278,6 +1280,11 @@ development_status:
   54-1-avoirs-dans-le-decompte-tva: backlog  # #390, #391, #392 (P1)
   54-2-solde-dette-epic: backlog  # story de solde ; plafond fixé au lancement
   epic-54-retrospective: optional
+
+  # 2026-11-27 — Epic 63 « Annulations datées de l'origine » : la story de correction de la v0.21.0 (décision du Project Lead du 2026-11-27) ; dépend de la 53-6a ; fichier epic-63-annulations-datees-origine.md
+  epic-63: in-progress  # v0.21.0 (vendredi 2026-12-04), avec l'Epic 53 ; aucune migration ; branche story/63-1-… à repartir d'epic/53-ecritures-justes une fois la 53-6a fusionnée
+  63-1-annulations-datees-origine: done  # 2026-11-28 close (revue : six passes, P1 Opus 0/0/1/13 → P6 Opus 0/0/0/3 ; clôture sur idefix à 8e29ae3fa : test-fast, gate-ci et frontend verts, E2E 549 / 7 = KF-029) ; #1752, #1753, #1754 (P1) ; fiche validée en trois passes (2026-11-27) ; développée le 2026-11-28 (test-fast, gate-ci, front verts sur idefix ; E2E complet à la clôture) ; revue P1 (Opus) à lancer ; aucune migration
+  epic-63-retrospective: optional
 
   # 2026-11-18 — Epic 49 « Types de lignes de la facture client » (#1242, P2, demande de Guy, échéance fin novembre), release 0.20.0 ;
   # fichier epic-49-types-de-lignes-facture.md ; porte la SEULE migration de la 0.20.0 (49-1). Menée en parallèle de l'Epic 48,

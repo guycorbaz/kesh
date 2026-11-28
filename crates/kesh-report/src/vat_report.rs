@@ -77,10 +77,19 @@ pub struct VatReport {
     /// leur ventilation **figée**. Vide sans solde.
     ///
     /// ⚠️ Limites : un solde **annulé** disparaît de sa période (la ligne de
-    /// règlement est retirée) et sa contre-passation n'est jointe nulle part — la
-    /// reprise de TVA n'apparaît dans aucun décompte et l'écart reste muet (même
-    /// comportement que l'avoir, #390) ; les parts sans TVA (0 %, ou arrondies à
-    /// zéro) n'apparaissent pas.
+    /// règlement est retirée : sa diminution n'y figure plus). Depuis la 0.21.0
+    /// (Story 63-1), sa contre-passation est datée du solde, dans cette même
+    /// période : décompte et grand livre y disent la même chose. Un solde annulé
+    /// **avant** la 0.21.0, dont la contre-passation est datée du jour de
+    /// l'annulation, n'est joint nulle part — la reprise de TVA n'apparaît dans
+    /// aucun décompte et l'écart reste muet (même comportement que l'avoir, #390) ;
+    /// les parts sans TVA (0 %, ou arrondies à zéro) n'apparaissent pas.
+    ///
+    /// Les seuls gestes d'annulation qui changent un décompte sont l'annulation
+    /// d'un **achat** (impôt préalable) et celle d'un **solde en escompte ou en
+    /// perte** (cette ligne ; `corrects_vat`) : le solde en frais bancaires ou en
+    /// reste d'arrondi, le règlement client, le paiement fournisseur et le
+    /// dé-rapprochement d'un règlement ne portent aucune ligne de TVA.
     pub write_off_rows: Vec<VatWriteOffRow>,
     /// Somme de la TVA des soldes de la période.
     pub total_vat_write_off: Decimal,

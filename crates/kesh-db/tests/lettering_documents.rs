@@ -384,7 +384,6 @@ async fn cancel_settlement_dissolves_and_pairs(pool: MySqlPool) {
         seeded.company_id,
         inv,
         sid,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation");
@@ -428,7 +427,6 @@ async fn cancel_write_off_dissolves_and_pairs(pool: MySqlPool) {
         seeded.company_id,
         inv,
         sid,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation du solde");
@@ -484,7 +482,6 @@ async fn cancel_partial_without_group_is_a_noop(pool: MySqlPool) {
         seeded.company_id,
         inv,
         sid,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation d'un partiel");
@@ -543,7 +540,6 @@ async fn closed_year_n_settled_and_cancelled_in_n1(pool: MySqlPool) {
         seeded.company_id,
         inv,
         sid,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation en N+1");
@@ -657,7 +653,6 @@ async fn audit_details_carry_the_invoice(pool: MySqlPool) {
         seeded.company_id,
         inv,
         sid,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation");
@@ -752,7 +747,6 @@ async fn receivable_not_letterable_is_skipped(pool: MySqlPool) {
         seeded.company_id,
         survivante,
         sid,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("(c) annulation");
@@ -847,7 +841,6 @@ async fn locked_period_cancel_is_refused_until_unlocked(pool: MySqlPool) {
             seeded.company_id,
             facture_id,
             ligne,
-            crate::jour::aujourd_hui_test(),
         )
         .await
         .expect_err("(a) refusée");
@@ -886,7 +879,6 @@ async fn locked_period_cancel_is_refused_until_unlocked(pool: MySqlPool) {
         seeded.company_id,
         inv,
         sid,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("(b) annulation permise");
@@ -1297,7 +1289,6 @@ async fn supplier_settlement_cancel_dissolves_and_pairs(pool: MySqlPool) {
         seeded.company_id,
         s,
         Acteur::utilisateur(seeded.admin_user_id),
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation du règlement");
@@ -1335,15 +1326,9 @@ async fn cancel_paid_supplier_invoice_detaches_an_open_payment(pool: MySqlPool) 
     let reglement = payer(&pool, &seeded, &a, s, jours_avant(90)).await;
     let purchase = achat(&pool, s).await;
 
-    supplier_invoices::cancel(
-        &pool,
-        seeded.company_id,
-        s,
-        seeded.admin_user_id,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect("annulation de la facture payée");
+    supplier_invoices::cancel(&pool, seeded.company_id, s, seeded.admin_user_id)
+        .await
+        .expect("annulation de la facture payée");
     assert_eq!(statut_fournisseur(&pool, s).await, "cancelled");
     assert_paire_reversal(&pool, purchase, a.payable).await;
     assert_eq!(
@@ -1404,15 +1389,9 @@ async fn detached_payment_reversed_is_lettered_reversal(pool: MySqlPool) {
     )
     .await;
     let reglement = payer(&pool, &seeded, &a, s, jours_avant(90)).await;
-    supplier_invoices::cancel(
-        &pool,
-        seeded.company_id,
-        s,
-        seeded.admin_user_id,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect("annulation de la facture payée");
+    supplier_invoices::cancel(&pool, seeded.company_id, s, seeded.admin_user_id)
+        .await
+        .expect("annulation de la facture payée");
 
     journal_entries::reverse(
         &pool,
@@ -1473,7 +1452,6 @@ async fn internal_account_payment_pairs_its_counterpart_on_cancel(pool: MySqlPoo
         seeded.company_id,
         s,
         Acteur::utilisateur(seeded.admin_user_id),
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation du règlement");
@@ -1577,7 +1555,6 @@ async fn locked_period_supplier_cancels_are_refused_until_unlocked(pool: MySqlPo
         seeded.company_id,
         s1,
         Acteur::utilisateur(seeded.admin_user_id),
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("annulation du paiement refusée");
@@ -1590,15 +1567,9 @@ async fn locked_period_supplier_cancels_are_refused_until_unlocked(pool: MySqlPo
         ),
         "{err:?}"
     );
-    let err = supplier_invoices::cancel(
-        &pool,
-        seeded.company_id,
-        s2,
-        seeded.admin_user_id,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect_err("annulation de la facture refusée");
+    let err = supplier_invoices::cancel(&pool, seeded.company_id, s2, seeded.admin_user_id)
+        .await
+        .expect_err("annulation de la facture refusée");
     assert!(
         matches!(
             err,
@@ -1629,15 +1600,10 @@ async fn locked_period_supplier_cancels_are_refused_until_unlocked(pool: MySqlPo
     .await
     .unwrap()
     .map(|h| h.0);
-    let p2 = supplier_invoices::supplier_invoice_cancel_blocker(
-        &mut conn,
-        seeded.company_id,
-        s2,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .unwrap()
-    .map(|h| h.0);
+    let p2 = supplier_invoices::supplier_invoice_cancel_blocker(&mut conn, seeded.company_id, s2)
+        .await
+        .unwrap()
+        .map(|h| h.0);
     drop(conn);
     assert_eq!(
         p1,
@@ -1663,7 +1629,6 @@ async fn locked_period_supplier_cancels_are_refused_until_unlocked(pool: MySqlPo
         seeded.company_id,
         s1,
         Acteur::utilisateur(seeded.admin_user_id),
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("paiement annulé après déverrouillage");
@@ -1672,15 +1637,31 @@ async fn locked_period_supplier_cancels_are_refused_until_unlocked(pool: MySqlPo
         marque(&pool, achat(&pool, s1).await, a.payable).await,
         (None, None)
     );
-    supplier_invoices::cancel(
+    // Story 63-1 (#1754, AC-8 c, AC-11) : l'inverse de l'achat est datée de
+    // l'achat (`jours_avant(100)`), **sous** la borne `le − 1` — le groupe
+    // {achat, paiement} n'est plus figé (le paiement, daté `le`, est au-dessus),
+    // le rang 2 bis cède, et c'est le socle qui refuse : `PeriodLocked`, rien
+    // n'est écrit. Le déverrouillage **avant l'achat** le lève.
+    let avant = traces(pool.clone()).await;
+    let err = supplier_invoices::cancel(&pool, seeded.company_id, s2, seeded.admin_user_id)
+        .await
+        .expect_err("l'achat est sous la borne");
+    assert!(matches!(err, DbError::PeriodLocked { .. }), "{err:?}");
+    assert_eq!(traces(pool.clone()).await, avant, "rien d'écrit");
+    assert_eq!(statut_fournisseur(&pool, s2).await, "paid");
+    companies::unlock_books(
         &pool,
-        seeded.company_id,
-        s2,
         seeded.admin_user_id,
+        seeded.company_id,
+        Some(jours_avant(101)),
+        "annuler une facture".into(),
         crate::jour::aujourd_hui_test(),
     )
     .await
-    .expect("facture annulée après déverrouillage");
+    .expect("déverrouillage avant l'achat");
+    supplier_invoices::cancel(&pool, seeded.company_id, s2, seeded.admin_user_id)
+        .await
+        .expect("facture annulée après déverrouillage");
     assert_paire_reversal(&pool, achat(&pool, s2).await, a.payable).await;
     assert_eq!(
         marque(&pool, r2, a.payable).await,
@@ -1706,15 +1687,9 @@ async fn cancelled_supplier_invoice_sync_is_unchanged(pool: MySqlPool) {
     )
     .await;
     payer(&pool, &seeded, &a, annulee, jours_avant(90)).await;
-    supplier_invoices::cancel(
-        &pool,
-        seeded.company_id,
-        annulee,
-        seeded.admin_user_id,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect("annulation");
+    supplier_invoices::cancel(&pool, seeded.company_id, annulee, seeded.admin_user_id)
+        .await
+        .expect("annulation");
     assert_paire_reversal(&pool, achat(&pool, annulee).await, a.payable).await;
     let ouverte = facture_fournisseur(
         &pool,
@@ -1774,7 +1749,6 @@ async fn supplier_audit_details_carry_the_invoice(pool: MySqlPool) {
             seeded.company_id,
             s,
             Acteur::utilisateur(seeded.admin_user_id),
-            crate::jour::aujourd_hui_test(),
         )
         .await
         .expect("annulation du règlement");

@@ -1195,7 +1195,6 @@ async fn a_grouped_entry_refuses_modification_and_keeps_its_line_keys(pool: MySq
         m.s.company_id,
         a,
         sid,
-        jour(11, 17),
     )
     .await;
     assert!(annul.is_err(), "annulation unitaire acceptée : {annul:?}");

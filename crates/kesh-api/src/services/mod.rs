@@ -176,7 +176,12 @@
 //!    compris — soixante éléments : les cinquante-neuf du relevé de la 32-4b,
 //!    plus `get_settlement_view_in_tx`, extraite de `get_settlement_view` par la
 //!    Story 34-8 (#938), qui en reprend les lectures sans en ajouter —, **aucune** écriture, aucun
-//!    `get_or_create`, aucun `FOR UPDATE` ni verrou partagé. Établi par lecture
+//!    `get_or_create`, aucun `FOR UPDATE` ni verrou partagé (⚠️ **Story 63-1** : les
+//!    motifs d'annulation de la fiche se lisent sous `OriginDate` — la queue
+//!    commune y lit, par une lecture ordinaire de son propre texte SQL, la borne
+//!    `companies.books_locked_through`, rang `PeriodLocked`, au lieu de
+//!    `fiscal_years::has_open_covering_date`, rang 5, que ces services
+//!    n'atteignent plus ; le périmètre reste lecture seule). Établi par lecture
 //!    statique (relevé de l'AC14 de la 32-4b, sur le code des fichiers de
 //!    dépôts tronqué à leurs tests, commentaires écartés) ; confirmé à
 //!    l'exécution, sur les branches que ses fixtures exercent, par

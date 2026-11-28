@@ -7,8 +7,16 @@ import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+// Story 63-1 : les variables `{ $x }` sont interpolées (la borne du verrou).
 vi.mock("$lib/shared/utils/i18n.svelte", () => ({
-  i18nMsg: (_k: string, fallback: string) => fallback,
+  i18nMsg: (
+    _k: string,
+    fallback: string,
+    args?: Record<string, string | number>,
+  ) =>
+    args
+      ? fallback.replace(/\{ \$(\w+) \}/g, (_m, k) => String(args[k]))
+      : fallback,
 }));
 
 import { supplierInvoiceCancelMessage } from "./invoice-cancel";
@@ -48,5 +56,25 @@ describe("le brouillon (rang 1, Story v017-4a)", () => {
     const attendu = valeurFr("supplier-invoices-cancel-blocked-draft");
     expect(attendu).toBeDefined();
     expect(supplierInvoiceCancelMessage("SUPPLIER_INVOICE_DRAFT", null)).toBe(attendu);
+  });
+});
+
+// Story 63-1 (#1754, AC-13, D5) — l'annulation d'une facture est datée de l'écriture
+// d'achat : sous la borne du verrou, la fiche le dit à la place du bouton. Mutation M8 :
+// clé échangée (texte de la queue du règlement, ou du rapprochement), borne ignorée.
+describe("la période verrouillée (Story 63-1)", () => {
+  it("le motif a son texte, mot pour mot le FTL fr-CH, qui dit « l'écriture d'achat » et non « ce règlement »", () => {
+    const attendu = valeurFr("supplier-invoices-cancel-blocked-period-locked");
+    expect(attendu).toBe(
+      "L'écriture d'achat de cette facture est dans une période verrouillée : pour pouvoir l'annuler, un administrateur doit faire reculer le verrou avant sa date.",
+    );
+    expect(supplierInvoiceCancelMessage("PERIOD_LOCKED", null)).toBe(attendu);
+  });
+
+  it("la borne s'ajoute en date suisse, dans une phrase à part", () => {
+    const texte = supplierInvoiceCancelMessage("PERIOD_LOCKED", "2025-12-15");
+    expect(texte).toContain("L'écriture d'achat de cette facture est dans une période verrouillée");
+    expect(texte).toContain("verrouillée jusqu'au 15.12.2025 inclus.");
+    expect(texte).not.toContain("(15.12.2025)");
   });
 });

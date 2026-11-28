@@ -3087,7 +3087,9 @@ where
 /// contre-passation ne lit pas l'heure elle-même ;
 /// `kesh-api/tests/date_du_jour_garde.rs` inventorie ceux qui la lisent), ou
 /// [`CancellationDating::OriginDate`], la date de l'écriture d'origine, dans son
-/// exercice — celle du dé-rapprochement.
+/// exercice — celle du dé-rapprochement et, depuis la Story 63-1, des trois
+/// annulations depuis la fiche (règlement ou solde client, paiement fournisseur,
+/// facture fournisseur).
 ///
 /// `acteur` (Story 35-8a2, #431) : qui contre-passe — l'écriture inverse, la
 /// trace `journal_entry.reversed` et le lettrage `reversal` portent sa clé d'API
@@ -3164,8 +3166,9 @@ impl ReversalAuthority {
 /// à ceci près que le motif que l'`authority` a qualité pour lever n'est pas
 /// opposé. Tous les autres le restent, dans leur ordre.
 ///
-/// `dating` : la datation de l'inverse (Story 53-6a), cf. [`reverse_in_tx`]. Les
-/// gestes depuis la fiche passent `Today`, le dé-rapprochement `OriginDate`.
+/// `dating` : la datation de l'inverse (Story 53-6a), cf. [`reverse_in_tx`]. Le
+/// dé-rapprochement et, depuis la Story 63-1, les trois gestes depuis la fiche
+/// passent `OriginDate` ; `Today` ne sert plus qu'aux tests de la queue (#1759).
 pub async fn reverse_owned_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
@@ -3191,14 +3194,15 @@ pub async fn reverse_owned_in_tx(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CancellationDating {
     /// Datée **du jour** reçu (lu une fois sur l'horloge de la requête, Story
-    /// 35-5a0), dans l'exercice ouvert qui le couvre — `/reverse` et les
-    /// annulations depuis la fiche (règlement client, paiement fournisseur,
-    /// facture fournisseur).
+    /// 35-5a0), dans l'exercice ouvert qui le couvre — `/reverse` seul (et les
+    /// tests de la queue, #1759) : depuis la Story 63-1, aucune annulation
+    /// depuis la fiche ne le passe plus.
     Today(NaiveDate),
     /// Datée de l'**écriture d'origine**, dans **son** exercice, qui doit être
     /// ouvert (rouvert compris) — le dé-rapprochement (Story 53-6a, Q1 du
-    /// Project Lead du 2026-11-27) : annuler un rapprochement ne fausse jamais
-    /// deux exercices.
+    /// Project Lead du 2026-11-27) et, depuis la Story 63-1 (#1752, #1753,
+    /// #1754), le règlement ou solde client, le paiement fournisseur et la
+    /// facture fournisseur : une annulation ne fausse jamais deux exercices.
     OriginDate,
 }
 
@@ -3220,8 +3224,8 @@ impl From<CancellationDating> for ReversalDating {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ReversalDating {
     /// Datée **du jour**, dans l'exercice ouvert qui couvre ce jour — la
-    /// contre-passation historique (Story 24-4a), celle de `/reverse` et des
-    /// annulations depuis la fiche. Le jour est celui que l'appelant a lu sur
+    /// contre-passation historique (Story 24-4a), celle de `/reverse` seul (et
+    /// des tests de la queue, #1759). Le jour est celui que l'appelant a lu sur
     /// l'horloge de la requête (Story 35-5a0).
     Today(NaiveDate),
     /// Datée du **premier jour de l'exercice qui suit** celui de l'origine,
@@ -3229,7 +3233,8 @@ enum ReversalDating {
     /// (`/reverse-at-next-fiscal-year-start`).
     NextFiscalYearStart,
     /// Datée de l'**écriture d'origine**, dans son exercice — le
-    /// dé-rapprochement (Story 53-6a, #1674).
+    /// dé-rapprochement (Story 53-6a, #1674) et les trois annulations depuis la
+    /// fiche (Story 63-1, #1752, #1753, #1754).
     OriginDate,
 }
 

@@ -1291,7 +1291,14 @@ const ATTENDU = {
 	// Revue P1 de la 53-6a (L1) : **3975 → 3976**, relevé par la garde (« expected 3976 to be 3975 »,
 	// `$GATE_LOGS/e53/s536a/remediation/front-vitest-1.log`) — `reconciliation-cancel-blocked-period-locked-through`
 	// (`reconciliation-cancel.ts`), la phrase qui nomme la borne du verrou.
-	sitesTotal: 3976,
+	// Story 63-1 (#1752, #1753, #1754) : **3976 → 3979**, relevé par la garde (« expected 3979 to be
+	// 3976 », `$GATE_LOGS/e63/t4-vitest-1.log`) — `settlement-cancel-blocked-period-locked` et
+	// `settlement-cancel-blocked-period-locked-through` (`settlement-cancel-blocked.ts`),
+	// `supplier-invoices-cancel-blocked-period-locked` (`invoice-cancel.ts`).
+	// Revue P4 de la 63-1 (M1) : **3979 → 3980**, relevé par la garde (« expected 3980 to be
+	// 3979 », `$GATE_LOGS/e63/rem5/vitest-1.log`) — `invoices-write-off-no-vat-cancel-confirm`
+	// (`invoices/[id]/+page.svelte`), la confirmation d'un solde en frais ou en arrondi.
+	sitesTotal: 3980,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

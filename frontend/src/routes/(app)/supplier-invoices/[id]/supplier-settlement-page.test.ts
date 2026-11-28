@@ -318,6 +318,33 @@ describe("fiche facture fournisseur — annuler la facture (Story 25-3-c)", () =
     expect(String(confirmSpy.mock.calls[0][0])).not.toContain("paiement sans facture");
   });
 
+  // Story 63-1 (#1754, AC-13, D5) — l'inverse de l'achat est datée comme lui, dans son
+  // exercice : le texte neuf est affirmé (mutation : « datée d'aujourd'hui » rétabli).
+  it("confirmation de l'annulation ⇒ l'inverse datée comme l'achat, dans son exercice, TVA comprise", async () => {
+    getMock.mockResolvedValue(inv({ status: "open", settlementJournalEntryId: null }));
+    cancelInvoiceMock.mockResolvedValue(inv({ status: "cancelled", cancellable: false }));
+    const { findByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("supplier-invoice-cancel"));
+    await waitFor(() => expect(cancelInvoiceMock).toHaveBeenCalled());
+    expect(String(confirmSpy.mock.calls[0][0])).toContain(
+      "Annuler cette facture ? Une écriture inverse de l'achat, datée comme lui, sera passée au grand livre dans son exercice. Les totaux de la période de l'achat changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
+    );
+  });
+
+  // Story 63-1 (#1753, AC-13, D5) — même chose pour le règlement : datée du paiement.
+  it("confirmation de l'annulation du règlement ⇒ l'inverse datée du paiement, dans son exercice", async () => {
+    getMock.mockResolvedValue(inv());
+    cancelSettlementMock.mockResolvedValue({
+      invoice: inv({ status: "open" }),
+      reversalJournalEntryId: 1,
+    });
+    const { findByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("supplier-invoice-settlement-cancel"));
+    expect(String(confirmSpy.mock.calls[0][0])).toContain(
+      "Annuler ce règlement ? Une écriture inverse, datée du paiement, sera passée au grand livre dans son exercice, et la facture redeviendra validée, à payer. Les soldes de la période du paiement changent, la TVA non : un paiement n'en porte pas. Si cette période est verrouillée, l'annulation sera refusée : un administrateur doit d'abord faire reculer le verrou.",
+    );
+  });
+
   it("refus au clic ⇒ affiché LOCALEMENT, la fiche reste (mutation : refus dans `errorMsg`)", async () => {
     getMock.mockResolvedValue(inv({ status: "open", settlementJournalEntryId: null }));
     cancelInvoiceMock.mockRejectedValue({
@@ -332,6 +359,61 @@ describe("fiche facture fournisseur — annuler la facture (Story 25-3-c)", () =
     );
     // La fiche est toujours là.
     expect(await findByTestId("supplier-invoice-status")).toBeTruthy();
+  });
+
+  // Revue P1 de la 63-1 (L3, L4) — le verrou posé entre la lecture et le clic.
+  const REFUS_VERROU = {
+    code: "PERIOD_LOCKED",
+    message:
+      "Les écritures sont verrouillées jusqu'au 2025-12-31 ; celle-ci est datée du 2025-12-20.",
+    status: 400,
+    details: { lockedThrough: "2025-12-31", attempted: "2025-12-20" },
+  };
+
+  it("400 PERIOD_LOCKED au clic sur « Annuler la facture » ⇒ le motif de la fiche, borne en date suisse, et la facture relue (mutation L3 : PERIOD_LOCKED hors de `isStaleState` ; L4 : `err.message` tel quel)", async () => {
+    getMock
+      .mockResolvedValueOnce(inv({ status: "open", settlementJournalEntryId: null }))
+      .mockResolvedValue(
+        inv({
+          status: "open",
+          settlementJournalEntryId: null,
+          version: 3,
+          cancellable: false,
+          cancelBlockedBy: "PERIOD_LOCKED",
+          cancelBlockedLabel: "2025-12-31",
+        }),
+      );
+    cancelInvoiceMock.mockRejectedValue(REFUS_VERROU);
+    const { findByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("supplier-invoice-cancel"));
+    await waitFor(() => expect(getMock).toHaveBeenCalledTimes(2));
+    // La relecture remplace le bouton par le motif, avec la borne.
+    const motif = (await findByTestId("supplier-invoice-cancel-blocked")).textContent ?? "";
+    expect(motif).toContain("31.12.2025");
+    expect(motif).not.toContain("2025-12-31");
+  });
+
+  it("400 PERIOD_LOCKED au clic : le texte du refus est celui de la fiche, sans date ISO (mutation L4 : `err.message` tel quel)", async () => {
+    getMock.mockResolvedValue(inv({ status: "open", settlementJournalEntryId: null }));
+    cancelInvoiceMock.mockRejectedValue(REFUS_VERROU);
+    const { findByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("supplier-invoice-cancel"));
+    const texte = (await findByTestId("supplier-invoice-cancel-error")).textContent ?? "";
+    expect(texte).toContain("période verrouillée");
+    expect(texte).toContain("La période est verrouillée jusqu'au 31.12.2025 inclus.");
+    expect(texte).not.toContain("2025-12-31");
+  });
+
+  it("400 PERIOD_LOCKED au clic sur « Annuler le règlement » : même texte, même relecture (mutation L3/L4)", async () => {
+    getMock.mockResolvedValue(inv());
+    cancelSettlementMock.mockRejectedValue(REFUS_VERROU);
+    const { findByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("supplier-invoice-settlement-cancel"));
+    const texte =
+      (await findByTestId("supplier-invoice-settlement-cancel-error")).textContent ?? "";
+    expect(texte).toContain("La période est verrouillée jusqu'au 31.12.2025 inclus.");
+    expect(texte).not.toContain("2025-12-31");
+    await waitFor(() => expect(getMock).toHaveBeenCalledTimes(2));
   });
 });
 

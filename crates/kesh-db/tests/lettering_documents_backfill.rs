@@ -463,32 +463,19 @@ async fn rattrapage(pool: &MySqlPool, verrou: bool) -> Rattrapage {
         societe_id,
         interne,
         Acteur::utilisateur(seeded.admin_user_id),
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("paiement interne annulé");
     let payee_annulee = ff(dec!(104.00), jour(200), Some("A-1")).await;
     payer(pool, &seeded, &ach, payee_annulee, jour(140)).await;
-    supplier_invoices::cancel(
-        pool,
-        societe_id,
-        payee_annulee,
-        seeded.admin_user_id,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect("facture payée annulée");
+    supplier_invoices::cancel(pool, societe_id, payee_annulee, seeded.admin_user_id)
+        .await
+        .expect("facture payée annulée");
     let detache_cp = ff(dec!(105.00), jour(200), Some("A-2")).await;
     let detache = payer(pool, &seeded, &ach, detache_cp, jour(140)).await;
-    supplier_invoices::cancel(
-        pool,
-        societe_id,
-        detache_cp,
-        seeded.admin_user_id,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect("facture payée annulée");
+    supplier_invoices::cancel(pool, societe_id, detache_cp, seeded.admin_user_id)
+        .await
+        .expect("facture payée annulée");
     journal_entries::reverse(
         pool,
         societe_id,
@@ -499,15 +486,9 @@ async fn rattrapage(pool: &MySqlPool, verrou: bool) -> Rattrapage {
     .await
     .expect("règlement détaché contre-passé");
     let ouverte_annulee = ff(dec!(106.00), jour(200), Some("A-3")).await;
-    supplier_invoices::cancel(
-        pool,
-        societe_id,
-        ouverte_annulee,
-        seeded.admin_user_id,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect("facture ouverte annulée");
+    supplier_invoices::cancel(pool, societe_id, ouverte_annulee, seeded.admin_user_id)
+        .await
+        .expect("facture ouverte annulée");
     let ouverte = ff(dec!(107.00), jour(200), Some("O-1")).await;
     let sans_numero = ff(dec!(108.00), jour(200), None).await;
     payer(pool, &seeded, &ach, sans_numero, jour(140)).await;
@@ -896,15 +877,9 @@ async fn backfill_pairs_reversals_by_position(pool: MySqlPool) {
         Some("X"),
     )
     .await;
-    supplier_invoices::cancel(
-        &pool,
-        seeded.company_id,
-        annulee,
-        seeded.admin_user_id,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect("facture annulée");
+    supplier_invoices::cancel(&pool, seeded.company_id, annulee, seeded.admin_user_id)
+        .await
+        .expect("facture annulée");
     let achat_annule = achat(&pool, annulee).await;
     let ligne_achat: i64 = sqlx::query_scalar(
         "SELECT id FROM journal_entry_lines WHERE entry_id = ? AND account_id = ?",

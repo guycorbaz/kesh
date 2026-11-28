@@ -548,7 +548,6 @@ async fn la_facture_fournisseur_et_son_paiement_sont_refuses(pool: MySqlPool) {
         },
         d(2026, 7, 2),
         s.admin_user_id,
-        crate::jour::aujourd_hui_test(),
     )
     .await;
     assert_posterieur_clos(r, n1, "Exercice 2027");

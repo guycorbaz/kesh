@@ -1764,7 +1764,6 @@ async fn lettering_pieces(pool: &MySqlPool, biz: &Business) -> LetteringPieces {
         SettlementChoice::InternalAccount { account_id: caisse },
         le,
         user,
-        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .expect("paiement")
@@ -1772,15 +1771,9 @@ async fn lettering_pieces(pool: &MySqlPool, biz: &Business) -> LetteringPieces {
     .settlement_journal_entry_id
     .expect("écriture de paiement");
     let cancelled = supplier_invoice("FF-ANNULEE").await;
-    supplier_invoices::cancel(
-        pool,
-        company,
-        cancelled.id,
-        user,
-        crate::common::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect("annulation");
+    supplier_invoices::cancel(pool, company, cancelled.id, user)
+        .await
+        .expect("annulation");
 
     let fy: i64 = sqlx::query_scalar("SELECT id FROM fiscal_years WHERE company_id = ?")
         .bind(company)
@@ -4557,7 +4550,6 @@ async fn full_import_restores_a_supplier_invoice_under_the_centime(pool: MySqlPo
         },
         le,
         biz.ctx.user_id,
-        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .expect("paiement de la facture sous le centime");
@@ -5701,7 +5693,6 @@ async fn full_import_of_a_0_17_5_backup_keeps_the_numbers(pool: MySqlPool) {
         perdue.invoice.id,
         perdue.invoice.version,
         kesh_db::entities::Acteur::utilisateur(u),
-        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
