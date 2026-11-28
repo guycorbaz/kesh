@@ -497,11 +497,13 @@
 	/**
 	 * *Continuer quand même* (ou *Rejeter quand même*) : le geste reprend tel quel. Depuis la
 	 * Story 35-4 (#1024, D3), une relecture de la liste referme la confirmation (`load()`) : le
-	 * geste confirmé porte donc toujours sur la liste que la confirmation a vue. Les gardes
-	 * ci-dessous restent, défensives — revue P2 de la 34-4 (B2-5) : *Écriture manuelle* et
-	 * *Éclater* relisent leur ligne dans la liste **courante** (sortie, rien ne s'ouvre ;
-	 * présente, la modale reçoit la ligne relue) ; *Accepter* et *Rejeter* relisent la sélection
-	 * (`onAccept`, `onReject`, gardés par `selected.size === 0`).
+	 * geste confirmé porte donc toujours sur la liste que la confirmation a vue : la ligne que
+	 * portent *Écriture manuelle*, *Éclater* et *Régler plusieurs factures…* est celle
+	 * qu'a relevée la demande (`guard`), sans relecture dans la liste. Cet invariant est tenu par
+	 * `ReconciliationProposals.test.ts` (« AC4 … une relecture de la liste referme la confirmation »),
+	 * pour les cinq gestes. *Accepter* et *Rejeter* relisent la sélection (`onAccept`, `onReject`,
+	 * gardés par `selected.size === 0`). Le `if (!gesture)` reste : un second clic sur *Continuer*
+	 * pendant la transition de fermeture trouve le geste déjà consommé.
 	 *
 	 * `confirmTransactions` n'est pas vidé ici ni à *Annuler* : le dialogue garde sa liste pendant
 	 * sa transition de fermeture ; la demande suivante la remplace (`guard`).
@@ -510,15 +512,7 @@
 		const gesture = pendingGesture;
 		pendingGesture = null;
 		if (!gesture) return;
-		if (gesture.kind === 'accept' || gesture.kind === 'reject') {
-			runGesture(gesture);
-			return;
-		}
-		const current = proposals.find(
-			(p) => p.bankTransactionId === gesture.proposal.bankTransactionId,
-		);
-		if (!current) return;
-		runGesture({ kind: gesture.kind, proposal: current });
+		runGesture(gesture);
 	}
 
 	/**
