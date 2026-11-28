@@ -2435,9 +2435,11 @@ const SITES_NON_RESOLUS: &[SiteNonResolu] = &[
     (
         // Story 37-3b (AC-2 bis) : + `create_conversion` (handler, pool) et
         // `conversion_refusal` (aide privée, réécrit la réponse d'un refus) — 8 / 9.
+        // Story 55-3a : + `get_journal_entry_documents`, sur le service
+        // `ecritures::justificatifs` (aucun `state.pool`) — 9 / 10.
         "routes/journal_entries.rs",
-        8,
         9,
+        10,
         &[
             "create_conversion",
             "create_journal_entry",

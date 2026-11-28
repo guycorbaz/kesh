@@ -876,6 +876,20 @@ describe('SupplierInvoiceForm — revue de code P1 (B-8, B-9 = E-5, E-6, E-7)', 
 		expect(opt?.textContent?.trim()).toBe('7.70%');
 		expect(sel.value).toBe('7.7000');
 	});
+
+	// Revue P2 (L2-4) : deux taux actifs de même valeur ne donnent qu'une option.
+	it('deux taux actifs de même valeur : une seule option « 8.10% » (L2-4)', () => {
+		const { getByTestId } = renderForm({
+			document: null,
+			vatRates: [
+				{ id: 2, rate: '8.10' },
+				{ id: 1, rate: '8.10' },
+				{ id: 3, rate: '2.60' },
+			],
+		});
+		const sel = getByTestId('supplier-invoice-line-vat') as HTMLSelectElement;
+		expect([...sel.options].map((o) => o.value)).toEqual(['0', '8.10', '2.60']);
+	});
 });
 
 // v0172-correctifs (#885, C-v0172b-15, C-v0172b-16) — à côté d'un document, la date est

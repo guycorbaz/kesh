@@ -105,3 +105,19 @@ describe('JournalReportView', () => {
 		expect(container.querySelectorAll('tbody tr')).toHaveLength(2);
 	});
 });
+
+// Story 55-2 (AC-3) — chaque ligne d'écriture du journal : le numéro ouvre le grand livre du compte sur la
+// période du journal. Rouge sans le correctif (numéro en texte).
+describe('JournalReportView — Story 55-2, liens de compte', () => {
+	it('le numéro de chaque ligne est un lien vers le grand livre du compte, période du journal', async () => {
+		const { LINK_CLASS } = await import('$lib/shared/navigation/link-class');
+		const { getByRole } = render(JournalReportView, { dto: makeDto(CHF) });
+		const caisse = getByRole('link', { name: '1000' });
+		expect(caisse.getAttribute('href')).toBe('/reports?tab=general-ledger&accountId=1&from=2026-01-01&to=2026-12-31');
+		expect(caisse.getAttribute('class')).toBe(LINK_CLASS);
+		expect(caisse.getAttribute('title')).toBe('Voir le détail dans le grand livre');
+		expect(getByRole('link', { name: '3000' }).getAttribute('href')).toBe(
+			'/reports?tab=general-ledger&accountId=2&from=2026-01-01&to=2026-12-31',
+		);
+	});
+});

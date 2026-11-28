@@ -129,8 +129,8 @@ test('grand livre, balance, bilan, compte de résultat et journal d’un compte 
 		await expect(page.getByTestId('ledger-controls')).toBeVisible();
 		await page.getByTestId('ledger-from').fill(`${year}-01-01`);
 		await page.getByTestId('ledger-to').fill(`${year}-12-31`);
+		// Story 55-2 (D16) — filtré sur un compte, le grand livre se charge au choix du compte, sans Générer.
 		await page.getByTestId('ledger-account').selectOption(String(usd));
-		await page.getByTestId('ledger-generate').click();
 		const section = page.getByTestId(`ledger-section-${USD_NUMBER}`);
 		await expect(section).toBeVisible({ timeout: 5000 });
 		await expect(page.getByTestId(`ledger-currency-${USD_NUMBER}`)).toHaveText('USD');
@@ -152,8 +152,8 @@ test('grand livre, balance, bilan, compte de résultat et journal d’un compte 
 	// Balance : seconde ligne en devise sous le compte USD.
 	await page.goto('/reports');
 	await page.waitForLoadState('networkidle');
+	// Story 55-1a (D16) — plus de *Générer* : le clic sur l'onglet charge le rapport.
 	await page.locator('#reports-tab-trial-balance').click();
-	await page.getByRole('button', { name: /générer/i }).click();
 	await expect(page.getByTestId(`tb-fx-row-${USD_NUMBER}`)).toContainText(
 		'USD ouverture 0.00 · débit 1’234.56 · crédit 0.00 · clôture 1’234.56',
 		{ timeout: 5000 },
@@ -165,7 +165,6 @@ test('grand livre, balance, bilan, compte de résultat et journal d’un compte 
 
 	// Bilan : « USD 1’234.56 » à côté du nom.
 	await page.locator('#reports-tab-balance-sheet').click();
-	await page.getByRole('button', { name: /générer/i }).click();
 	await expect(page.getByTestId(`account-fx-${USD_NUMBER}`)).toHaveText('USD 1’234.56', {
 		timeout: 5000,
 	});
@@ -205,7 +204,6 @@ test('grand livre, balance, bilan, compte de résultat et journal d’un compte 
 	await page.goto('/reports');
 	await page.waitForLoadState('networkidle');
 	await page.locator('#reports-tab-income-statement').click();
-	await page.getByRole('button', { name: /générer/i }).click();
 	await expect(page.getByTestId(`account-fx-${USD_REVENUE_NUMBER}`)).toHaveText('USD 100.00', {
 		timeout: 5000,
 	});
@@ -215,7 +213,6 @@ test('grand livre, balance, bilan, compte de résultat et journal d’un compte 
 	});
 
 	await page.locator('#reports-tab-journals').click();
-	await page.getByRole('button', { name: /générer/i }).click();
 	await expect(page.getByTestId('journal-fx-line').first()).toBeVisible({ timeout: 5000 });
 	await expect(
 		page.getByTestId('journal-fx-line').filter({ hasText: 'USD 100.00 × 0.9119' }),

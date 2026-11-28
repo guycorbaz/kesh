@@ -652,6 +652,10 @@ invoices-format-error-no-placeholder = Il formato deve contenere almeno un segna
 invoices-format-error-rendered-too-long = Il formato genererebbe un numero di { $len } caratteri (max { $max })
 invoice-new-title = Nuova fattura
 invoice-edit-title = Modifica fattura
+invoice-edit-forbidden = Il suo ruolo non consente di modificare una fattura.
+invoice-edit-not-draft-validated = Questa fattura è convalidata: non può più essere modificata.
+invoice-edit-not-draft-cancelled = Questa fattura è annullata: non può più essere modificata.
+invoice-edit-back = Torna alla fattura
 invoice-view-title = Fattura
 invoice-form-contact = Contatto
 invoice-form-date = Data
@@ -2228,7 +2232,7 @@ reports-filter-fiscal-year = Esercizio
 reports-filter-journal = Giornale
 reports-button-generate = Genera
 
-reports-error-no-entries-in-period = Nessuna registrazione nel periodo selezionato. Modifica le date o scegli un altro esercizio.
+reports-error-no-entries-in-period = Nessuna registrazione in questo periodo.
 reports-error-period-out-of-fiscal-year = Il periodo selezionato supera i limiti dell'esercizio. Scegli un periodo tra { $fyStart } e { $fyEnd }.
 reports-error-no-fiscal-year-available = Nessun esercizio contabile disponibile. Crea un esercizio prima di generare i rapporti.
 
@@ -2245,8 +2249,7 @@ reports-archived-label = archiviato
 
 # Pagina rapporti — chrome (3 — code review Pass 1 i18n leaks)
 reports-page-title = Rapporti contabili
-reports-instruction-select-and-generate = Seleziona un esercizio contabile e clicca su Genera.
-reports-loading = Generazione del rapporto in corso…
+reports-loading = Caricamento…
 
 # Story 9-2a — Export PDF & CSV (10 chiavi)
 reports-export-pdf-button = Esporta PDF
@@ -2277,7 +2280,6 @@ reports-project-return-total = Totale
 reports-project-selector-label = Conto analitico
 reports-project-selector-placeholder = — Scegli un conto analitico
 reports-aged-instruction = Scadenziario per età alla data odierna.
-reports-aged-instruction-generate = Clicca su Genera per visualizzare lo scadenziario per età alla data odierna.
 reports-aged-as-of = Al { $date }
 reports-aged-empty = Nessun credito cliente aperto.
 reports-aged-col-contact = Cliente
@@ -3064,6 +3066,15 @@ settings-vat-rates-link = Configura le aliquote IVA e le loro date di validità 
 vat-rates-active = Attiva
 vat-rates-change = Cambia l'aliquota
 vat-rates-change-error = Il cambiamento di aliquota non è riuscito.
+vat-rates-err-rate-required = Inserisca un’aliquota.
+vat-rates-err-rate-invalid = L’aliquota deve essere un numero.
+vat-rates-err-rate-range = L’aliquota deve essere compresa tra 0 e 100.
+vat-rates-err-rate-decimals = L’aliquota non può avere più di due decimali.
+vat-rates-err-from-required = Inserisca la data di inizio.
+vat-rates-err-switch-required = Inserisca la data di passaggio.
+vat-rates-change-error-closed = La vecchia aliquota è stata chiusa alla data di passaggio, ma la nuova aliquota non è stata creata. Rimossa la causa, ripeta « Cambia l'aliquota » con la stessa data.
+vat-rates-change-error-closed-reason = La vecchia aliquota è stata chiusa alla data di passaggio, ma la nuova aliquota non è stata creata: { $reason } Rimossa la causa, ripeta « Cambia l'aliquota » con la stessa data.
+vat-rates-change-error-closed-unknown = La vecchia aliquota è stata chiusa alla data di passaggio; la nuova aliquota potrebbe non essere stata creata. Controlli l'elenco: se manca, ripeta « Cambia l'aliquota » con la stessa data.
 vat-rates-change-hint = La vecchia aliquota terminerà alla data di cambiamento, e la nuova aliquota avrà effetto da tale data.
 vat-rates-changed = Aliquota aggiornata.
 vat-rates-col-actions = Azioni
@@ -3620,7 +3631,7 @@ reports-fx-line = { $amount } × { $rate }
 reports-fx-totals = dare { $debit } · avere { $credit }
 reports-fx-trial-balance = apertura { $opening } · dare { $debit } · avere { $credit } · chiusura { $closing }
 reports-ledger-include-zero = Includere i conti senza movimenti
-reports-ledger-instruction = Scegliete un periodo, poi cliccate su Genera. Il conto è facoltativo.
+reports-ledger-instruction = Scegliete un periodo. Per tutti i conti, cliccate su Genera; un conto scelto si visualizza da solo.
 
 # --- Journal d'audit — route, vocabulaire et export (Story 25-1c-a) ---
 # ----------------------------------------------------------------------
@@ -4515,6 +4526,32 @@ stripe-gap-already-linked = Vendita già collegata a un altro addebito
 stripe-gap-payout-entry = Registrazione del versamento
 stripe-gap-receipt-link = Collegare la ricezione nella riconciliazione
 stripe-gap-receipt-import = Importate l’estratto del conto di destinazione (Wise).
+
+## Story 55-1a (Epic 55, D15, D16) — selettore dell'esercizio dei rapporti, intestazione del periodo
+reports-nav-fy-multiple = Diversi
+reports-nav-fy-outside = Fuori esercizio
+reports-nav-fy-whole = Esercizio intero
+reports-nav-needs-one-fy = Questo rapporto riguarda un solo esercizio: scegliete due date dello stesso esercizio.
+reports-nav-period-invalid = La data d’inizio deve precedere la data di fine, o esserle uguale.
+reports-nav-heading-fy = Esercizio { $years } — dal { $from } al { $to }
+reports-nav-heading-named = { $name } — dal { $from } al { $to }
+reports-nav-heading-part = Dal { $from } al { $to } (parte dell’esercizio { $fiscalYear })
+reports-nav-heading-several = Dal { $from } al { $to } (esercizi { $fiscalYears })
+reports-nav-heading-outside = Dal { $from } al { $to } (fuori esercizio)
+# Story 55-2 (AC-6) — la ligne des comptes de TVA au grand livre, après le décompte.
+reports-nav-vat-accounts = Conti nel libro mastro:
+# Story 55-3b (Epic 55, D9 à D12) — i giustificativi di una registrazione, dal giornale e dal libro mastro.
+reports-nav-documents-title = Giustificativi della registrazione n. { $number }
+reports-nav-documents-kind-invoice = Fattura
+reports-nav-documents-kind-credit-note = Nota di credito
+reports-nav-documents-kind-supplier-document = Documento del fornitore
+reports-nav-documents-list = Giustificativi della registrazione
+reports-nav-documents-loading = Caricamento dei giustificativi…
+reports-nav-documents-none = Questa registrazione non ha più giustificativi.
+reports-nav-documents-close = Chiudi
+reports-nav-documents-empty = Il documento ricevuto è vuoto.
+reports-nav-documents-not-issued = PDF non ancora emesso: questa fattura non ha ancora un PDF fissato; il prossimo download, o il prossimo invio per e-mail, lo fisserà.
+reports-nav-ledger-column-documents = Giustificativi
 
 # Story 39-11d — écrans Wise : réglages du compte, page Wise (import des relevés et du zip), libellés
 wise-csv-line-field-count = numero di celle diverso dall’intestazione

@@ -1258,6 +1258,16 @@ const ATTENDU = {
 	// côtés gardés ; 3746 (pr/40, base 3677) + 25 (main, 3677 → 3702) = **3771**, confirmé par la garde (`kesh-gate-logs/s40-m2d/compteurs-3.log`).
 	// Epic 46 reposé sur main à a914c4823 (branche pr/46-rapports-groupes-v2, 2026-11-25) : les deux côtés
 	// gardés ; 3771 (main) + 18 (Epic 46 : 3508 → 3526) = **3789**, confirmé par la garde (`kesh-gate-logs/s46-pr/front-vitest-a.log`).
+	// Story 55-1a (Epic 55, base epic/55-navigation) : sites ajoutés (sélecteur, en-tête, période invalide) et
+	// retirés (invites « cliquez sur Générer », bouton de la balance âgée, en-tête « Période : » des six vues)
+	// = **3788**, recompté par la garde (`kesh-gate-logs/s55-dev/55-1a/front-1/front-test-unit.log`).
+	// Story 55-2 : le titre `reports-ledger-open-from-balance` des cinq liens de compte passe dans le seul
+	// `AccountLink` (−4) ; `reports-nav-vat-accounts` et les deux étiquettes de la ligne des comptes de TVA
+	// ajoutés, le Grand livre sur `ReportSelector` (ses libellés « Du », « Au » repris du composant) = **3785**,
+	// relevé par la garde (« expected 3785 to be 3788 », `kesh-gate-logs/s55-dev/55-2/front-1/front-test-unit.log`).
+	// Story 55-3b : les onze sites des justificatifs (titre, trois genres, document vide, liste, « PDF pas encore
+	// émis », chargement, liste vide, « Fermer », colonne du grand livre) = **3796**, relevé par la garde
+	// (« expected 3796 to be 3785 »).
 	// Story 46-5b (2026-11-22) : **3517 → 3599**, relevé par la garde (« expected 3599 to be 3517 »,
 	// `kesh-gate-logs/s46-5b/front-test-unit.log` au gate) — l'écran « Créer des groupes »
 	// (`accounts/groups/+page.svelte`, ses messages `accounts/groups/messages.ts`, bloc
@@ -1277,7 +1287,13 @@ const ATTENDU = {
 	// `kesh-gate-logs/s46-pr2/compteurs-1.log`) ; il égale 3856 (pr/39) + 18 (Epic 46) + 82 (46-5).
 	// Garde de la 46-5 (compte désigné par un compte bancaire, 2026-11-26) : **3958** (« expected 3958 to be 3956 »,
 	// `kesh-gate-logs/s46-pr2/garde-vitest-1.log`) — `numberBankLinked` et `parentBankLinked` (`accounts/groups/messages.ts`).
-	sitesTotal: 3958,
+	// Fusion de pr/46-rapports-groupes-v2 (ecf6cf835, main avec les Epics 39 et 40, garde de la 46-5) dans
+	// epic/55-navigation (2026-11-26) : les deux côtés gardés ; 3958 (pr/46) + 7 (Epic 55, 3789 → 3796 de son côté)
+	// = **3965**, confirmé par la garde (`kesh-gate-logs/s55-revue/fusion/gardes-1.log`).
+	// Story 64-1 (#1178, #1758) : **3965 → 3978** (+13 : six messages de la page des taux de TVA, deux du changement
+	// de taux après clôture, cinq de la page de modification d'une facture), relevé par la garde (« expected 3978 to be 3965 »).
+	// Revue P1 de la 64-1 (R1-7) : **3978 → 3979** (+1 : le message du changement de taux après une coupure).
+	sitesTotal: 3979,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
@@ -1371,9 +1387,11 @@ const MOTIFS_DYNAMIQUES: Record<string, readonly string[]> = {
  * que découvert.*
  *
  * (`:52` → `:54` le 2026-11-04, v0172-correctifs : deux lignes d'import de
- * `formatSwissDate` ajoutées au-dessus, #880.)
+ * `formatSwissDate` ajoutées au-dessus, #880 ; `:54` → `:62` le 2026-11-27, 64-1 : huit
+ * lignes d'import et de type du validateur ajoutées au-dessus, #1178 ; `:62` → `:63` le
+ * 2026-11-27, revue P1 de la 64-1 : import d'`isUnknownOutcome`, R1-7.)
  */
-const ANGLE_MORT_CLE_EN_COLONNE = 'routes/(app)/settings/vat-rates/+page.svelte:54';
+const ANGLE_MORT_CLE_EN_COLONNE = 'routes/(app)/settings/vat-rates/+page.svelte:63';
 
 /**
  * Cardinalité attendue de chaque préfixe dynamique — **la contrepartie des valeurs

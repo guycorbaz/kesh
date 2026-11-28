@@ -26,13 +26,13 @@ test('export CSV du bilan depuis l\'écran : le fichier suit la hiérarchie affi
 }) => {
 	await login(page);
 	await preparerArbre(page);
+	// Story 55-1a (D16) — plus de *Générer* : le bilan se charge à l'ouverture de la page.
+	let req = page.waitForRequest((r) => /reports\/balance-sheet\?/.test(r.url()));
 	await page.goto('/reports');
+	await req;
 	await page.waitForLoadState('networkidle');
 
 	// Niveau 1, puis ouverture de 19 à la main : 19 ouvert, 190 fermé par le niveau.
-	let req = page.waitForRequest((r) => /reports\/balance-sheet\?/.test(r.url()));
-	await page.getByRole('button', { name: /générer/i }).click();
-	await req;
 	req = page.waitForRequest((r) => /reports\/balance-sheet\?/.test(r.url()));
 	await page.getByTestId('grouping-level').selectOption('1');
 	await req;

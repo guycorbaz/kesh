@@ -90,3 +90,61 @@ describe('VatReportView — les soldes', () => {
 		expect(r.getByRole('alert').textContent).toContain('0.50');
 	});
 });
+
+// Story 55-2 (AC-6, D7) — la ligne « Comptes au grand livre : » des comptes désignés, après le contenu
+// du décompte (tableau ou message d'un décompte vide). Rouge sans le correctif (aucun `vat-accounts`).
+describe('VatReportView — Story 55-2, comptes au grand livre', () => {
+	const DEUX = { payable: { id: 20, number: '2200' }, recoverable: { id: 11, number: '1170' } };
+
+	it('deux comptes : étiquette « TVA due » puis son lien, « TVA récupérable » puis le sien, période du décompte', async () => {
+		const { LINK_CLASS } = await import('$lib/shared/navigation/link-class');
+		const { getByTestId } = render(VatReportView, { dto: dto(), vatAccounts: DEUX });
+		const ligne = getByTestId('vat-accounts');
+		expect(ligne.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+			'Comptes au grand livre : TVA due 2200 · TVA récupérable 1170',
+		);
+		const liens = [...ligne.querySelectorAll('a')];
+		expect(liens.map((a) => a.getAttribute('href'))).toEqual([
+			'/reports?tab=general-ledger&accountId=20&from=2026-01-01&to=2026-12-31',
+			'/reports?tab=general-ledger&accountId=11&from=2026-01-01&to=2026-12-31',
+		]);
+		expect(liens[0].getAttribute('class')).toBe(LINK_CLASS);
+	});
+
+	it('la ligne vient APRÈS le tableau du décompte', () => {
+		const { getByTestId, container } = render(VatReportView, { dto: dto(), vatAccounts: DEUX });
+		const table = container.querySelector('table')!;
+		expect(table.compareDocumentPosition(getByTestId('vat-accounts')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	});
+
+	it('un seul compte désigné : sa paire seule', () => {
+		const { getByTestId } = render(VatReportView, {
+			dto: dto(),
+			vatAccounts: { payable: null, recoverable: { id: 11, number: '1170' } },
+		});
+		expect(getByTestId('vat-accounts').textContent?.replace(/\s+/g, ' ').trim()).toBe(
+			'Comptes au grand livre : TVA récupérable 1170',
+		);
+	});
+
+	it('aucun compte désigné (ou réglages en échec) : la ligne est omise', () => {
+		const { queryByTestId } = render(VatReportView, { dto: dto(), vatAccounts: { payable: null, recoverable: null } });
+		expect(queryByTestId('vat-accounts')).toBeNull();
+		const sansProp = render(VatReportView, { dto: dto() });
+		expect(sansProp.queryByTestId('vat-accounts')).toBeNull();
+	});
+
+	it('décompte vide : la ligne s’affiche aussi, après le message « aucune écriture »', () => {
+		const vide = dto({
+			rows: [],
+			totalBaseHt: '0.00',
+			totalVatDue: '0.00',
+			totalVatDueNet: '0.00',
+			vatBalance: '0.00',
+		});
+		expect(isReportEmpty('vat', vide)).toBe(true);
+		const { getByTestId, getByRole } = render(VatReportView, { dto: vide, vatAccounts: DEUX });
+		const message = getByRole('status');
+		expect(message.compareDocumentPosition(getByTestId('vat-accounts')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	});
+});

@@ -43,9 +43,9 @@ const LIB_RS: &str = include_str!("../src/lib.rs");
 const MARKER_BEGIN: &str = "KESH-ADMIN-ROUTES-BEGIN";
 const MARKER_END: &str = "KESH-ADMIN-ROUTES-END";
 
-/// Les **54 constructeurs de méthode** du bloc `admin_routes` (49 avant la
+/// Les **56 constructeurs de méthode** du bloc `admin_routes` (49 avant la
 /// Story v017-4a, 50 avant la Story v0172-session, 52 avant la 33-5, 53 avant la
-/// v0190-nom-societe), un par couple
+/// v0190-nom-societe, 55 avant la 64-1), un par couple
 /// (méthode, chemin). Les identifiants de chemin sont arbitraires : la couche
 /// répond **avant** le handler, donc aucune donnée n'a besoin d'exister.
 ///
@@ -57,6 +57,8 @@ const ADMIN_COUPLES: &[(&str, &str)] = &[
     ("POST", "/api/v1/onboarding/reset"),
     // Story 25-6-b (#387) — refiger le PDF d'une facture.
     ("POST", "/api/v1/invoices/1/pdf/refreeze"),
+    // Story 64-1 (#1712) — le mode d'interface de l'installation rejoint le bloc admin.
+    ("PUT", "/api/v1/profile/mode"),
     ("GET", "/api/v1/users"),
     ("POST", "/api/v1/users"),
     ("GET", "/api/v1/users/1"),
@@ -801,7 +803,7 @@ async fn error_code(resp: reqwest::Response) -> String {
 // Tests HTTP — le comportement
 // ============================================================================
 
-/// AC1, jambe `read-write` : les 54 couples rendent `API_KEY_ADMIN_FORBIDDEN`.
+/// AC1, jambe `read-write` : les 56 couples rendent `API_KEY_ADMIN_FORBIDDEN`.
 ///
 /// ⚠️ On asserte le **code**, pas le statut. Trois gardes distinctes rendent
 /// `403` sur ces routes — le RBAC, le gate de portée, et la couche : un test
@@ -888,7 +890,9 @@ async fn read_only_pat_is_stopped_by_the_right_guard_on_each_couple(pool: MySqlP
         // (15, 39) → (15, 40) : Story v0190-nom-societe (refs #1097), unie à la
         // 37-1 par l'intégration de la 0.19.0 — le `PUT` du nom de la société est
         // arrêté par le gate de portée.
-        (15, 40),
+        // (15, 40) → (15, 41) : Story 64-1 (refs #1712) — le `PUT` du mode d'interface
+        // est arrêté par le gate de portée.
+        (15, 41),
         "la répartition attendue entre la couche et le gate de portée a changé"
     );
 }

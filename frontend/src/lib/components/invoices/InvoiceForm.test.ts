@@ -1814,3 +1814,22 @@ describe('InvoiceForm — ligne de commentaire (Story 49-1c)', () => {
 		);
 	});
 });
+
+describe('InvoiceForm — taux de TVA de même valeur (revue 64-1, R1-1)', () => {
+	it('deux taux actifs de même valeur : la liste « TVA % » reste montée, une option par valeur', async () => {
+		// Deux taux à 8.10 (autre date de début) : sans dédoublonnage, la clé du `{#each}` est
+		// en double, Svelte lève `each_key_duplicate` et la liste est vide.
+		const { getVatRates } = await import('$lib/features/vat-rates');
+		vi.mocked(getVatRates).mockImplementation(
+			async () => [{ rate: '8.10' }, { rate: '8.10' }, { rate: '2.60' }] as never
+		);
+		const { getAllByTestId } = render(InvoiceForm, { invoice: invoiceWith([null]) });
+		await settle();
+
+		const select = getAllByTestId('invoice-line-vat-rate')[0] as HTMLSelectElement;
+		expect([...select.options].map((o) => o.value)).toEqual(['8.10', '2.60']);
+		// La ligne existante garde son taux.
+		expect(select.value).toBe('8.10');
+		vi.mocked(getVatRates).mockImplementation(async () => [{ rate: '8.10' }, { rate: '2.60' }] as never);
+	});
+});

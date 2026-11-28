@@ -151,8 +151,8 @@ L'interface Kesh est organisée comme suit :
     comptabilité ouverte (tel qu'il est enregistré dans
     \emph{Administration $\rightarrow$ Paramètres} ; le nom complet apparaît au
     survol quand il est coupé), un champ de recherche (à venir) et le
-    \emph{menu utilisateur} (affiche votre rôle ; déconnexion et bascule du mode
-    Guidé/Expert). Le titre de l'onglet du navigateur porte le même nom
+    \emph{menu utilisateur} (affiche votre rôle ; déconnexion ; pour
+    l'Administrateur seul, bascule du mode Guidé/Expert de l'installation). Le titre de l'onglet du navigateur porte le même nom
     (« Kesh --- \emph{nom} --- \emph{page} »), ce qui permet de distinguer deux
     comptabilités ouvertes dans deux onglets. Corrigé dans \emph{Administration
     $\rightarrow$ Paramètres}, le nom change aussitôt dans cet onglet, et dans les
@@ -253,7 +253,7 @@ Vous pourrez à tout moment ajouter ou modifier vos comptes bancaires après l'o
 \end{keshnote}
 
 \begin{keshtip}
-Le mode guidé pas-à-pas est recommandé pour les nouveaux utilisateurs. Les utilisateurs expérimentés peuvent basculer en \emph{Mode expert} via le \emph{menu utilisateur} (coin supérieur droit), ce qui réduit les confirmations et accélère la saisie.
+Le mode guidé pas-à-pas est recommandé pour les nouveaux utilisateurs. Le \emph{Mode expert} se règle par l'\textbf{Administrateur} seul, via le \emph{menu utilisateur} (coin supérieur droit) : c'est un réglage de \textbf{l'installation}, qui vaut pour tous les utilisateurs ; les autres rôles suivent le mode choisi. Il change la présentation (affichage plus dense, raccourci \keshkey{Ctrl+N}, indications de la page d'accueil) et ne supprime aucune confirmation ni n'ouvre aucun droit.
 \end{keshtip}
 
 %%─────────────────────────────────────────────────────────────────────────────
@@ -1733,10 +1733,11 @@ Le PDF d'une facture est produit \textbf{une seule fois} : au premier téléchar
     \item La \textbf{restauration d'une sauvegarde} antérieure au gel ramène la facture à l'état non figé : son prochain téléchargement figera un \textbf{nouveau} document. L'ancien reste dans le répertoire des documents, et son empreinte au journal d'audit.
     \item La \textbf{dévalidation} détache le document figé (son empreinte reste au journal d'audit) ; la revalidation en figera un nouveau au premier téléchargement.
     \item Les \textbf{rappels}, eux, sont produits à chaque envoi (cf. \S\ref{sec:relances-user}) : seul le PDF de la facture est figé.
+    \item \textbf{Afficher une facture depuis les rapports} (Journal, Grand livre, \S\ref{sec:journal-justificatifs}) \textbf{ne la fige pas} : une facture figée s'y montre par son PDF figé~; une facture qui ne l'est pas encore y est signalée «~PDF pas encore émis~», sans aperçu --- son PDF émis reste produit au premier téléchargement (depuis la fiche ou par l'API) ou au premier envoi. L'état affiché vaut à l'ouverture de la visionneuse.
 \end{itemize}
 
 \begin{keshwarning}
-\textbf{Si le fichier figé a disparu} --- typiquement après une restauration qui n'a pas repris le répertoire des documents : une sauvegarde d'avant la version 0.15.0, ou un dump de la base (depuis la 0.15.0, la sauvegarde \texttt{.keshbackup} emporte le fichier figé) ---, le téléchargement est \textbf{refusé} avec un message qui nomme le fichier manquant (\texttt{<empreinte>.pdf}). Kesh ne le régénère jamais de lui-même : ce serait fabriquer une pièce qui n'a pas été émise. Le remède est de \textbf{restaurer ce fichier} depuis la sauvegarde du répertoire des documents --- c'est le seul moyen de retrouver l'original. À défaut, un \textbf{administrateur} voit apparaître sur la fiche, après ce refus, le bouton \emph{Refiger le document} : il produit un \textbf{nouveau} document avec les données et la langue du client d'aujourd'hui, \textbf{qui n'est pas l'original}, et le journal d'audit garde l'empreinte de l'ancien et du nouveau. Une facture annulée ne peut pas être refigée : seule la restauration du fichier la répare.
+\textbf{Si le fichier figé a disparu} --- typiquement après une restauration qui n'a pas repris le répertoire des documents : une sauvegarde d'avant la version 0.15.0, ou un dump de la base (depuis la 0.15.0, la sauvegarde \texttt{.keshbackup} emporte le fichier figé) ---, le téléchargement est \textbf{refusé} avec un message qui nomme le fichier manquant (\texttt{<empreinte>.pdf})~; l'affichage depuis les rapports est refusé de même, avec le même message. Kesh ne le régénère jamais de lui-même : ce serait fabriquer une pièce qui n'a pas été émise. Le remède est de \textbf{restaurer ce fichier} depuis la sauvegarde du répertoire des documents --- c'est le seul moyen de retrouver l'original. À défaut, un \textbf{administrateur} voit apparaître sur la fiche, après ce refus \textbf{à un téléchargement depuis la fiche}, le bouton \emph{Refiger le document} : il produit un \textbf{nouveau} document avec les données et la langue du client d'aujourd'hui, \textbf{qui n'est pas l'original}, et le journal d'audit garde l'empreinte de l'ancien et du nouveau. Une facture annulée ne peut pas être refigée : seule la restauration du fichier la répare.
 \end{keshwarning}
 
 \subsection{Envoyer une facture par e-mail}\label{sec:envoi-email}
@@ -4342,6 +4343,42 @@ au journal d'audit (\S\ref{sec:tracabilite}), avec son auteur.
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Rapports comptables}
 
+\paragraph{Choisir la période.} Le bilan, le compte de résultat, la balance, les journaux, la TVA et les deux
+rapports par compte analytique se règlent par le même bandeau~: le menu \emph{Exercice}, puis \emph{Du} et
+\emph{Au}. Le menu montre l'exercice seul, en gras~: ses années («~2025~», ou «~2025/2026~» pour un exercice
+décalé) si son nom est celui que Kesh lui a donné, sinon le nom que vous lui avez donné~; deux exercices qui
+s'écriraient de même reçoivent leurs bornes («~2025 (01.03--30.06)~»). Les dates sont toujours remplies~:
+choisir un exercice met \emph{Du} et \emph{Au} à ses bornes. Vous pouvez ensuite les changer à la main~: si
+elles restent dans le même exercice, le menu le montre toujours, et le lien \emph{Exercice entier} remet ses
+bornes~; si elles tombent dans deux exercices, le menu affiche \emph{Plusieurs}, et si l'une d'elles est hors de
+tout exercice, \emph{Hors exercice}. Le bilan, le compte de résultat, la balance, les journaux, la TVA et les
+rapports par compte analytique en mode \emph{Exercice} ne portent que sur \textbf{un seul exercice}~: avec
+\emph{Plusieurs} ou \emph{Hors exercice}, rien n'est chargé, le rapport affiché est retiré de l'écran et un
+message le dit~; revenir à deux dates du même exercice le recharge. Une date de début postérieure à la date de
+fin est signalée sous les dates, et rien n'est chargé. Le \textbf{grand livre} a le même bandeau, l'exercice
+n'y étant qu'un raccourci pour la période~: il franchit la borne, si bien que \emph{Plusieurs} et \emph{Hors
+exercice} n'y empêchent rien (\S\ref{sec:grand-livre}).
+
+Le rapport \textbf{se charge seul}, sans bouton~: à l'ouverture de la page et à l'arrivée sur un onglet, au choix
+d'un exercice, quand vous quittez les dates (passer de \emph{Du} à \emph{Au} ne compte pas), ou par la touche
+Entrée dans une date. Pendant le premier chargement, «~Chargement…~» s'affiche~; pendant un rechargement, le
+rapport précédent reste à l'écran, grisé, jusqu'à la réponse. Une période sans écriture le dit~: «~Aucune
+écriture sur cette période.~» Si vous changez de nouveau la période avant la réponse, seule la dernière demande
+s'affiche. Seuls le \textbf{grand livre de tous les comptes} et les deux \textbf{rapports par compte
+analytique} gardent un bouton \emph{Générer}~; la balance âgée, arrêtée à ce jour, se charge à l'arrivée sur
+son onglet. Si un chargement échoue, le message d'erreur s'affiche~; pour le relancer, rechoisissez l'exercice,
+quittez de nouveau les dates, ou revenez sur l'onglet. Chaque rapport chargé est inscrit au journal d'audit, y
+compris ceux que vous quittez avant leur réponse~: un changement d'onglet ou de période en inscrit un de plus.
+
+L'en-tête du rapport dit la \textbf{période réelle} du rapport affiché~: «~Exercice 2025 --- du 01.01.2025 au
+31.12.2025~», «~Du 01.01.2026 au 31.03.2026 (partie de l'exercice 2025/2026)~», ou, pour le grand livre qui
+franchit la borne, «~(exercices 2024/2025 et 2025/2026)~» et «~(hors exercice)~». Les exports PDF et CSV portent
+sur le rapport \textbf{affiché}~: ils sont indisponibles pendant un chargement~; pour le bilan, le compte de
+résultat, la balance, les journaux et la TVA, aussi tant que les dates saisies ne sont pas encore celles du
+rapport. Le grand livre et les rapports par compte analytique, qui gardent \emph{Générer}, exportent le rapport
+affiché même si vous avez changé les dates sans le régénérer~; un rapport retiré de l'écran (\emph{Plusieurs},
+\emph{Hors exercice}) ne s'exporte pas.
+
 \subsection{Bilan}
 
 \keshscreenshot{rapport-bilan.png}{Bilan : actifs, passifs et capitaux propres à une date donnée.}  % TODO capture: rapport bilan
@@ -4444,13 +4481,20 @@ Chaque changement redemande le rapport au serveur, même pendant une génératio
 la réponse à la dernière demande s'affiche, et l'écran revient toujours à la présentation que la
 barre indique --- si vous revenez sur un rapport pendant la génération d'un autre, dès la fin de
 celle-ci. Si une demande échoue, le message d'erreur s'affiche et l'écran garde la présentation
-précédente~; \emph{Générer} la redemande. Changer la présentation d'un rapport pendant le chargement
-d'un autre rapport interrompt ce chargement~: il faut le relancer avec \emph{Générer}. Chaque demande est inscrite au journal
+précédente~; pour la redemander, changez de nouveau la présentation, ou quittez l'onglet et revenez-y.
+Changer la présentation d'un rapport pendant le chargement d'un autre rapport interrompt ce chargement, comme le fait l'arrivée par le retour arrière ou
+par un lien sur un rapport qui n'est pas déjà affiché dans cette présentation (\S\ref{sec:rapports-exports})~: revenir
+sur son onglet le relance. Chaque demande est inscrite au journal
 d'audit, comme un changement de période. Le navigateur \textbf{retient votre présentation}, pour
 chaque société et chaque rapport~: en revenant sur la page, vous retrouvez la hiérarchie, le
 niveau, la place des sous-totaux et les groupes ouverts ou fermés à la main --- dans la mesure où
 le navigateur le permet (en navigation privée, ou si le stockage du site est refusé, la
 présentation par défaut revient, sans erreur). Un groupe disparu du plan depuis est oublié.
+L'\textbf{adresse de la page porte aussi la présentation affichée}~; elle prime sur celle que
+retient le navigateur~: ouvrir un lien vers un rapport, ou y revenir par le retour arrière, l'affiche
+dans la présentation de l'adresse, qui devient la présentation retenue. Une adresse sans présentation
+prend la présentation en cours (celle que retient le navigateur, à l'arrivée sur la page). L'adresse change à la réponse du serveur, non au geste~: tant
+que le rapport redemandé n'est pas affiché, elle reste celle du rapport à l'écran.
 
 Les boutons d'export PDF et CSV reprennent la présentation affichée
 (\S\ref{sec:rapports-exports}).
@@ -4529,12 +4573,18 @@ est-il fait ?}
 Chaque compte y est encadré par trois lignes sans lesquelles ce n'est pas un extrait : le
 \textbf{solde d'ouverture}, le \textbf{total des mouvements} (débit et crédit), le \textbf{solde
 de clôture}. Entre les deux, une ligne par écriture, avec sa date, sa pièce, son journal, son
-libellé, sa \textbf{contrepartie} — les autres comptes de la même écriture —, le \textbf{solde
+libellé, ses \textbf{justificatifs} (l'icône de l'écriture, comme au journal, \S\ref{sec:journal-justificatifs}~; la
+colonne n'apparaît que si une écriture du rapport en a), sa \textbf{contrepartie} — les autres comptes de la même écriture —, le \textbf{solde
 progressif} après chaque mouvement et, en dernière colonne, son \textbf{lettrage}.
 
 \begin{itemize}
-    \item \textbf{Période libre, sans exercice.} C'est le seul rapport qui ne demande pas de
-          choisir un exercice : il en franchit la borne. Quand la période en traverse deux, une
+    \item \textbf{L'exercice comme raccourci pour la période~; des dates choisies à la main pour
+          franchir la borne, le menu indiquant alors «~Plusieurs~» ou «~Hors exercice~».} Le bandeau
+          est celui des autres rapports (voir «~Choisir la période~», au début de cette section)~:
+          choisir un exercice met \emph{Du} et \emph{Au} à ses bornes, et \emph{Exercice entier}
+          les remet. En arrivant sur l'onglet avec des dates vides, elles prennent les bornes de
+          l'exercice choisi pour les autres rapports~; des dates déjà saisies restent, et celles
+          que vous tapez sur un autre onglet ne passent pas au grand livre. Quand la période en traverse deux, une
           ligne de rupture marque la clôture, et le solde d'un compte de charges ou de produits
           y \textbf{repart de zéro} — c'est ce que fait un bouclement. Le solde d'ouverture
           appartient à l'exercice qui contient le premier jour de la période~: si la première
@@ -4548,15 +4598,23 @@ progressif} après chaque mouvement et, en dernière colonne, son \textbf{lettra
           plus les mouvements~: le cumul de la période se lit dans le \textbf{total des
           mouvements}. Pour un compte de bilan, rien ne change~: la clôture est l'ouverture plus
           les mouvements.
-    \item \textbf{Compte facultatif.} Sans sélection, tous les comptes mouvementés sont rendus.
+    \item \textbf{Compte facultatif.} Sans sélection, tous les comptes mouvementés sont rendus,
+          par le bouton \emph{Générer}~: ce rapport est lourd. Un compte choisi se charge
+          \textbf{seul}, comme les autres rapports~: au choix du compte, de \emph{Inclure les comptes
+          sans mouvement} ou d'un exercice, quand vous quittez les dates, ou par Entrée.
     \item \textbf{Les comptes archivés apparaissent} s'ils portent encore un solde, signalés
           comme tels. Ce n'est pas un oubli de filtrage : un compte archivé à solde résiduel est
           précisément l'anomalie que l'on cherche.
     \item \textbf{Solde contre nature.} Un compte dont le solde tombe du côté opposé à sa nature
           — une caisse créditrice, un fournisseur débiteur — est signalé. C'est une alerte, pas
           une erreur : elle mérite un regard.
-    \item \textbf{Accès direct depuis le bilan et la balance} : le numéro de compte y est un
-          lien qui ouvre son grand livre sur la même période.
+    \item \textbf{Accès direct depuis tous les rapports} : dans le bilan, le compte de résultat, la
+          balance, les journaux et les comptes de TVA du décompte, le numéro de compte est un lien
+          qui ouvre son grand livre sur la même période~; dans le grand livre, chaque
+          \textbf{contrepartie} ouvre le sien, et le numéro en tête d'un compte aussi quand plusieurs
+          comptes sont affichés. Le retour arrière du navigateur ramène au rapport d'où vous veniez,
+          avec son exercice et sa période, sans le recharger. Un lien se reconnaît à son
+          soulignement léger, sans compter sur la couleur.
     \item \textbf{Lettrage.} La colonne \emph{Lettrage} porte le \textbf{code} du groupe d'une
           ligne lettrée, en lien vers ce groupe~; une ligne ouverte l'a vide
           (\S\ref{sec:lettrage}). L'en-tête d'un compte lettrable porte le lien
@@ -4653,7 +4711,9 @@ Les factures dont les rappels sont \textbf{suspendus restent comptées} dans la 
 
 \subsection{Journal des écritures}
 
-\emph{Mensuel} → \emph{Rapports} → \emph{Journal}. Liste chronologique de toutes les écritures de la période sélectionnée. Vue brute, idéale pour audit ou contrôle.
+\emph{Mensuel} → \emph{Rapports} → \emph{Journaux}. Liste chronologique de toutes les écritures de la période sélectionnée. Vue brute, idéale pour audit ou contrôle. Le numéro de compte de chaque ligne ouvre le grand livre de ce compte sur la période du journal (\S\ref{sec:grand-livre}).
+
+\paragraph{Les justificatifs d'une écriture.}\label{sec:journal-justificatifs} Une écriture qui a un justificatif porte, à côté de son numéro, une \textbf{icône de document}~; un clic l'ouvre dans la visionneuse, sans passer par l'écriture ni par la pièce. Les justificatifs sont le \textbf{PDF de la facture} (l'écriture de vente), le \textbf{PDF de l'avoir}, et le \textbf{document de la facture fournisseur} (son achat)~; l'écriture d'un \textbf{règlement} montre la ou les factures qu'il règle, client ou fournisseur. Avec un seul justificatif, la visionneuse l'ouvre directement~; avec plusieurs, leur liste paraît en haut, et un clic dans la liste change le document affiché. Une facture dont le PDF n'est pas encore émis n'est pas affichée~: la visionneuse dit «~PDF pas encore émis~» --- l'ouvrir depuis les rapports \textbf{ne la fige pas} (\S\ref{sec:pdf-fige}). La visionneuse se ferme par \emph{Fermer}, par un clic à côté ou par la touche Échap~; Échap reste sans effet quand le curseur est dans le PDF lui-même (cliquez à côté ou sur \emph{Fermer}). Le Grand livre porte la même icône sur ses lignes (\S\ref{sec:grand-livre}).
 
 \subsection{Décompte TVA}\label{sec:decompte-tva}
 
@@ -4661,10 +4721,17 @@ Les factures dont les rappels sont \textbf{suspendus restent comptées} dans la 
 
 \begin{itemize}
     \item \textbf{TVA due} : la TVA facturée sur les ventes, ventilée par taux (8.1\%, 3.8\%, 2.6\%, 0\%). Elle est comptabilisée automatiquement lors de la validation de chaque facture de vente (compte \emph{TVA due}, p.~ex. 2200).
-    \item \textbf{TVA récupérable} (impôt préalable) : la TVA payée sur les achats, lue du solde du compte d'impôt préalable (p.~ex. 1171). Elle s'alimente via l'assistant de saisie d'achat (cf. \emph{Saisie d'une écriture}), qui pré-remplit la ligne d'impôt préalable à partir d'un taux.
+    \item \textbf{TVA récupérable} (impôt préalable) : la TVA payée sur les achats, lue des \textbf{mouvements de la période} du compte d'impôt préalable (débit moins crédit, p.~ex. 1171), sans son solde d'ouverture. Elle s'alimente via l'assistant de saisie d'achat (cf. \emph{Saisie d'une écriture}), qui pré-remplit la ligne d'impôt préalable à partir d'un taux.
     \item \textbf{Diminutions de contre-prestation (soldes)} : la TVA corrigée par les \emph{soldes} (escompte accordé, perte sur débiteur --- \S\ref{sec:reglement-client}) datés dans la période, ventilée par taux. La section n'apparaît que s'il y a de tels soldes, suivie de la \textbf{TVA due nette} (TVA due − TVA des soldes).
     \item \textbf{Solde net dû à l'AFC} : TVA due \textbf{nette} − TVA récupérable. Un solde négatif signifie un crédit d'impôt en votre faveur.
 \end{itemize}
+
+\paragraph{Les comptes au grand livre.} Sous le décompte, la ligne «~Comptes au grand livre~» donne le compte
+de \emph{TVA due} et celui d'\emph{impôt préalable} désignés dans \emph{Administration} → \emph{Facturation}~;
+chaque numéro ouvre le grand livre du compte sur la période du décompte. Un compte non désigné n'y figure pas.
+Le \textbf{total des mouvements} de la période du compte d'impôt préalable égale la TVA récupérable~; son solde
+de clôture y ajoute l'ouverture. La TVA due, elle, vient des factures~: le grand livre du compte de TVA due peut
+s'en écarter (voir l'avertissement ci-dessous).
 
 \paragraph{Alerte d'écart --- ce qu'elle voit, et ce qu'elle ne voit pas.} Kesh compare le
 montant de TVA due nette calculé depuis les factures et les soldes aux écritures comptables de ces mêmes factures et de ces mêmes soldes.
@@ -4704,6 +4771,18 @@ que la concordance annuelle exige (art.~72 al.~1 LTVA), et Kesh ne l'outille pas
 \end{quote}
 
 \subsection{Visualisation et exports}\label{sec:rapports-exports}
+
+\paragraph{Naviguer dans les rapports.} L'onglet, l'exercice, la période, la présentation du bilan, du compte de
+résultat et de la balance (hiérarchie, niveau, sous-totaux, groupes ouverts ou fermés à la main) et, au grand
+livre, le compte et les comptes sans mouvement suivent l'adresse de la page, si bien que le retour arrière et l'avance du navigateur les
+retrouvent~: chaque clic sur un onglet est une étape de l'historique (les flèches du clavier, elles, n'en ajoutent
+pas), et un rapport déjà affiché revient sans être rechargé. L'adresse se copie~: ouverte par un utilisateur
+connecté, ou rechargée, elle rouvre le même rapport avec ses réglages, sans autre geste. Elle retient le dernier
+rapport chargé, non des dates tapées et pas encore confirmées~; les rapports par compte analytique n'y portent
+que leur onglet. Arriver par le retour arrière ou par un lien pendant le chargement d'un autre rapport~: si le
+rapport de l'adresse n'est pas déjà affiché, il se charge et l'autre chargement est abandonné~; revenir sur
+l'onglet abandonné le recharge. Le lien \emph{Rapports}
+du menu ramène au bilan.
 
 Tous les rapports se \textbf{consultent à l'écran}. Pour les emporter :
 

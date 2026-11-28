@@ -1753,6 +1753,7 @@ mod tests {
                 journal: Journal::Ventes,
                 entries: vec![JournalEntryRow {
                     entry_id: 1,
+                    has_documents: false,
                     entry_number: 42,
                     entry_date: NaiveDate::from_ymd_opt(2026, 5, 15).unwrap(),
                     description: "Test".into(),
@@ -1948,6 +1949,7 @@ mod tests {
                     exchange_rate: None,
                     rate_source: None,
                     running_balance_currency: None,
+                    has_documents: false,
                 }],
                 total_debit: dec!(1200.00),
                 total_credit: dec!(0),
@@ -2147,6 +2149,7 @@ mod tests {
                 journal: Journal::OD,
                 entries: vec![JournalEntryRow {
                     entry_id: 1,
+                    has_documents: false,
                     entry_number: 7,
                     entry_date: NaiveDate::from_ymd_opt(2026, 5, 15).unwrap(),
                     description: "=HYPERLINK(\"x\")".into(),
