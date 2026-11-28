@@ -1817,6 +1817,41 @@ describe('ReconciliationProposals — transaction déjà comptabilisée (Story 3
 		);
 	});
 
+	// Story 58-6 (#1093) : les bornes du compte. Deux cas (1 cochée → 1, 2 cochées → 2) ne
+	// distinguent pas un nombre plafonné à 2 d'un nombre exact : trois cochées, dont une seule
+	// signalée, le font ; et toutes les lignes cochées signalées nomment autant d'éléments qu'il y
+	// en a.
+	it('AC1 Rejeter, une signalée parmi trois cochées ⇒ intro « 3 transactions cochées », un seul élément nommé (#1093)', async () => {
+		const view = await monter([signalee(1, null), signalee(2, [0, 1, 0]), signalee(3, null)]);
+		await cocherEtRejeter(view, [0, 1, 2]);
+		await view.findByTestId('already-booked-confirm');
+		expect(
+			view.getAllByTestId('already-booked-confirm-item').map((i) => i.getAttribute('data-tx-id')),
+		).toEqual(['2']);
+		expect(view.getByTestId('already-booked-confirm-intro').textContent?.trim()).toBe(
+			introRejetDes(3),
+		);
+	});
+
+	it.each([2, 3])(
+		'AC1 Rejeter, les %i lignes cochées toutes signalées ⇒ autant d’éléments nommés, intro du rejet au pluriel (#1093)',
+		async (n) => {
+			const ids = Array.from({ length: n }, (_, i) => i + 1);
+			const view = await monter(ids.map((id) => signalee(id, [0, 1, 0])));
+			await cocherEtRejeter(
+				view,
+				ids.map((_, i) => i),
+			);
+			await view.findByTestId('already-booked-confirm');
+			expect(
+				view.getAllByTestId('already-booked-confirm-item').map((i) => i.getAttribute('data-tx-id')),
+			).toEqual(ids.map(String));
+			expect(view.getByTestId('already-booked-confirm-intro').textContent?.trim()).toBe(
+				introRejetDes(n),
+			);
+		},
+	);
+
 	it('AC1 Rejeter, Rejeter quand même ⇒ toute la sélection part, la ligne non signalée comprise ; aucune modale (M5, M9)', async () => {
 		const view = await monter([signalee(1, [0, 1, 0]), signalee(2, null)]);
 		await cocherEtRejeter(view, [0, 1]);
@@ -1890,11 +1925,15 @@ describe('ReconciliationProposals — transaction déjà comptabilisée (Story 3
 	// disparu. La relecture referme la confirmation : elle ne peut plus être validée sur des
 	// lignes périmées. Remplace le test « Continuer ne rouvre pas le geste… » de la 34-4 (revue P2,
 	// B2-5), où la confirmation réapparaissait ouverte et *Continuer* ne faisait rien.
+	// Story 58-6 (#1088) : les CINQ gestes, *Régler plusieurs factures…* (`group`, 43-3) compris. Ce
+	// test est le filet sous `confirmGesture`, qui ne relit plus la ligne dans `proposals` : il
+	// suppose qu'une relecture referme toujours la confirmation, et c'est ici qu'on l'éprouve.
 	it.each([
 		['reconciliation-accept-btn', true],
 		['reconciliation-reject-btn', true],
 		['manual-match-button', false],
 		['split-button', false],
+		['group-settlement-button', false],
 	])(
 		'AC4 %s : une relecture de la liste referme la confirmation, sans geste (M4)',
 		async (bouton, cocher) => {
