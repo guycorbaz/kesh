@@ -232,7 +232,12 @@ test.describe.serial('63-1 — annuler depuis la fiche, daté de l’origine', (
 		await expect(dialog).toContainText(
 			"Annuler ce règlement ? Une écriture inverse, datée du règlement, sera passée au grand livre dans son exercice",
 		);
-		await expect(dialog).toContainText('faites d\'abord verrouiller la période');
+		// Revue P5, M1 — un règlement ne porte pas de TVA : le texte de `invoices-settlement-cancel-confirm`
+		// (fr-CH), qui dit le verrou à faire reculer, non la période à faire verrouiller.
+		await expect(dialog).toContainText(
+			"Les soldes de la période du règlement changent, la TVA non : un règlement n'en porte pas. Si cette période est verrouillée, l'annulation sera refusée : un administrateur doit d'abord faire reculer le verrou.",
+		);
+		await expect(dialog).not.toContainText("faites d'abord verrouiller");
 		await expect(dialog).not.toContainText("aujourd'hui");
 		await capture(page, testInfo, 'confirmation-reglement-client');
 		await page.getByTestId('invoice-settlement-cancel-confirm').click();
