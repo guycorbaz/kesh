@@ -1,6 +1,6 @@
 # Story 66-1 : L'e-mail d'essai — vérifier la configuration de l'envoi des factures (#1771)
 
-Status: backlog
+Status: drafted
 
 <!-- Fiche écrite par bmad-create-story le 2026-11-28 (Opus 5.5), sur `epic/66-administration-menu` (`aa488d62b`, sur la v0.20.1). Validation P1 (Sonnet) rendue et remédiée le 2026-11-28 : voir le Change Log. -->
 

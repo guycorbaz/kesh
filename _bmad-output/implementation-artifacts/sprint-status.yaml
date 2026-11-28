@@ -1364,6 +1364,6 @@ development_status:
   # 2026-11-28 — Epic 66 « Administration et menu » : release intermédiaire du mardi 2026-12-01 (décision du Project
   # Lead du 2026-11-28) ; aucune migration ; `_bmad-output/planning-artifacts/epic-66-administration-menu.md`.
   epic-66: in-progress
-  66-1-email-essai: backlog  # #1771 (CR, P2) : e-mail d'essai, Administrateur seul (D1, D2), saisie libre (D3), QR-facture spécimen (D4)
+  66-1-email-essai: drafted  # 2026-11-28 validation en cours (P1 Sonnet 0/4/6/6 remédiée). — #1771 (CR, P2) : e-mail d'essai, Administrateur seul (D1, D2), saisie libre (D3), QR-facture spécimen (D4)
   66-2-menu-accordeon: backlog  # #852 (P3), #959 (P4) : un seul groupe déplié ; sort si non close le lundi 2026-11-30 au soir (D6)
   epic-66-retrospective: optional
