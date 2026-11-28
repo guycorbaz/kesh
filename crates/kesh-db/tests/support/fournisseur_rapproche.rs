@@ -168,7 +168,6 @@ pub async fn facture_payee(
         },
         jour,
         seeded.admin_user_id,
-        jour::aujourd_hui_test(),
     )
     .await
     .expect("règlement par virement");

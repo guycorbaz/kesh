@@ -300,7 +300,6 @@ async fn a_cancelled_write_off_disappears(pool: MySqlPool) {
         seeded.company_id,
         inv,
         sid,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation");
@@ -340,7 +339,6 @@ async fn s631_ac3_a_cancelled_discount_is_reversed_in_its_own_period(pool: MySql
         seeded.company_id,
         inv,
         sid,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation");

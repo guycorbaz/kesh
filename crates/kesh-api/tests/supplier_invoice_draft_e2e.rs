@@ -10,11 +10,9 @@
 //! Décor synthétique : `seed_accounting_company`, `fournisseur_rapproche::preparer`.
 //!
 //! Pré-requis : MariaDB démarré.
-
-/// Story 35-5a0 — de `tests/common/`, la seule date du jour de l'horloge de test.
-mod common {
-    pub mod jour;
-}
+//!
+//! Story 63-1 (D3) : les gestes de la facture fournisseur ne prennent plus de
+//! date du jour — le module `common::jour` n'y sert plus et n'est plus inclus.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -1137,7 +1135,6 @@ async fn annuler_depot(pool: &MySqlPool, c: &Ctx, id: i64) {
         c.seeded.company_id,
         id,
         c.seeded.admin_user_id,
-        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation");

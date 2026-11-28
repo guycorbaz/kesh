@@ -1538,7 +1538,8 @@ pub struct InvoiceSettlementResponse {
     /// Code du motif qui empêche l'annulation (`SettlementCancelBlocker::code`).
     pub cancel_blocked_by: Option<&'static str>,
     /// Le **numéro du compte** archivé, quand c'est le motif — sans lui l'écran
-    /// dirait « réactivez-le » sans dire lequel.
+    /// dirait « réactivez-le » sans dire lequel ; ou la **borne** du verrou de
+    /// période (`AAAA-MM-JJ`) pour `PERIOD_LOCKED` (Story 63-1, #1752).
     pub cancel_blocked_label: Option<String>,
     /// L'identifiant de la **transaction bancaire** rapprochée, quand c'est le
     /// motif.
@@ -1601,10 +1602,11 @@ pub struct CancelSettlementResponse {
 /// `POST /api/v1/invoices/:id/settlements/:settlement_id/cancel` — annule un
 /// règlement par contre-passation (Story 25-3-a-1, #414). Comptable+.
 ///
-/// La contre-passation est datée du **jour**, dans l'exercice ouvert qui le
-/// couvre ; la ligne de règlement est retirée ; `paid_at` retombe si le
-/// résiduel redevient positif. Les refus : 409 avec le code du motif, ou 400
-/// qui nomme les comptes archivés.
+/// La contre-passation est datée **du règlement** (ou du solde), dans son
+/// exercice (Story 63-1, #1752) ; la ligne de règlement est retirée ; `paid_at`
+/// retombe si le résiduel redevient positif. Les refus : 409 avec le code du
+/// motif, 400 qui nomme les comptes archivés, ou `400 PERIOD_LOCKED` du socle
+/// quand le règlement est sous la borne du verrou.
 ///
 /// ⚠️ **Rejouée sur interblocage** (Story 15-5e1, #463) par l'enveloppe
 /// `DbError` [`kesh_db::retry::retry_on_deadlock`].
@@ -1614,9 +1616,6 @@ pub async fn cancel_invoice_settlement_handler(
     Path((id, settlement_id)): Path<(i64, i64)>,
 ) -> Result<Json<CancelSettlementResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    // Story 35-5a0 — la date du jour, lue une fois : bloqueur et
-    // contre-passation la partagent, rejeux compris.
-    let aujourd_hui = state.horloge.aujourd_hui();
     // Story 36-4 (#1131) : l'acteur de la requête, clé d'API comprise — tiré
     // une fois, hors de la fermeture de rejeu (`Acteur` est `Copy`).
     let acteur = kesh_db::entities::audit_log::Acteur::from(&current_user);
@@ -1627,11 +1626,14 @@ pub async fn cancel_invoice_settlement_handler(
             company.id,
             id,
             settlement_id,
-            aujourd_hui,
         )
     })
     .await?;
 
+    // Story 35-5a0 — la date du jour ne sert plus qu'à l'échéance de la réponse
+    // (`from_parts`) : depuis la Story 63-1, ni le bloqueur ni la
+    // contre-passation ne la lisent (datés du règlement).
+    let aujourd_hui = state.horloge.aujourd_hui();
     // Story 33-6 (#450) — cf. `settle_invoice_handler` : aucune relecture.
     Ok(Json(CancelSettlementResponse {
         invoice: InvoiceResponse::from_parts(done.invoice, done.lines, aujourd_hui)

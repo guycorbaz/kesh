@@ -294,7 +294,6 @@ async fn cancel_batch_unlocks_invoices(pool: MySqlPool) {
         },
         d(2026, 7, 2),
         ctx.seeded.admin_user_id,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap_err();
@@ -321,7 +320,6 @@ async fn cancel_batch_unlocks_invoices(pool: MySqlPool) {
         },
         d(2026, 7, 2),
         ctx.seeded.admin_user_id,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -455,7 +453,6 @@ async fn cancelling_a_batch_paid_settlement_leaves_the_batch_alone(pool: MySqlPo
         ctx.seeded.company_id,
         inv,
         kesh_db::entities::audit_log::Acteur::utilisateur(ctx.seeded.admin_user_id),
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation");
@@ -529,7 +526,6 @@ async fn last_confirmed_batch_is_historical_and_most_recent(pool: MySqlPool) {
         c,
         inv,
         kesh_db::entities::audit_log::Acteur::utilisateur(u),
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -542,7 +538,6 @@ async fn last_confirmed_batch_is_historical_and_most_recent(pool: MySqlPool) {
         },
         d(2026, 7, 5),
         u,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("règlement direct");
@@ -556,7 +551,6 @@ async fn last_confirmed_batch_is_historical_and_most_recent(pool: MySqlPool) {
         c,
         inv,
         kesh_db::entities::audit_log::Acteur::utilisateur(u),
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -1354,7 +1348,6 @@ async fn lock_for_bank_settlement_refuses_each_case(pool: MySqlPool) {
         },
         d(2026, 6, 20),
         ctx.seeded.admin_user_id,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();

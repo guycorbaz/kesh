@@ -2367,9 +2367,10 @@ async fn s631_ac4_un_paiement_fournisseur_se_contre_passe_dans_son_exercice(pool
         "datée du paiement, dans 2025"
     );
     assert_eq!(ctx.ecritures_de(fy_2026).await, dans_2026, "rien dans 2026");
-    assert_eq!(b["status"], json!("open"), "{b}");
-    assert_eq!(b["settlementJournalEntryId"], json!(null), "{b}");
-    assert_eq!(b["paidAt"], json!(null), "{b}");
+    assert_eq!(b["reversalJournalEntryId"], json!(inverse), "{b}");
+    assert_eq!(b["invoice"]["status"], json!("open"), "{b}");
+    assert_eq!(b["invoice"]["settlementJournalEntryId"], json!(null), "{b}");
+    assert_eq!(b["invoice"]["paidAt"], json!(null), "{b}");
     assert_eq!(
         ctx.audit_contre_passation(reglement).await,
         json!({ "reversalJournalEntryId": inverse, "dating": "originDate" })

@@ -563,6 +563,12 @@ pub async fn echeances(
 /// 25-3-a-2). ⚠️ Un calcul de motifs par règlement : quelques petites requêtes,
 /// bornées par le nombre de règlements d'**une** facture. Garde :
 /// `reglements_lisent_dans_une_transaction` (`mod tests` ci-dessous).
+///
+/// ⛔ **Lire comme on écrit** (Story 63-1, #1752, D2) : les motifs se lisent
+/// sous la datation du geste, `OriginDate` — l'annulation depuis la fiche est
+/// datée du règlement. Le rang `PeriodLocked` (règlement sous la borne du
+/// verrou) s'annonce ici ; le rang 5 (« aucun exercice ouvert au jour ») n'y est
+/// plus produit. Le service ne lit donc plus la date du jour.
 pub async fn reglements(
     acces: &ContexteAcces,
     lecture: &Lecture,
@@ -578,16 +584,14 @@ pub async fn reglements(
     // ⛔ Une transaction de lecture, pour un seul instantané.
     let mut tx = lecture.pool().begin().await.map_err(map_db_error)?;
     let liste = invoice_settlements::list_for_invoice(&mut *tx, company.id, id).await?;
-    // Story 35-5a0 — la date du jour, lue une fois sur l'horloge de la poignée.
-    let aujourd_hui = lecture.aujourd_hui();
     let mut out = Vec::with_capacity(liste.len());
     for reglement in liste {
         let motif = invoice_settlements_write::settlement_cancel_blocker(
             &mut tx,
             company.id,
             reglement.id,
-            // L'annulation depuis la fiche est datée du jour (Q3, Story 53-6a).
-            kesh_db::repositories::journal_entries::CancellationDating::Today(aujourd_hui),
+            // L'annulation depuis la fiche est datée du règlement (Story 63-1).
+            kesh_db::repositories::journal_entries::CancellationDating::OriginDate,
         )
         .await?;
         out.push(ReglementFacture { reglement, motif });

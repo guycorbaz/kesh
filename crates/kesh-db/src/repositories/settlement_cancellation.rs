@@ -50,7 +50,9 @@ pub type SettlementCancelHit = (SettlementCancelBlocker, Option<i64>, Option<Str
 ///
 /// ⚠️ **Le verrou de période** (24-4c) dépend de la **datation** (Story 53-6a,
 /// #1674, D5) :
-/// - sous [`CancellationDating::OriginDate`] (le dé-rapprochement), la
+/// - sous [`CancellationDating::OriginDate`] (le dé-rapprochement, et depuis la
+///   Story 63-1 — #1752, #1753, #1754 — les gestes depuis la fiche : règlement,
+///   solde, paiement et facture fournisseur), la
 ///   contre-passation est datée de l'écriture examinée : une écriture **sous la
 ///   borne** (seuil inclusif) est refusée — rang `PeriodLocked`, à la place du
 ///   rang 5, qui y est inatteignable (l'exercice de l'écriture, ouvert au rang
@@ -62,10 +64,13 @@ pub type SettlementCancelHit = (SettlementCancelBlocker, Option<i64>, Option<Str
 ///   l'écriture, elle peut entrer dans une période dont le verrou est posé dans
 ///   le même instant — la tolérance de toute saisie antidatée, sans remède
 ///   attendu (revue P1, L13) ;
-/// - sous [`CancellationDating::Today`] (les gestes depuis la fiche), il n'est
-///   **pas** évalué — limite assumée : il se contrôle au clic (`PERIOD_LOCKED`,
-///   400). Une borne ne peut pas être future ; seule une borne égale au jour
-///   l'atteindrait.
+/// - sous [`CancellationDating::Today`], il n'est **pas** évalué — limite
+///   assumée : il se contrôle au clic (`PERIOD_LOCKED`, 400). Une borne ne peut
+///   pas être future ; seule une borne égale au jour l'atteindrait.
+///   ⚠️ **Inatteignable en production depuis la Story 63-1** (D7) : plus aucun
+///   lecteur ni geste d'annulation ne passe `Today` à cette queue ; le bras et
+///   le rang 5 restent pour l'exhaustivité des `match` et les tests de
+///   précédence, leur retrait est l'issue #1759.
 ///
 /// ⚠️ **Angle mort assumé — l'exercice de la contre-passation suivi d'un
 /// exercice clos** (Story 15-12b, #543, C120 ; rang tracé par l'issue
@@ -103,9 +108,9 @@ pub type SettlementCancelHit = (SettlementCancelBlocker, Option<i64>, Option<Str
 /// est inchangé.
 ///
 /// `dating` (Story 53-6a, #1674) : la datation que la contre-passation recevra
-/// **aussi** — `Today(jour)`, lu une fois sur l'horloge de la requête (Story
-/// 35-5a0 : le rang 5 juge l'exercice du jour même où elle serait datée), ou
-/// `OriginDate` (rang `PeriodLocked`, ci-dessus).
+/// **aussi** — `OriginDate` (rang `PeriodLocked`, ci-dessus), seule employée en
+/// production depuis la Story 63-1, ou `Today(jour)` (Story 35-5a0 : le rang 5
+/// juge l'exercice du jour même où elle serait datée ; tests seulement, #1759).
 ///
 /// Écriture introuvable (ou d'une autre société) → [`DbError::NotFound`].
 pub async fn settlement_entry_cancel_blocker(
@@ -234,6 +239,8 @@ pub async fn settlement_entry_cancel_blocker(
         // Rang 5 — l'exercice où la contre-passation serait DATÉE : le jour,
         // comme dans le socle (la date reçue, Story 35-5a0). Inatteignable sous
         // `OriginDate` : l'exercice de l'écriture, ouvert, couvre sa date.
+        // ⚠️ Inatteignable en production depuis la Story 63-1 (D7) : aucun
+        // appelant ne passe plus `Today` ; gardé pour les tests (#1759).
         CancellationDating::Today(aujourd_hui) => {
             if !fiscal_years::has_open_covering_date(&mut *conn, company_id, aujourd_hui).await? {
                 return Ok(Some((

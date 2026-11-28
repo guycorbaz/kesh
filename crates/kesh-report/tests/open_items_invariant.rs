@@ -129,15 +129,9 @@ async fn open_items_balance_matches_the_ledger_and_the_trial_balance(pool: MySql
     let annulee =
         facture_fournisseur(&pool, s, &a, dec!(45.00), jours_avant(100), Some("FF-2")).await;
     payer(&pool, s, &a, annulee, jours_avant(90)).await;
-    supplier_invoices::cancel(
-        &pool,
-        company,
-        annulee,
-        s.admin_user_id,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect("annulation de la facture payée");
+    supplier_invoices::cancel(&pool, company, annulee, s.admin_user_id)
+        .await
+        .expect("annulation de la facture payée");
 
     // Écritures manuelles sur la créance : une non lettrée en 2024, une paire
     // lettrée en 2025-2030, une contre-passée.

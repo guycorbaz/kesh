@@ -106,7 +106,8 @@ pub struct SupplierInvoiceResponse {
     pub settlement_cancellable: Option<bool>,
     /// Code du motif qui empêche l'annulation, quand il y en a un.
     pub settlement_cancel_blocked_by: Option<&'static str>,
-    /// Le numéro du compte archivé, quand c'est le motif.
+    /// Le numéro du compte archivé, ou la borne du verrou (`AAAA-MM-JJ`) pour
+    /// `PERIOD_LOCKED` (Story 63-1), quand c'est le motif.
     pub settlement_cancel_blocked_label: Option<String>,
     /// Le lot de paiement **confirmé le plus récent** qui contient la facture.
     ///
@@ -124,7 +125,8 @@ pub struct SupplierInvoiceResponse {
     pub cancellable: Option<bool>,
     /// Code du motif qui empêche l'annulation de la facture.
     pub cancel_blocked_by: Option<&'static str>,
-    /// Le numéro du compte archivé, quand c'est le motif.
+    /// Le numéro du compte archivé, ou la borne du verrou (`AAAA-MM-JJ`) pour
+    /// `PERIOD_LOCKED` (Story 63-1), quand c'est le motif.
     pub cancel_blocked_label: Option<String>,
     /// Story 30-2c (AC18) — le document de la facture, à **trois états** :
     /// - champ **absent** (`None`) : non calculé ici — réponses de
@@ -795,17 +797,8 @@ pub async fn update_supplier_invoice(
     Json(req): Json<UpdateSupplierInvoiceRequest>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    // Story 35-5a0 — la date du jour, lue une fois pour toute la requête.
-    let aujourd_hui = state.horloge.aujourd_hui();
     let view = crate::retry::retry_app_on_deadlock("supplier_invoices::update", || {
-        update_supplier_invoice_once(
-            &state.pool,
-            current_user.user_id,
-            company.id,
-            id,
-            &req,
-            aujourd_hui,
-        )
+        update_supplier_invoice_once(&state.pool, current_user.user_id, company.id, id, &req)
     })
     .await?;
     Ok(Json(SupplierInvoiceResponse::from_view(view)))
@@ -823,7 +816,6 @@ async fn update_supplier_invoice_once(
     company_id: i64,
     id: i64,
     req: &UpdateSupplierInvoiceRequest,
-    aujourd_hui: chrono::NaiveDate,
 ) -> Result<supplier_invoices::SupplierInvoiceSettlementView, AppError> {
     use kesh_db::errors::map_db_error;
     use kesh_db::repositories::imported_supplier_invoices;
@@ -874,8 +866,7 @@ async fn update_supplier_invoice_once(
         Ok::<(), AppError>(())
     }
     .await;
-    let (view, ()) =
-        supplier_invoices::commit_with_view(tx, company_id, result, |_| id, aujourd_hui).await?;
+    let (view, ()) = supplier_invoices::commit_with_view(tx, company_id, result, |_| id).await?;
     Ok(view)
 }
 
@@ -916,8 +907,6 @@ pub async fn validate_supplier_invoice(
     Json(req): Json<SupplierInvoiceVersionRequest>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    // Story 35-5a0 — la date du jour, lue une fois (bloqueurs de la vue).
-    let aujourd_hui = state.horloge.aujourd_hui();
     let view = kesh_db::retry::retry_on_deadlock("supplier_invoices::validate", || {
         supplier_invoices::validate(
             &state.pool,
@@ -925,7 +914,6 @@ pub async fn validate_supplier_invoice(
             id,
             req.version,
             current_user.user_id,
-            aujourd_hui,
         )
     })
     .await?;
@@ -952,8 +940,6 @@ pub async fn unvalidate_supplier_invoice(
     Json(req): Json<SupplierInvoiceVersionRequest>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    // Story 35-5a0 — la date du jour, lue une fois (bloqueurs de la vue).
-    let aujourd_hui = state.horloge.aujourd_hui();
     // Story 48-12a (#975, D6bis) : une annulée qui ferait doublon se repasse en
     // brouillon par `confirmNotDuplicate: true`, inscrit au journal d'audit
     // (table : `DuplicateRule::lifted_by_confirmation`).
@@ -966,7 +952,6 @@ pub async fn unvalidate_supplier_invoice(
             req.version,
             // Story 35-8a1 (#892 item 11) : la clé d'API, quand il y en a une.
             Acteur::from(&current_user),
-            aujourd_hui,
             policy,
         )
     })
@@ -988,8 +973,6 @@ pub async fn pay_supplier_invoice(
     borner(req.payment_date, "paymentDate")?;
     let company = get_company_for(&current_user, &state.pool).await?;
     let (choice, payment_date) = req.into_choice()?;
-    // Story 35-5a0 — la date du jour, lue une fois (bloqueurs de la vue).
-    let aujourd_hui = state.horloge.aujourd_hui();
     let view = kesh_db::retry::retry_on_deadlock("supplier_invoices::pay", || {
         supplier_invoices::pay(
             &state.pool,
@@ -998,7 +981,6 @@ pub async fn pay_supplier_invoice(
             choice,
             payment_date,
             current_user.user_id,
-            aujourd_hui,
         )
     })
     .await?;
@@ -1007,8 +989,10 @@ pub async fn pay_supplier_invoice(
 
 /// `POST /api/v1/supplier-invoices/{id}/cancel` — annule une facture
 /// fournisseur, **ouverte ou payée** (Comptable+, Story 25-3-c, #454) :
-/// contre-passe l'écriture d'achat par le socle ; payée, son règlement reste au
-/// grand livre, détaché. La réponse porte ses champs de lecture, dans un seul
+/// contre-passe l'écriture d'achat par le socle, **datée de l'achat, dans son
+/// exercice** (Story 63-1, #1754) ; payée, son règlement reste au grand livre,
+/// détaché, à sa date. Un achat sous la borne du verrou est refusé par le socle
+/// (`400 PERIOD_LOCKED`). La réponse porte ses champs de lecture, dans un seul
 /// instantané : celui de la transaction d'écriture, lu avant le commit (Story
 /// 34-8, #938).
 ///
@@ -1020,17 +1004,8 @@ pub async fn cancel_supplier_invoice(
     Path(id): Path<i64>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    // Story 35-5a0 — la date du jour, lue une fois : bloqueur et
-    // contre-passation la partagent, rejeux compris.
-    let aujourd_hui = state.horloge.aujourd_hui();
     let view = kesh_db::retry::retry_on_deadlock("supplier_invoices::cancel", || {
-        supplier_invoices::cancel(
-            &state.pool,
-            company.id,
-            id,
-            current_user.user_id,
-            aujourd_hui,
-        )
+        supplier_invoices::cancel(&state.pool, company.id, id, current_user.user_id)
     })
     .await?;
     Ok(Json(SupplierInvoiceResponse::from_view(view)))
@@ -1047,9 +1022,11 @@ pub struct CancelSupplierSettlementResponse {
 }
 
 /// `POST /api/v1/supplier-invoices/{id}/settlement/cancel` — annule le
-/// règlement d'une facture `paid` par contre-passation datée du jour et la
-/// ramène à `open` (Comptable+, Story 25-3-a-2, #414). Le lot de paiement
-/// confirmé qui l'a éventuellement réglée n'est pas modifié.
+/// règlement d'une facture `paid` par contre-passation **datée du paiement,
+/// dans son exercice** (Story 63-1, #1753) et la ramène à `open` (Comptable+,
+/// Story 25-3-a-2, #414). Un paiement sous la borne du verrou est refusé par le
+/// socle (`400 PERIOD_LOCKED`). Le lot de paiement confirmé qui l'a
+/// éventuellement réglée n'est pas modifié.
 ///
 /// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe `DbError`
 /// [`kesh_db::retry::retry_on_deadlock`].
@@ -1059,14 +1036,11 @@ pub async fn cancel_supplier_invoice_settlement(
     Path(id): Path<i64>,
 ) -> Result<Json<CancelSupplierSettlementResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    // Story 35-5a0 — la date du jour, lue une fois : bloqueur et
-    // contre-passation la partagent, rejeux compris.
-    let aujourd_hui = state.horloge.aujourd_hui();
     // Story 36-4 (#1131) : l'acteur de la requête, clé d'API comprise — tiré
     // une fois, hors de la fermeture de rejeu (`Acteur` est `Copy`).
     let acteur = Acteur::from(&current_user);
     let done = kesh_db::retry::retry_on_deadlock("supplier_invoices::cancel_settlement", || {
-        supplier_invoices::cancel_settlement(&state.pool, company.id, id, acteur, aujourd_hui)
+        supplier_invoices::cancel_settlement(&state.pool, company.id, id, acteur)
     })
     .await?;
     Ok(Json(CancelSupplierSettlementResponse {

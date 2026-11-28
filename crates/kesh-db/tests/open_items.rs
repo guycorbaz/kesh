@@ -905,7 +905,6 @@ async fn as_of_under_the_lock_is_stable_until_an_admin_unlocks(pool: MySqlPool) 
         m.company(),
         inv,
         sid,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("annulation refusée sous la borne");
@@ -942,7 +941,6 @@ async fn as_of_under_the_lock_is_stable_until_an_admin_unlocks(pool: MySqlPool) 
         m.company(),
         inv,
         sid,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation après déverrouillage");

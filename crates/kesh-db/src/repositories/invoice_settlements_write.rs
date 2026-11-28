@@ -870,7 +870,9 @@ pub async fn write_off_invoice(
 /// bouton qui échoue.
 ///
 /// `dating` (Story 53-6a) : celle que la contre-passation recevra —
-/// `Today(jour)` depuis la fiche, `OriginDate` pour le dé-rapprochement.
+/// `OriginDate` depuis la fiche ([`cancel_settlement`], Story 63-1, #1752) comme
+/// pour le dé-rapprochement ; `Today(jour)` n'est plus passé que par les tests
+/// de la queue (#1759).
 ///
 /// Règlement introuvable (ou d'une autre société) → [`DbError::NotFound`].
 pub async fn settlement_cancel_blocker(
@@ -986,8 +988,9 @@ pub(crate) async fn delete_grouped_settlements_in_tx(
 /// Ce que rend une annulation de règlement.
 #[derive(Debug, Clone)]
 pub struct SettlementCancellation {
-    /// L'écriture inverse, datée selon la datation reçue (le jour depuis la
-    /// fiche, l'écriture de règlement pour le dé-rapprochement — Story 53-6a).
+    /// L'écriture inverse, datée selon la datation reçue — en production,
+    /// toujours de l'écriture de règlement, depuis la fiche (Story 63-1) comme
+    /// pour le dé-rapprochement (Story 53-6a).
     pub reversal_journal_entry_id: i64,
     /// Le reste dû après l'annulation.
     pub amount_due_after: Decimal,
@@ -997,8 +1000,9 @@ pub struct SettlementCancellation {
 /// ni `COMMIT` (Story 25-3-a-1, #414).
 ///
 /// Contre-passe l'écriture de règlement — datée selon `dating` (Story 53-6a,
-/// #1674) : `Today(jour)` depuis la fiche ([`cancel_settlement`]),
-/// `OriginDate` pour le dé-rapprochement —, **retire** la ligne
+/// #1674) : `OriginDate` depuis la fiche ([`cancel_settlement`], Story 63-1,
+/// #1752) comme pour le dé-rapprochement ; `Today(jour)` ne sert plus qu'aux
+/// tests de la queue (#1759) —, **retire** la ligne
 /// `invoice_settlements` (arbitrage : retirée, non marquée annulée — le
 /// résiduel se calcule depuis cette table), projette `paid_at` et journalise.
 ///
@@ -1230,7 +1234,8 @@ pub async fn cancel_settlement_in_tx(
 /// #450).
 #[derive(Debug, Clone)]
 pub struct CancelledSettlement {
-    /// L'écriture inverse, datée du jour.
+    /// L'écriture inverse, datée du règlement (ou du solde), dans son exercice
+    /// (Story 63-1, #1752).
     pub reversal_journal_entry_id: i64,
     /// Le reste dû après l'annulation.
     pub amount_due_after: Decimal,
@@ -1239,11 +1244,20 @@ pub struct CancelledSettlement {
     pub amount_settled: Decimal,
 }
 
-/// Annule un règlement client, transaction comprise — enveloppe de
+/// Annule un règlement client (ou un solde), transaction comprise — enveloppe de
 /// [`cancel_settlement_in_tx`], qui relit la facture avant le commit.
 ///
 /// La lecture vit ici, non dans la forme `_in_tx` : le dé-rapprochement réemploie
 /// celle-ci et n'a pas besoin de la facture (C-e334-9).
+///
+/// ⚠️ **Datée de l'écriture d'origine** (Story 63-1, #1752, D1) : la
+/// contre-passation prend la date du règlement — ou du solde, sa correction de
+/// TVA comprise —, dans son exercice ([`CancellationDating::OriginDate`]), et non
+/// le jour : datée du jour, une annulation faite après la fin de l'exercice du
+/// règlement faussait deux exercices. Une écriture sous la borne du verrou est
+/// refusée par le socle (`DbError::PeriodLocked`, 400) ; la fiche l'annonce
+/// d'avance ([`settlement_cancel_blocker`] sous la même datation). Aucune date du
+/// jour n'est donc reçue.
 ///
 /// `acteur` : l'auteur du geste, clé d'API comprise (Story 36-4, #1131).
 pub async fn cancel_settlement(
@@ -1252,7 +1266,6 @@ pub async fn cancel_settlement(
     company_id: i64,
     invoice_id: i64,
     settlement_id: i64,
-    aujourd_hui: NaiveDate,
 ) -> Result<CancelledSettlement, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     let done = async {
@@ -1262,9 +1275,7 @@ pub async fn cancel_settlement(
             invoice_id,
             settlement_id,
             acteur,
-            // Depuis la fiche : datée du jour, inchangé (Q3 du Project Lead du
-            // 2026-11-27 ; la datation de ce geste relève d'une issue à part).
-            CancellationDating::Today(aujourd_hui),
+            CancellationDating::OriginDate,
         )
         .await?;
         let (invoice, lines, amount_settled) =

@@ -786,7 +786,9 @@ pub enum SettlementCancelBlocker {
     /// Un compte de l'écriture de règlement a été archivé depuis.
     AccountArchived,
     /// Story 53-6a (#1674, D5) — **sous la datation `OriginDate` seulement**
-    /// (le dé-rapprochement) : l'écriture examinée est datée **au plus tard**
+    /// (le dé-rapprochement, et depuis la Story 63-1 les annulations depuis la
+    /// fiche : règlement, solde, paiement et facture fournisseur) : l'écriture
+    /// examinée est datée **au plus tard**
     /// de la borne du verrou de période (`companies.books_locked_through`,
     /// seuil inclusif), et sa contre-passation, datée d'elle, serait refusée
     /// par le socle. La borne voyage en étiquette
@@ -798,8 +800,11 @@ pub enum SettlementCancelBlocker {
     /// même état du monde.
     PeriodLocked,
     /// Aucun exercice **ouvert** ne couvre le jour, où la contre-passation
-    /// serait datée — sous la datation `Today` (gestes depuis la fiche) ;
-    /// inatteignable sous `OriginDate`.
+    /// serait datée — sous la datation `Today` seulement ; inatteignable sous
+    /// `OriginDate`. ⚠️ **Inatteignable en production depuis la Story 63-1**
+    /// (D7) : plus aucune annulation ne passe `Today` à la queue ; la variante
+    /// reste pour l'exhaustivité des `match` et les tests de précédence (retrait :
+    /// issue #1759).
     NoOpenFiscalYearToday,
     /// Annulation d'une facture fournisseur (Story 25-3-c), **dernier** rang :
     /// la facture est engagée dans un lot de paiement `generated`. Dernier

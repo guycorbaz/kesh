@@ -696,7 +696,6 @@ async fn a_settlement_cannot_be_cancelled_while_a_write_off_exists(pool: MySqlPo
         seeded.company_id,
         inv,
         settlement,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap_err();
@@ -738,7 +737,6 @@ async fn a_settlement_cannot_be_cancelled_while_a_write_off_exists(pool: MySqlPo
         seeded.company_id,
         inv,
         write_off_id,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation du solde");
@@ -764,7 +762,6 @@ async fn a_settlement_cannot_be_cancelled_while_a_write_off_exists(pool: MySqlPo
         seeded.company_id,
         inv,
         settlement,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation du règlement");
@@ -2004,7 +2001,6 @@ async fn write_off_cancel_and_rank_1_bis_under_a_frozen_lettering(pool: MySqlPoo
                 company_id,
                 inv,
                 sid,
-                crate::jour::aujourd_hui_test(),
             )
             .await
             .expect_err("refusée")

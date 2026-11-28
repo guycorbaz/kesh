@@ -155,15 +155,9 @@ async fn annulee(
     )
     .await
     .expect("validée");
-    let x = supplier_invoices::cancel(
-        pool,
-        seeded.company_id,
-        v.invoice.id,
-        seeded.admin_user_id,
-        crate::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect("annulée");
+    let x = supplier_invoices::cancel(pool, seeded.company_id, v.invoice.id, seeded.admin_user_id)
+        .await
+        .expect("annulée");
     (x.invoice.id, x.invoice.version)
 }
 
@@ -174,16 +168,8 @@ async fn repasser(
     acteur: Acteur,
     policy: DuplicatePolicy,
 ) -> Result<supplier_invoices::SupplierInvoiceSettlementView, DbError> {
-    supplier_invoices::unvalidate_with_policy(
-        pool,
-        seeded.company_id,
-        id,
-        version,
-        acteur,
-        crate::jour::aujourd_hui_test(),
-        policy,
-    )
-    .await
+    supplier_invoices::unvalidate_with_policy(pool, seeded.company_id, id, version, acteur, policy)
+        .await
 }
 
 async fn statut(pool: &MySqlPool, id: i64) -> String {

@@ -203,7 +203,9 @@ pub async fn detail(
     let company =
         crate::helpers::company_for_ids(lecture.pool(), acces.company_id(), acces.user_id())
             .await?;
-    supplier_invoices::get_settlement_view(lecture.pool(), company.id, id, lecture.aujourd_hui())
+    // Story 63-1 (D3) : la vue juge l'annulation à la date de l'origine, sans
+    // lire le jour.
+    supplier_invoices::get_settlement_view(lecture.pool(), company.id, id)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))
 }

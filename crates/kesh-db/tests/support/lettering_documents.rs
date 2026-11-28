@@ -459,7 +459,6 @@ pub async fn seed_lettering_documents(pool: &MySqlPool) -> Fixture {
         seeded.company_id,
         inv,
         sid,
-        jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation");
@@ -887,20 +886,12 @@ pub async fn payer_par(
     choix: SettlementChoice,
     le: NaiveDate,
 ) -> i64 {
-    supplier_invoices::pay(
-        pool,
-        seeded.company_id,
-        id,
-        choix,
-        le,
-        seeded.admin_user_id,
-        jour::aujourd_hui_test(),
-    )
-    .await
-    .expect("paiement fournisseur")
-    .invoice
-    .settlement_journal_entry_id
-    .expect("écriture de règlement")
+    supplier_invoices::pay(pool, seeded.company_id, id, choix, le, seeded.admin_user_id)
+        .await
+        .expect("paiement fournisseur")
+        .invoice
+        .settlement_journal_entry_id
+        .expect("écriture de règlement")
 }
 
 /// Paie par virement depuis le compte bancaire des [`Achats`].

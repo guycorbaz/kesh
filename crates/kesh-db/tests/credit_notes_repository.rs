@@ -582,7 +582,6 @@ async fn credit_note_accepted_after_the_settlement_is_cancelled(pool: MySqlPool)
         seeded.company_id,
         invoice_id,
         sid,
-        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation du règlement");

@@ -851,15 +851,9 @@ async fn forecast_equals_delete_over_http(pool: MySqlPool) {
         Some("FF-12"),
     )
     .await;
-    supplier_invoices::cancel(
-        &pool,
-        s.company_id,
-        si,
-        s.admin_user_id,
-        crate::common::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect("annulation");
+    supplier_invoices::cancel(&pool, s.company_id, si, s.admin_user_id)
+        .await
+        .expect("annulation");
     let possedee = cle_de_ligne(&pool, achat(&pool, si).await, achats.payable).await;
     // La même, sans numéro de facture (revue P1, E LOW-3) : message sans suffixe.
     let si_sans = facture_fournisseur(&pool, s, &achats, dec!(30.00), jours_avant(80), None).await;
@@ -869,15 +863,9 @@ async fn forecast_equals_delete_over_http(pool: MySqlPool) {
         .execute(&pool)
         .await
         .unwrap();
-    supplier_invoices::cancel(
-        &pool,
-        s.company_id,
-        si_sans,
-        s.admin_user_id,
-        crate::common::jour::aujourd_hui_test(),
-    )
-    .await
-    .expect("annulation");
+    supplier_invoices::cancel(&pool, s.company_id, si_sans, s.admin_user_id)
+        .await
+        .expect("annulation");
     let possedee_sans = cle_de_ligne(&pool, achat(&pool, si_sans).await, achats.payable).await;
     // Paire `reversal` libre : règlement client annulé.
     let inv2 = facture(&pool, s, dec!(40.00), jours_avant(70)).await;
@@ -888,7 +876,6 @@ async fn forecast_equals_delete_over_http(pool: MySqlPool) {
         s.company_id,
         inv2,
         sid,
-        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation du règlement");

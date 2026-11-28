@@ -458,7 +458,6 @@ async fn cancelled_settlement_leaves_the_aggregates(pool: MySqlPool) {
         seeded.company_id,
         inv,
         settlement_id,
-        jour,
     )
     .await
     .expect("annulation du règlement");
