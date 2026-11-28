@@ -1,6 +1,6 @@
 # Story 64-1 : Corrections de la v0.20.1 — taux de TVA, page de modification d'une facture, mode d'interface (#1178, #1758, #1712)
 
-Status: review
+Status: done
 
 <!-- Fiche écrite par bmad-create-story le 2026-11-27 (Sonnet 5.5). Validation P1 (Opus) faite et remédiée le 2026-11-27 (0 CRITICAL, 0 HIGH, 6 MEDIUM, 10 LOW) ; P2 (Sonnet) faite et remédiée le 2026-11-27 (0/0/2/7) ; #1178 réduite au bug signalé par décision du Project Lead du 2026-11-27 (le reste à #1763) ; P3 (Opus) faite le 2026-11-27 (0/0/0/4, LOW corrigés) : statut `ready-for-dev` confirmé. -->
 
@@ -212,3 +212,7 @@ Commit `db9f5c37c`, tête de départ `e2c287b3e`. Règle des LOW du 2026-11-27 :
 - **Captures 10 et 11** relues : quatre options au catalogue, « 8,10 % — Taux normal » une fois ; liste fournisseur, « 8.10% » une fois. Conforme à la légende du journal.
 - **Gates** : vitest des quatre fichiers touchés, 214 tests verts avant la mutation (`flock .gate-front.lock`).
 - 2026-11-27 — **LOW de la P3 réglés par l'orchestrateur** (règle des LOW du 2026-11-27, vérifiés par `grep`, sans passe de plus : aucun comportement changé) : P3-L1, doc-comment de `distinctVatRates` complété (à `id` égal ou absent, le premier reçu reste, ce que fait `prefer` en rendant faux) ; P3-L2, indentation du `.map` du catalogue (`git diff -w` vide) ; P3-L3 (`VatPurchaseAssistant`, hors diff, aucun plantage, clé `r.id`) et l'observation « 0% » / « 0.00% » de la facture fournisseur → issues P4.
+
+## Clôture (2026-11-28)
+
+Boucle de revue close : P1 Opus 0/0/2/8 → P2 Sonnet 0/0/0/5 → P3 Haiku ciblée 0/0/0/3 (P3-L1 et P3-L2 réglés par l'orchestrateur, `21bd7bd76` ; P3-L3 → #1764 ; observation « 0% » / « 0.00% » → #1765). Gates de clôture : `test-fast` 6990 tests et `gate-ci` code 0 sur idefix à `21bd7bd76` (dernier commit Rust) ; garde des libellés en dur recomptée à `790f1508f` (172 candidates, `conforme` 150 : `hasOwnLabel`), puis frontend complet sur la station (check, lint i18n, 5834 tests, build ; `$GATE_LOGS/e64/cloture-front/`) et E2E complet sur idefix, frontend reconstruit : 562 passés, 20 ignorés, 7 échecs, exactement ceux de la KF-029 (`$GATE_LOGS/idefix/20261128-042520-story_64-1-corrections-0201-e2e/`). Un premier E2E (46 échecs) est écarté : il avait servi le build d'une autre branche (défaut du script d'idefix, corrigé). Périmètre : huit modules au lieu de cinq, par propagation d'un même symptôme (doublons de taux) ; défauts neufs, non recyclés ; déclaré au Project Lead le 2026-11-27, story gardée entière.
