@@ -865,13 +865,17 @@ propose cette veille --- la veille du jour de Zurich, quel que soit le fuseau de
 \textbf{Une exception}~: l'annulation d'un règlement (ou d'un paiement) dont le
 \textbf{lettrage} s'est figé avec la période est refusée --- elle défairait un lettrage de la
 période verrouillée~; le verrou doit reculer pour la permettre (ci-dessus).
-\textbf{Une seconde}, depuis la version~0.21.0~: l'\textbf{annulation d'un rapprochement}
-contre-passe l'écriture \textbf{à sa propre date}, non au jour, pour ne jamais fausser deux
-exercices (\S\ref{sec:annuler-rapprochement})~; une écriture rapprochée dans la période
-verrouillée ne se défait donc pas sans faire reculer le verrou. La contre-passation depuis la
-fiche d'une écriture \textbf{non rapprochée} reste datée du jour et passe~; celle d'une écriture
-rapprochée est refusée par la contre-passation directe, qui renvoie à l'annulation du
-rapprochement.
+\textbf{Une seconde}, depuis la version~0.21.0~: l'\textbf{annulation d'un rapprochement}, et les
+annulations faites depuis la fiche d'une pièce --- \textbf{règlement} ou \textbf{solde} d'une
+facture, \textbf{paiement} ou \textbf{facture fournisseur} --- contre-passent l'écriture \textbf{à
+sa propre date}, non au jour, pour ne jamais fausser deux exercices
+(\S\ref{sec:annuler-rapprochement}, \S\ref{sec:reglement-client},
+\S\ref{sec:regler-facture-fournisseur}, \S\ref{sec:annuler-facture-fournisseur})~; une telle écriture dans la période
+verrouillée ne s'annule donc pas sans faire reculer le verrou --- la fiche le dit avant le clic.
+C'est notamment le cas d'une facture fournisseur d'un trimestre TVA déjà verrouillé. La
+contre-passation depuis la fiche d'une écriture \textbf{non possédée} et non rapprochée reste
+datée du jour et passe~; celle d'une écriture rapprochée est refusée par la contre-passation
+directe, qui renvoie à l'annulation du rapprochement.
 \end{keshwarning}
 
 Le verrou et la clôture d'exercice sont \textbf{indépendants}~: clôturer ne touche pas la borne,
@@ -893,9 +897,10 @@ exigent --- non pas qu'on ne se trompe jamais, mais que \textbf{la correction so
 apparente}.
 
 \begin{keshnote}[title={La date du jour est celle de Zurich, même la nuit}]\label{sec:date-du-jour}
-Ce que Kesh date \textbf{du jour} --- la contre-passation et les annulations qui contre-passent
-(règlement, facture fournisseur ; l'annulation d'un rapprochement, elle, se date de l'écriture
-depuis la version~0.21.0, \S\ref{sec:annuler-rapprochement}), le solde d'ouverture d'un compte bancaire et
+Ce que Kesh date \textbf{du jour} --- la contre-passation d'une écriture depuis sa fiche (les
+annulations d'un rapprochement, d'un règlement, d'un solde, d'un paiement ou d'une facture
+fournisseur, elles, se datent de l'écriture depuis la version~0.21.0,
+\S\ref{sec:annuler-rapprochement}, \S\ref{sec:reglement-client}), le solde d'ouverture d'un compte bancaire et
 la régularisation des soldes de départ, l'année du premier exercice que l'assistant crée quand
 on ne lui donne pas de dates (son écran, lui, propose l'année de votre poste, \S\ref{sec:premier-exercice}) --- et la borne du verrou de période, que Kesh refuse au jour même, prennent \textbf{la
 date de Zurich}, même entre minuit et une heure du matin (deux heures en été)~: une correction
@@ -1149,7 +1154,7 @@ On rouvre les exercices \textbf{du plus récent vers l'ancien} : si un exercice 
 
 Les exercices se clôturant désormais dans l'ordre, un exercice ouvert ne peut plus précéder un exercice clôturé. Des données plus anciennes --- une installation mise à jour, une sauvegarde restaurée --- peuvent pourtant porter cet état. Kesh le tolère sans le réparer d'office, et l'écran \emph{Exercices comptables} l'affiche dans un \textbf{bandeau d'avertissement}, visible de tous les rôles~: il nomme l'exercice ouvert le plus ancien, l'exercice clôturé qui le suit, et l'exercice clôturé le plus récent.
 
-Tant que l'ordre n'est pas rétabli, \textbf{rien ne s'enregistre} dans l'exercice ouvert concerné~: ni saisie, ni validation ou règlement de facture, ni paiement fournisseur, ni complément des soldes de départ, ni dévalidation, ni modification, ni suppression. Le bilan étant cumulatif, chacune de ces écritures changerait le bilan de l'exercice clôturé qui le suit. Le refus nomme cet exercice. Une contre-passation, datée du jour, n'est refusée que si l'exercice du jour est lui-même suivi d'un exercice clôturé~; une contre-passation au début de l'exercice suivant (\S\ref{sec:transitoires}), que si \textbf{cet} exercice est clôturé ou suivi d'un exercice clôturé~; l'annulation d'un rapprochement, datée de son écriture (\S\ref{sec:annuler-rapprochement}), que si l'exercice \textbf{de l'écriture} est suivi d'un exercice clôturé.
+Tant que l'ordre n'est pas rétabli, \textbf{rien ne s'enregistre} dans l'exercice ouvert concerné~: ni saisie, ni validation ou règlement de facture, ni paiement fournisseur, ni complément des soldes de départ, ni dévalidation, ni modification, ni suppression. Le bilan étant cumulatif, chacune de ces écritures changerait le bilan de l'exercice clôturé qui le suit. Le refus nomme cet exercice. Une contre-passation, datée du jour, n'est refusée que si l'exercice du jour est lui-même suivi d'un exercice clôturé~; une contre-passation au début de l'exercice suivant (\S\ref{sec:transitoires}), que si \textbf{cet} exercice est clôturé ou suivi d'un exercice clôturé~; l'annulation d'un rapprochement, d'un règlement, d'un solde, d'un paiement ou d'une facture fournisseur, datée de son écriture depuis la version~0.21.0 (\S\ref{sec:annuler-rapprochement}, \S\ref{sec:reglement-client}), que si l'exercice \textbf{de l'écriture} est suivi d'un exercice clôturé.
 
 \textbf{Des boutons offerts, puis refusés au clic.} Dans cet état, l'écran ne prévoit pas toujours le refus~: les boutons \emph{Annuler} d'un règlement client, d'un rapprochement bancaire, d'un paiement ou d'une facture fournisseur, et \emph{Contre-passer} sur une écriture, restent affichés --- de même \emph{Contre-passer au début de l'exercice suivant} quand cet exercice, ouvert, est suivi d'un exercice clôturé ---, et le complément des soldes de départ reste proposé. Le clic est alors refusé, avec un message qui nomme l'exercice clôturé~: rien n'a été enregistré. Rétablissez l'ordre ci-dessous, puis recommencez (issue \#568).
 
@@ -1962,15 +1967,20 @@ administrateur désigne alors un compte de passif dans \emph{Administration} →
 ensuite tel quel. Les \emph{frais bancaires} et le \emph{reste d'arrondi}, qui ne corrigent pas la
 TVA, ne sont pas concernés, non plus qu'un reste de quelques centimes dont la part de TVA,
 arrondie au centime, est nulle. Un solde s'\textbf{annule}
-comme un règlement --- bouton \emph{Annuler le solde}, contre-passation datée du jour, TVA
-comprise.
+comme un règlement --- bouton \emph{Annuler le solde}, contre-passation \textbf{datée du solde},
+dans son exercice, TVA comprise (depuis la version~0.21.0~; elle était datée du jour)~: la correction
+de TVA est reprise dans la période même du solde.
 
 \textbf{Annuler.} Un règlement enregistré par erreur ne se supprime pas~: il s'\textbf{annule par
 contre-passation}. Le bouton \emph{Annuler le règlement} de sa ligne (comptable ou
-administrateur) passe une écriture inverse \textbf{datée du jour}, retire le règlement de la
-facture, et le montant redevient dû --- la facture repasse «~validée~» si plus rien ne la solde.
-L'écriture d'origine et sa contre-passation restent toutes deux au grand livre, et le journal
-d'audit nomme le geste.
+administrateur) passe une écriture inverse \textbf{datée du règlement, dans son exercice}, retire
+le règlement de la facture, et le montant redevient dû --- la facture repasse «~validée~» si plus
+rien ne la solde. L'écriture d'origine et sa contre-passation restent toutes deux au grand livre, et
+le journal d'audit nomme le geste. \keshAttention\ Depuis la version~0.21.0, l'écriture inverse
+n'est plus datée du jour~: une annulation faite après la fin de l'exercice du règlement --- rouvert,
+ou pas encore clôturé --- ne passe plus rien dans l'exercice courant. Les totaux de la période du
+règlement changent~; si elle a déjà été déclarée, faites-la d'abord verrouiller~: l'annulation sera
+alors refusée, ce qui protège la déclaration.
 
 Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~:
 
@@ -1995,8 +2005,9 @@ Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~:
           annuler ce rapprochement --- le bouton \emph{Annuler le rapprochement} apparaît à
           côté du motif (\S\ref{sec:annuler-rapprochement})~;
     \item \textbf{un compte du règlement a été archivé}~: réactivez-le (son numéro est indiqué)~;
-    \item \textbf{aucun exercice ouvert ne couvre la date du jour}, où la contre-passation serait
-          datée~: créez-le.
+    \item \textbf{le règlement est dans une période verrouillée} (sa date est au plus tard la
+          borne du verrou, indiquée)~: un administrateur doit faire reculer le verrou avant sa
+          date (\S\ref{sec:verrou-periode}).
 \end{itemize}
 
 \textbf{Lettrage.} Une facture \textbf{soldée} --- par ses règlements, par le solde de son reste
@@ -2487,11 +2498,14 @@ sa correction, ou une correction sans objet. Ici l'achat et sa contre-passation 
 avant la saisie fautive. Votre fiduciaire tranche ce qui vaut pour vos livres.
 
 \begin{keshwarning}
-\textbf{La paire achat et contre-passation n'est nette à zéro qu'au cumul.} L'achat est daté de
-la facture, la contre-passation du jour de l'annulation~: les supprimer change, en sens inverse,
-les totaux de \textbf{deux périodes} --- charge, impôt préalable, \textbf{TVA du trimestre}
-comprise. Si l'une de ces périodes a déjà été déclarée, faites d'abord \textbf{verrouiller} la
-période (\S\ref{sec:verrou-periode})~: le verrou, posé, refuse le geste.
+\textbf{Une facture annulée avant la version~0.21.0~: la paire achat et contre-passation n'est
+nette à zéro qu'au cumul.} L'achat est daté de la facture, la contre-passation de ces annulations
+du jour de l'annulation~: les supprimer change, en sens inverse, les totaux de \textbf{deux
+périodes} --- charge, impôt préalable, \textbf{TVA du trimestre} comprise. Si l'une de ces
+périodes a déjà été déclarée, faites d'abord \textbf{verrouiller} la période
+(\S\ref{sec:verrou-periode})~: le verrou, posé, refuse le geste. Depuis la version~0.21.0, la
+contre-passation est datée de l'achat (\S\ref{sec:annuler-facture-fournisseur})~: la paire est
+nette à zéro dans la période même de l'achat, et sa suppression n'y change rien.
 \end{keshwarning}
 
 \textbf{Une facture payée} affiche aussi le bouton, mais ne repasse pas en brouillon~: le clic
@@ -2617,8 +2631,11 @@ déjà payées avant la mise à jour vers la version 0.13 sont lettrées par la 
 
 \textbf{Annuler le règlement.} Un règlement enregistré par erreur ne se supprime pas~: sur la
 fiche d'une facture payée, \emph{Annuler le règlement} (comptable ou administrateur) passe une
-écriture inverse \textbf{datée du jour} et ramène la facture à \emph{validée}, à payer --- c'est
+écriture inverse \textbf{datée du paiement, dans son exercice} (depuis la version~0.21.0~; elle
+était datée du jour) et ramène la facture à \emph{validée}, à payer --- c'est
 le geste à choisir quand c'est le \textbf{paiement} qui est faux et que vous voulez le refaire.
+Les totaux de la période du paiement changent~; si elle a déjà été déclarée, faites-la d'abord
+verrouiller~: l'annulation sera alors refusée, ce qui protège la déclaration.
 L'écriture d'origine et sa contre-passation restent toutes deux au grand livre, et le journal
 d'audit nomme le geste. Un lien mène de la fiche à l'écriture de règlement. Si c'est la
 \textbf{facture} elle-même qui est à écarter, payée ou non, voyez «~Annuler une facture
@@ -2632,8 +2649,9 @@ jusqu'à celui-ci, en commençant par le plus récent), le \textbf{lettrage} du 
 facture est figé par une période close (un administrateur fait reculer le verrou avant la date
 la plus récente du lettrage et/ou rouvre les exercices clôturés, selon la cause ---
 \S\ref{sec:verrou-periode}), un compte du
-règlement a été \textbf{archivé} (réactivez-le), aucun exercice ouvert ne couvre la date du
-jour (créez-le), ou le paiement est \textbf{rapproché} d'une transaction bancaire --- la
+règlement a été \textbf{archivé} (réactivez-le), le paiement est dans une \textbf{période
+verrouillée} (sa date est au plus tard la borne du verrou, indiquée~: un administrateur fait
+reculer le verrou avant sa date), ou le paiement est \textbf{rapproché} d'une transaction bancaire --- la
 réconciliation l'a réglée (\S\ref{sec:matching-fournisseur})~: annulez d'abord le rapprochement,
 depuis le détail de l'import bancaire (\S\ref{sec:annuler-rapprochement}), qui retire aussi le
 paiement.
@@ -2693,8 +2711,15 @@ pas due --- s'annule depuis sa fiche (depuis la version~0.20.0, Kesh refuse la p
 doublons dès la saisie, \S\ref{sec:doublons-fournisseur}~; un doublon enregistré avant, ou
 confirmé, s'annule toujours ainsi), \textbf{qu'elle soit validée ou déjà payée}~: bouton
 \emph{Annuler la facture} (comptable ou administrateur). Kesh passe une écriture inverse de
-l'achat, \textbf{datée du jour}, liée à l'écriture d'origine~: la charge et l'impôt préalable
-reviennent à zéro, et la facture passe à \emph{annulée}. Le journal d'audit nomme le geste.
+l'achat, \textbf{datée comme lui, dans son exercice}, liée à l'écriture d'origine~: la charge et
+l'impôt préalable reviennent à zéro \textbf{dans la période de l'achat}, et la facture passe à
+\emph{annulée}. Le journal d'audit nomme le geste. \keshAttention\ Depuis la version~0.21.0, cette
+écriture inverse n'est plus datée du jour~: une annulation faite après la fin de l'exercice de
+l'achat ne fausse plus le résultat ni la TVA de deux exercices. Les totaux de la période de l'achat
+changent, TVA comprise~; si elle a déjà été déclarée, faites-la d'abord verrouiller~: l'annulation
+sera alors refusée, ce qui protège la déclaration. Une facture d'un trimestre déjà verrouillé ne
+s'annule donc qu'après que l'administrateur a fait reculer le verrou avant la date de l'achat
+(\S\ref{sec:verrou-periode}).
 
 \textbf{Annuler ou repasser en brouillon~?} Annulez une facture qui \textbf{n'était pas due}~:
 l'achat et sa contre-passation restent aux livres, la correction se voit. Une \textbf{faute de
@@ -2744,8 +2769,9 @@ jusqu'à celui-ci, en commençant par le plus récent), le \textbf{lettrage} de 
 son paiement est figé par une période close (un administrateur fait reculer le verrou avant la
 date la plus récente du lettrage et/ou rouvre les exercices clôturés, selon la cause ---
 \S\ref{sec:verrou-periode}), un compte de l'achat
-a été \textbf{archivé} (réactivez-le), aucun exercice ouvert ne couvre la date du jour
-(créez-le), ou la facture figure dans un \textbf{lot de paiement en cours} (annulez d'abord le
+a été \textbf{archivé} (réactivez-le), l'achat est dans une \textbf{période verrouillée} (sa
+date est au plus tard la borne du verrou, indiquée~: un administrateur fait reculer le verrou
+avant sa date), ou la facture figure dans un \textbf{lot de paiement en cours} (annulez d'abord le
 lot). Une facture annulée ne se \emph{désannule} pas~; si l'annulation était une erreur,
 repassez-la en brouillon (\S\ref{sec:repasser-brouillon}), puis validez-la de nouveau. Depuis
 la version~0.20.0, si une facture équivalente a été saisie entre-temps (le même numéro du
@@ -4746,12 +4772,16 @@ la reprend pas non plus. Le grand livre, lui, est juste dans les deux périodes.
 \textbf{L'alerte n'en dira rien}, et affichera même que tout concorde.
 
 \medskip
-\noindent Le \textbf{solde annulé} suit le même chemin. Annuler un escompte ou une perte retire
-sa diminution de la période du solde --- y compris si elle a déjà été déclarée ---, et la
-contre-passation, datée du jour, n'est reprise nulle part : \textbf{la TVA reprise n'apparaît
-dans aucun décompte}, et l'alerte reste muette. Reportez-la à la main. N'apparaissent pas non
-plus les parts d'un solde sans TVA (lignes exonérées, ou part trop petite pour porter un
-centime de TVA).
+\noindent Le \textbf{solde annulé} ne suit plus ce chemin depuis la version~0.21.0. Annuler un
+escompte ou une perte retire sa diminution de la période du solde, et la contre-passation est
+\textbf{datée du solde}, dans cette même période~: décompte et grand livre y disent la même chose,
+période par période. Si la période du solde a déjà été déclarée, elle change pourtant --- Kesh ne
+tient aucun décompte déposé~: seul le verrou de période la protège (faites-la verrouiller avant
+d'annuler~; l'annulation est alors refusée). \textbf{Un solde annulé avant la version~0.21.0}
+garde l'ancien défaut~: sa contre-passation, datée du jour de l'annulation, n'est reprise
+nulle part, \textbf{la TVA reprise n'apparaît dans aucun décompte}, et l'alerte reste muette~;
+reportez-la à la main. N'apparaissent pas non plus les parts d'un solde sans TVA (lignes
+exonérées, ou part trop petite pour porter un centime de TVA).
 
 \medskip
 \noindent \textbf{Conséquence pratique.} Un décompte relancé plus tard peut donner un autre
