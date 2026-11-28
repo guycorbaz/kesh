@@ -1,6 +1,6 @@
 # Story 63-1 : Les annulations depuis la fiche contre-passent dans l'exercice de l'écriture, à sa date (#1752, #1753, #1754)
 
-Status: in-progress  <!-- développement commencé le 2026-11-28 ;  validation terminée le 2026-11-27 : P1 (Sonnet) 0/0/2/6, P2 (Opus) 0/0/1/6, P3 (Sonnet, complète) 0/0/0/5 ; aucune passe de plus -->
+Status: review  <!-- développement terminé le 2026-11-28 (test-fast, gate-ci, front verts sur idefix ; E2E complet à la clôture) ;  validation terminée le 2026-11-27 : P1 (Sonnet) 0/0/2/6, P2 (Opus) 0/0/1/6, P3 (Sonnet, complète) 0/0/0/5 ; aucune passe de plus -->
 
 *Fiche rédigée le 2026-11-27 (Opus 5.5, `bmad-create-story`), worktree `kesh-63-1`, branche `story/63-1-annulations-datees-origine`, partie
 de `story/53-6-annulation-rapprochement-exercice` à `6b71d4c21` (la 53-6a en développement). Epic 63 « Annulations datées de l'origine »
@@ -427,7 +427,7 @@ Après chaque mutation, toucher le fichier à la restauration.
   `supplier-invoices/[id]/+page.svelte` (lecture de ce qu'ils affichent d'un `400 PERIOD_LOCKED` au clic) ; tests unitaires ; `sitesTotal` ;
   commit, push.
 - [x] **T5 — Manuel et API** (AC-14) ; commit, push.
-- [ ] **T6 — E2E** (AC-15), recette visuelle, gates, mutations (AC-16) ; Dev Agent Record ; commit, push de la seule branche `story/…`.
+- [x] **T6 — E2E** (AC-15), recette visuelle, gates, mutations (AC-16) ; Dev Agent Record ; commit, push de la seule branche `story/…`.
 
 ## Dev Notes
 
@@ -728,7 +728,13 @@ posée — comme toute saisie antidatée.
 - Station, gate ciblé puis complet local : `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`,
   `cargo nextest run --workspace` **7085/7085** (`$GATE_LOGS/e63/t2-nextest-2.log`) ; frontend `test:unit` **5581/5581**,
   `lint-i18n-ownership` vert, `check` 0 erreur (`$GATE_LOGS/e63/t4-front-2.log`), `build` vert (`t4-build.log`).
-- idefix, au dernier commit de code : voir § *Gates sur idefix* ci-dessous.
+- **idefix**, tête `33ae3a686` (le dernier commit de code est `e6b425d3b` ; ne suivent que des commits de `_bmad-output/`) :
+  `test-fast` **code 0**, 7085/7085 (`$GATE_LOGS/idefix/20261128-040238-story_63-1-annulations-datees-origine-test-fast/`) ;
+  `gate-ci` **code 0**, aucun `test result: FAILED` (`…/20261128-040432-…-gate-ci/`) ; `front` **code 0** — `check` 0
+  erreur, `lint-i18n-ownership` vert, `test:unit` 5581/5581, `build` (`…/20261128-062410-…-front/`).
+- Manuels compilés hors dépôt (xelatex, deux passes, `-output-directory` dans le scratchpad) : aucune référence indéfinie ;
+  le PDF régénéré, aplati, ne dit plus « datée du jour » que pour R10, l'avoir, le complément des soldes de départ et les
+  annulations d'avant la v0.21.0.
 - E2E : la spec neuve et ses voisines, seules, sur une base jetable (`$GATE_LOGS/e63/e2e-ac15-2.log`, 12/13 — le rouge,
   `supplier-invoice-draft-cycle.spec.ts:666`, vient du répertoire `/tmp/kesh-e2e/inbox` codé en dur, absent de mon montage).
   **L'E2E complet n'a pas tourné** (consigne : à la clôture).
@@ -821,3 +827,13 @@ Périmètre `a9b551d5a..HEAD` (69 fichiers, dont 3 neufs).
   deux pages Svelte non nommés à T4, commentaires de tests périmés (voir le rapport). Numéros d'issues portés (#1759, #1760).
   Axes A3, A6, A9, mutations M1 à M8 une à une, notes de version exercés. **Recyclage : non** (aucun défaut né d'un correctif ; tendance P1 0/0/2/6 →
   P2 0/0/1/6 → P3 0/0/0/5). Plus de passe requise : `ready-for-dev`.
+- 2026-11-28 — **Développement** (Opus 5.5, `bmad-dev-story`, worktree `kesh-63-1`) : reprise d'`epic/53-ecritures-justes`
+  sans conflit (`a9b551d5a`) ; T0 au Dev Agent Record (lignes décalées de la 53-6a, un test de plus que la fiche à l'AC-11) ;
+  rouge d'abord (21 Rust, 8 Vitest, `e4a65d522`) ; correctif D1 à D3 (`5155d879f`), textes D5/D7 (`6deeba3ac`), écran
+  (`d2c2cb704`), manuel et API (`97ff48f8e`), E2E et recette visuelle (`e6b425d3b`). AC-11 : 7 rouges inventoriés au
+  premier passage complet, aucun défaut (un test neuf mal écrit, six attendus qui changent par la datation). Mutations M1 à
+  M8 et E2E-M1 tuées. Gates idefix verts au dernier commit de code (test-fast, gate-ci, front) ; E2E complet à la clôture.
+  Choix déclarés : une troisième clé (`settlement-cancel-blocked-period-locked-through`, borne en phrase à part), la phrase
+  « l'annulation sera alors refusée, ce qui protège la déclaration » ajoutée aux quatre confirmations ; points à trancher
+  au Dev Agent Record (script du retrait des 232 arguments, import `lib/shared` → `features/reports`, artefact écrit hors du
+  worktree). Statut `review` ; prompt de la revue P1 (Opus) : `63-1-annulations-datees-origine-review-prompt-p1.md`.
