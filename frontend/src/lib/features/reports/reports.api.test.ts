@@ -498,3 +498,28 @@ describe('formatCurrencyAmount — Story 37-4', () => {
 		expect(formatCurrencyAmount('USD', '-0.0050')).toBe('USD -0.01');
 	});
 });
+
+describe('reports.api — Story 55-3b, les lecteurs des justificatifs (URL exactes)', () => {
+	afterEach(() => vi.restoreAllMocks());
+
+	it('fetchEntryDocuments lit GET /api/v1/journal-entries/{id}/documents', async () => {
+		const { apiClient } = await import('$lib/shared/utils/api-client');
+		const get = vi.spyOn(apiClient, 'get').mockResolvedValue([]);
+		const { fetchEntryDocuments } = await import('./reports.api');
+		expect(await fetchEntryDocuments(17)).toEqual([]);
+		expect(get).toHaveBeenCalledWith('/api/v1/journal-entries/17/documents');
+	});
+
+	it('fetchInvoicePdf vise /invoices/{id}/pdf et fetchCreditNotePdf /credit-notes/{id}/pdf, en Blob', async () => {
+		const { apiClient } = await import('$lib/shared/utils/api-client');
+		const getBlob = vi
+			.spyOn(apiClient, 'getBlob')
+			.mockImplementation(async () => new Response('%PDF'));
+		const { fetchInvoicePdf, fetchCreditNotePdf } = await import('./reports.api');
+		expect((await fetchInvoicePdf(42)).size).toBe(4);
+		expect(getBlob).toHaveBeenLastCalledWith('/api/v1/invoices/42/pdf');
+		await fetchCreditNotePdf(3);
+		expect(getBlob).toHaveBeenLastCalledWith('/api/v1/credit-notes/3/pdf');
+		expect(getBlob).toHaveBeenCalledTimes(2);
+	});
+});

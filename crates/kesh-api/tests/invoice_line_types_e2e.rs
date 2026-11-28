@@ -15,6 +15,11 @@
 //!   ligne (changement de contrat, non plus le `422` de l'extracteur) ;
 //! - un `lineType` inconnu reste un rejet de l'extracteur, `422` ;
 //! - les réponses de lecture d'une facture et d'un avoir portent `lineType`.
+//!
+//! Story 49-2 (#1756) — T4, T5 : l'ordre des lignes est celui du tableau `lines` du `PUT`
+//! d'un brouillon (positions 0 à n − 1) ; il se retrouve au `GET`, à l'audit, au PDF de la
+//! facture validée et à l'avoir, sans changer l'écriture de vente ; une facture validée ne se
+//! réordonne pas (`409 ILLEGAL_STATE_TRANSITION`, rien d'écrit).
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -893,4 +898,271 @@ async fn comment_typed_at_the_api_reaches_the_pdf_and_the_credit_note(pool: MySq
             .any(|(x, _, t)| t == NOTE && (x - 20.0).abs() < 0.01),
         "le PDF de l'avoir imprime le commentaire à x = 20"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Story 49-2 (#1756, #1242) — réordonner les lignes d'un brouillon : l'ordre
+// est celui du tableau `lines` du `PUT` (D1) ; le serveur ne change pas.
+// ---------------------------------------------------------------------------
+
+/// Un compte de produit imputable de plus, de la société (la fixture n'en porte
+/// qu'un, `3000`) : sans lui, « compte X / compte Y » est inatteignable et
+/// l'écriture ne différerait que par ses lignes de TVA.
+async fn compte_produit_en_plus(pool: &MySqlPool, company_id: i64) -> i64 {
+    sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) \
+         VALUES (?, '3100', 'Ventes de services', 'Revenue')",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+/// L'id d'un compte de la société par son numéro.
+async fn compte_par_numero(pool: &MySqlPool, company_id: i64, numero: &str) -> i64 {
+    sqlx::query_scalar("SELECT id FROM accounts WHERE company_id = ? AND number = ?")
+        .bind(company_id)
+        .bind(numero)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Une ligne chiffrée portant son compte de produit.
+fn chiffree_sur(description: &str, prix: &str, taux: &str, compte: i64) -> Value {
+    let mut l = chiffree(description, prix, taux);
+    l["revenueAccountId"] = json!(compte);
+    l
+}
+
+/// Les descriptions des lignes d'une facture ou d'un avoir rendu, dans l'ordre de la réponse.
+fn descriptions(f: &Value) -> Vec<String> {
+    f["lines"]
+        .as_array()
+        .expect("lignes")
+        .iter()
+        .map(|l| l["description"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// Les descriptions d'une des deux faces (`before` / `after`) d'un `invoice.updated`.
+fn descriptions_audit(details: &Value, face: &str) -> Vec<String> {
+    details[face]["lines"]
+        .as_array()
+        .unwrap_or_else(|| panic!("audit {face} : {details}"))
+        .iter()
+        .map(|l| l["description"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// L'ordonnée (mm) d'un texte dans un PDF : plus elle est grande, plus le texte est haut.
+fn ordonnee(contexte: &str, pdf: &[u8], texte: &str) -> f32 {
+    kesh_qrbill::empreinte::textes(pdf)
+        .iter()
+        .find(|(_, _, t)| t == texte)
+        .unwrap_or_else(|| panic!("{contexte} : « {texte} » non imprimé"))
+        .1
+}
+
+/// Contrôle que `[haut, milieu, bas]` s'impriment de haut en bas dans cet ordre.
+fn de_haut_en_bas(contexte: &str, pdf: &[u8], haut: &str, milieu: &str, bas: &str) {
+    let (h, m, b) = (
+        ordonnee(contexte, pdf, haut),
+        ordonnee(contexte, pdf, milieu),
+        ordonnee(contexte, pdf, bas),
+    );
+    assert!(
+        h > m && m > b,
+        "{contexte} : {haut} {h} / {milieu} {m} / {bas} {b}"
+    );
+}
+
+/// **T4 (Story 49-2, AC3, AC8, AC9, AC10)** — réordonner un brouillon déplace le PDF et
+/// l'avoir, **pas l'écriture** : `[A (8.1 %, compte X), commentaire, B (2.6 %, compte Y)]`
+/// renvoyé en `[B, commentaire, A]` est relu dans cet ordre (positions 0 à 2) et tracé à
+/// l'audit ; validé, il s'imprime dans le nouvel ordre ; l'avoir le reprend ; et son écriture
+/// est celle d'une facture créée d'emblée en `[A, commentaire, B]`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reordering_a_draft_moves_the_pdf_not_the_entry(pool: MySqlPool) {
+    const A: &str = "Prestation A";
+    const B: &str = "Article B";
+    let m = monter(&pool).await;
+    banque(&pool, m.company_id).await;
+    let x = compte_par_numero(&pool, m.company_id, "3000").await;
+    let y = compte_produit_en_plus(&pool, m.company_id).await;
+    let a = || chiffree_sur(A, "100.00", "8.10", x);
+    let b = || chiffree_sur(B, "50.00", "2.60", y);
+
+    // Facture 1 : créée en [A, C, B], puis renvoyée en [B, C, A].
+    let (status, f1) = m
+        .envoyer(
+            reqwest::Method::POST,
+            "/api/v1/invoices",
+            &m.corps(json!([a(), commentaire(MERCI), b()])),
+        )
+        .await;
+    assert_eq!(status, 201, "{f1}");
+    assert_eq!(descriptions(&f1), [A, MERCI, B]);
+    let id1 = f1["id"].as_i64().unwrap();
+    let version = f1["version"].as_i64().unwrap();
+    let mut put = m.corps(json!([b(), commentaire(MERCI), a()]));
+    put["version"] = json!(version);
+    let (status, modifiee) = m
+        .envoyer(
+            reqwest::Method::PUT,
+            &format!("/api/v1/invoices/{id1}"),
+            &put,
+        )
+        .await;
+    assert_eq!(status, 200, "{modifiee}");
+    assert_eq!(modifiee["version"].as_i64().unwrap(), version + 1);
+    assert_eq!(descriptions(&modifiee), [B, MERCI, A]);
+    assert_eq!(positions(&modifiee), vec![0, 1, 2]);
+    let lue = m.lire(&format!("/api/v1/invoices/{id1}")).await;
+    assert_eq!(
+        descriptions(&lue),
+        [B, MERCI, A],
+        "GET relit l'ordre enregistré"
+    );
+    assert_eq!(positions(&lue), vec![0, 1, 2]);
+
+    // AC10 : l'audit porte l'ancien et le nouvel ordre.
+    let entrees = kesh_db::repositories::audit_log::find_by_entity(&pool, "invoice", id1, 20)
+        .await
+        .unwrap();
+    let maj = entrees
+        .iter()
+        .find(|e| e.action == "invoice.updated")
+        .expect("invoice.updated");
+    let details = maj.details_json.as_ref().unwrap();
+    assert_eq!(descriptions_audit(details, "before"), [A, MERCI, B]);
+    assert_eq!(descriptions_audit(details, "after"), [B, MERCI, A]);
+
+    // Facture 2 : créée d'emblée en [A, C, B] — l'autre ordre.
+    let (status, f2) = m
+        .envoyer(
+            reqwest::Method::POST,
+            "/api/v1/invoices",
+            &m.corps(json!([a(), commentaire(MERCI), b()])),
+        )
+        .await;
+    assert_eq!(status, 201, "{f2}");
+    let id2 = f2["id"].as_i64().unwrap();
+
+    let mut validees = Vec::new();
+    for id in [id1, id2] {
+        let (status, v) = m
+            .envoyer(
+                reqwest::Method::POST,
+                &format!("/api/v1/invoices/{id}/validate"),
+                &json!({}),
+            )
+            .await;
+        assert_eq!(status, 200, "{v}");
+        validees.push(v);
+    }
+    // AC9 : deux ordres, la même écriture (mêmes comptes, montants, sens), les mêmes totaux.
+    let (e1, e2) = (
+        ecriture(&pool, &validees[0]).await,
+        ecriture(&pool, &validees[1]).await,
+    );
+    assert!(
+        e1.len() >= 3,
+        "montage : écriture à plusieurs lignes : {e1:?}"
+    );
+    assert_eq!(e1, e2, "l'écriture ne dépend pas de l'ordre des lignes");
+    assert_eq!(sommes(&validees[0]), sommes(&validees[1]));
+    assert_ne!(validees[0]["totalAmount"], "0.0000");
+
+    // AC8 : le PDF de la facture 1 s'imprime dans le nouvel ordre, de haut en bas.
+    let pdf = pdf_200(&m, &format!("/api/v1/invoices/{id1}/pdf")).await;
+    de_haut_en_bas("PDF de la facture", &pdf, B, MERCI, A);
+
+    // AC8 : l'avoir reprend l'ordre, à l'API comme sur son PDF.
+    let (status, avoir) = m
+        .envoyer(
+            reqwest::Method::POST,
+            "/api/v1/credit-notes",
+            &json!({ "invoiceId": id1, "date": "2026-07-01" }),
+        )
+        .await;
+    assert!(status == 200 || status == 201, "{status} {avoir}");
+    assert_eq!(descriptions(&avoir), [B, MERCI, A], "{avoir}");
+    let avoir_id = avoir["id"].as_i64().expect("id de l'avoir");
+    let pdf_avoir = pdf_200(&m, &format!("/api/v1/credit-notes/{avoir_id}/pdf")).await;
+    de_haut_en_bas("PDF de l'avoir", &pdf_avoir, B, MERCI, A);
+}
+
+/// **T5 (Story 49-2, AC7)** — une facture **validée** ne se réordonne pas : le `PUT` d'un
+/// corps réordonné rend `409 ILLEGAL_STATE_TRANSITION` sans rien écrire (mêmes lignes, mêmes
+/// positions, même `version`, même PDF figé, aucune action `invoice.updated` neuve).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reordering_a_validated_invoice_is_refused_without_writing(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    banque(&pool, m.company_id).await;
+    let a = || chiffree("Loyer", "100.00", "8.10");
+    let b = || chiffree("Charges", "50.00", "8.10");
+    let (status, creee) = m
+        .envoyer(
+            reqwest::Method::POST,
+            "/api/v1/invoices",
+            &m.corps(json!([a(), commentaire(MERCI), b()])),
+        )
+        .await;
+    assert_eq!(status, 201, "{creee}");
+    let id = creee["id"].as_i64().unwrap();
+    let (status, validee) = m
+        .envoyer(
+            reqwest::Method::POST,
+            &format!("/api/v1/invoices/{id}/validate"),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(status, 200, "{validee}");
+    let pdf_fige = pdf_200(&m, &format!("/api/v1/invoices/{id}/pdf")).await;
+    let avant = m.lire(&format!("/api/v1/invoices/{id}")).await;
+    let maj_avant = audit_updated(&pool, id).await;
+
+    let mut put = m.corps(json!([b(), commentaire(MERCI), a()]));
+    put["version"] = avant["version"].clone();
+    let (status, refus) = m
+        .envoyer(
+            reqwest::Method::PUT,
+            &format!("/api/v1/invoices/{id}"),
+            &put,
+        )
+        .await;
+    assert_eq!(status, 409, "{refus}");
+    assert_eq!(
+        refus["error"]["code"], "ILLEGAL_STATE_TRANSITION",
+        "{refus}"
+    );
+
+    let apres = m.lire(&format!("/api/v1/invoices/{id}")).await;
+    assert_eq!(descriptions(&apres), ["Loyer", MERCI, "Charges"]);
+    assert_eq!(positions(&apres), vec![0, 1, 2]);
+    assert_eq!(apres["version"], avant["version"], "version inchangée");
+    assert_eq!(apres["journalEntryId"], avant["journalEntryId"]);
+    assert_eq!(
+        pdf_200(&m, &format!("/api/v1/invoices/{id}/pdf")).await,
+        pdf_fige,
+        "le PDF figé est inchangé"
+    );
+    assert_eq!(
+        audit_updated(&pool, id).await,
+        maj_avant,
+        "aucune écriture d'audit neuve"
+    );
+}
+
+/// Le nombre d'actions `invoice.updated` écrites pour une facture.
+async fn audit_updated(pool: &MySqlPool, id: i64) -> usize {
+    kesh_db::repositories::audit_log::find_by_entity(pool, "invoice", id, 100)
+        .await
+        .unwrap()
+        .iter()
+        .filter(|e| e.action == "invoice.updated")
+        .count()
 }

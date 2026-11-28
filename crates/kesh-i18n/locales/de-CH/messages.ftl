@@ -374,9 +374,9 @@ error-designated-account-type-expense = Aufwandkonto
 # Story 35-1 (#948, D4, D5) — 400 NUMBER_FORMAT_UNRENDERABLE : la pièce, puis la cause.
 error-number-format-unrenderable-invoice = Diese Rechnung kann nicht validiert werden: Ihre Nummer kann nicht erzeugt werden. Es wurde nichts gespeichert, keine Nummer wurde verbraucht.
 error-number-format-unrenderable-credit-note = Diese Gutschrift kann nicht erstellt werden: Ihre Nummer kann nicht erzeugt werden. Es wurde nichts gespeichert, keine Nummer wurde verbraucht.
-error-number-format-unrenderable-too-long = Das Format «{ $format }» ergibt mit dem Namen des Geschäftsjahres «{ $fiscalYear }» eine zu lange Nummer (mehr als 64 Bytes; ein Buchstabe mit Akzent zählt zwei): Eine Administratorin oder ein Administrator muss das Format unter Administration → Fakturierung oder den Namen des Geschäftsjahres kürzen.
+error-number-format-unrenderable-too-long = Das Format «{ $format }» ergibt im Geschäftsjahr «{ $fiscalYear }» eine zu lange Nummer (mehr als 64 Bytes; ein Buchstabe mit Akzent zählt zwei, «–» oder «€» drei, ein Emoji vier): Eine Administratorin oder ein Administrator muss das Format unter Administration → Fakturierung kürzen, und den Namen des Geschäftsjahres, wenn es {"{"}FY{"}"} übernimmt.
 error-number-format-unrenderable-brace = Der Name des Geschäftsjahres «{ $fiscalYear }» enthält eine geschweifte Klammer, die das Format «{ $format }» in die Nummer übernehmen würde: Eine Administratorin oder ein Administrator muss das Geschäftsjahr umbenennen oder {"{"}FY{"}"} aus dem Format unter Administration → Fakturierung entfernen.
-error-number-format-unrenderable-duplicate = Das Format «{ $format }» erzeugt im Geschäftsjahr «{ $fiscalYear }» eine bereits vergebene Nummer: Es muss jeden Beleg unterscheiden – einen Zähler ({"{"}SEQ{"}"}), der in jedem Geschäftsjahr neu beginnt, und das Geschäftsjahr ({"{"}FY{"}"}); das Jahr ({"{"}YEAR{"}"}) genügt nicht, wenn zwei Geschäftsjahre im selben Jahr beginnen. Eine Administratorin oder ein Administrator muss es unter Administration → Fakturierung korrigieren.
+error-number-format-unrenderable-duplicate = Das Format «{ $format }» erzeugt im Geschäftsjahr «{ $fiscalYear }» eine in der Gesellschaft bereits vergebene Nummer – in diesem Geschäftsjahr, in einem anderen oder unter einem früheren Format: Jeder Beleg muss eine eigene Nummer haben. Ein Zähler ({"{"}SEQ{"}"}) beginnt in jedem Geschäftsjahr neu; um die Geschäftsjahre zu unterscheiden, braucht es {"{"}FY{"}"}, oder {"{"}YEAR{"}"}, wenn nie zwei Geschäftsjahre im selben Jahr beginnen. Eine Administratorin oder ein Administrator muss es unter Administration → Fakturierung korrigieren.
 error-number-format-unrenderable-invalid = Das gespeicherte Format «{ $format }» ist ungültig: Eine Administratorin oder ein Administrator muss es unter Administration → Fakturierung korrigieren.
 error-rounding-account-not-configured = Diese Zahlung begleicht die Rechnung auf den Rappen genau, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Administration → Fakturierung.
 error-rounding-account-not-configured-issuance = Der Gesamtbetrag dieses Belegs ist auf 5 Rappen gerundet, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Administration → Fakturierung.
@@ -644,7 +644,7 @@ invoices-description-error-unknown-placeholder = Unbekannter Platzhalter: {"{"}{
 invoices-description-error-no-placeholder = Der Buchungstext muss mindestens einen bekannten Platzhalter enthalten ({"{"}YEAR{"}"}, {"{"}INVOICE_NUMBER{"}"}, {"{"}CONTACT_NAME{"}"})
 invoices-format-error-empty = Das Nummerierungsformat ist leer
 invoices-format-error-numbering = Das Format lautet: ein freies Präfix, {"{"}YEAR{"}"}, ein Trennzeichen ohne Ziffer, dann {"{"}SEQ{"}"} oder {"{"}SEQ:NN{"}"}, nichts danach (Beispiel: FF-{"{"}YEAR{"}"}-{"{"}SEQ:03{"}"})
-invoices-format-error-too-long = Das Format überschreitet { $max } Zeichen (aktuell: { $actual })
+invoices-format-error-too-long = Das Format überschreitet { $max } Bytes (aktuell: { $actual })
 invoices-format-error-bad-chars = Das Format enthält unzulässige Zeichen
 invoices-format-error-bad-padding = Ungültiges Padding {"{"}SEQ:{ $n }{"}"} — muss zwischen 1 und { $max } liegen
 invoices-format-error-unknown-placeholder = Unbekannter Platzhalter: {"{"}{ $name }{"}"}
@@ -652,6 +652,10 @@ invoices-format-error-no-placeholder = Das Format muss mindestens einen bekannte
 invoices-format-error-rendered-too-long = Das Format würde eine Nummer mit { $len } Zeichen erzeugen (max. { $max })
 invoice-new-title = Neue Rechnung
 invoice-edit-title = Rechnung bearbeiten
+invoice-edit-forbidden = Ihre Rolle erlaubt es nicht, eine Rechnung zu ändern.
+invoice-edit-not-draft-validated = Diese Rechnung ist validiert: sie kann nicht mehr geändert werden.
+invoice-edit-not-draft-cancelled = Diese Rechnung ist storniert: sie kann nicht mehr geändert werden.
+invoice-edit-back = Zurück zur Rechnung
 invoice-view-title = Rechnung
 invoice-form-contact = Kontakt
 invoice-form-date = Datum
@@ -2235,7 +2239,7 @@ reports-filter-fiscal-year = Geschäftsjahr
 reports-filter-journal = Journal
 reports-button-generate = Erstellen
 
-reports-error-no-entries-in-period = Keine Buchungen in der gewählten Periode. Ändern Sie die Daten oder wählen Sie ein anderes Geschäftsjahr.
+reports-error-no-entries-in-period = Keine Buchungen in diesem Zeitraum.
 reports-error-period-out-of-fiscal-year = Die gewählte Periode überschreitet die Grenzen des Geschäftsjahres. Wählen Sie eine Periode zwischen { $fyStart } und { $fyEnd }.
 reports-error-no-fiscal-year-available = Kein Geschäftsjahr verfügbar. Erstellen Sie zuerst ein Geschäftsjahr.
 
@@ -2252,8 +2256,7 @@ reports-archived-label = archiviert
 
 # Berichte-Seite — chrome (3 — code review Pass 1 i18n leaks)
 reports-page-title = Buchhaltungsberichte
-reports-instruction-select-and-generate = Wählen Sie ein Geschäftsjahr aus und klicken Sie auf Generieren.
-reports-loading = Bericht wird generiert…
+reports-loading = Wird geladen…
 
 # Story 9-2a — Export PDF & CSV (10 Schlüssel)
 reports-export-pdf-button = PDF-Export
@@ -2284,7 +2287,6 @@ reports-project-return-total = Total
 reports-project-selector-label = Analytisches Konto
 reports-project-selector-placeholder = — Analytisches Konto wählen
 reports-aged-instruction = Altersstruktur per heute.
-reports-aged-instruction-generate = Klicken Sie auf Erstellen, um die Altersstruktur per heute anzuzeigen.
 reports-aged-as-of = Stand { $date }
 reports-aged-empty = Keine offenen Kundenforderungen.
 reports-aged-col-contact = Kunde
@@ -3070,6 +3072,15 @@ settings-vat-rates-link = Richten Sie die MWST-Sätze und ihre Gültigkeitsdaten
 vat-rates-active = Aktiv
 vat-rates-change = Satz ändern
 vat-rates-change-error = Die Satzänderung ist fehlgeschlagen.
+vat-rates-err-rate-required = Geben Sie einen Satz ein.
+vat-rates-err-rate-invalid = Der Satz muss eine Zahl sein.
+vat-rates-err-rate-range = Der Satz muss zwischen 0 und 100 liegen.
+vat-rates-err-rate-decimals = Der Satz darf höchstens zwei Dezimalstellen haben.
+vat-rates-err-from-required = Geben Sie das Anfangsdatum ein.
+vat-rates-err-switch-required = Geben Sie das Umstellungsdatum ein.
+vat-rates-change-error-closed = Der alte Satz wurde zum Umstellungsdatum abgeschlossen, der neue Satz wurde jedoch nicht erstellt. Beheben Sie die Ursache und wiederholen Sie « Satz ändern » mit demselben Datum.
+vat-rates-change-error-closed-reason = Der alte Satz wurde zum Umstellungsdatum abgeschlossen, der neue Satz wurde jedoch nicht erstellt: { $reason } Beheben Sie die Ursache und wiederholen Sie « Satz ändern » mit demselben Datum.
+vat-rates-change-error-closed-unknown = Der alte Satz wurde zum Umstellungsdatum abgeschlossen; der neue Satz wurde möglicherweise nicht erstellt. Prüfen Sie die Liste: Fehlt er, wiederholen Sie « Satz ändern » mit demselben Datum.
 vat-rates-change-hint = Der alte Satz wird zum Umstellungsdatum beendet, und der neue Satz tritt zu diesem Datum in Kraft.
 vat-rates-changed = Satz aktualisiert.
 vat-rates-col-actions = Aktionen
@@ -3628,7 +3639,7 @@ reports-fx-line = { $amount } × { $rate }
 reports-fx-totals = Soll { $debit } · Haben { $credit }
 reports-fx-trial-balance = Eröffnung { $opening } · Soll { $debit } · Haben { $credit } · Abschluss { $closing }
 reports-ledger-include-zero = Konten ohne Bewegung einschliessen
-reports-ledger-instruction = Wählen Sie einen Zeitraum und klicken Sie auf Erstellen. Das Konto ist optional.
+reports-ledger-instruction = Wählen Sie einen Zeitraum. Für alle Konten klicken Sie auf Erstellen; ein gewähltes Konto wird von selbst angezeigt.
 
 # --- Journal d'audit — route, vocabulaire et export (Story 25-1c-a) ---
 # ----------------------------------------------------------------------
@@ -4538,6 +4549,32 @@ stripe-gap-payout-entry = Buchung der Auszahlung
 stripe-gap-receipt-link = Den Eingang im Abgleich zuordnen
 stripe-gap-receipt-import = Importieren Sie den Kontoauszug des Zielkontos (Wise).
 
+## Story 55-1a (Epic 55, D15, D16) — Geschäftsjahresauswahl der Berichte, Kopfzeile des Zeitraums
+reports-nav-fy-multiple = Mehrere
+reports-nav-fy-outside = Ausserhalb
+reports-nav-fy-whole = Ganzes Geschäftsjahr
+reports-nav-needs-one-fy = Dieser Bericht umfasst nur ein Geschäftsjahr: Wählen Sie zwei Daten desselben Geschäftsjahres.
+reports-nav-period-invalid = Das Anfangsdatum muss vor dem Enddatum liegen oder ihm entsprechen.
+reports-nav-heading-fy = Geschäftsjahr { $years } — vom { $from } bis { $to }
+reports-nav-heading-named = { $name } — vom { $from } bis { $to }
+reports-nav-heading-part = Vom { $from } bis { $to } (Teil des Geschäftsjahres { $fiscalYear })
+reports-nav-heading-several = Vom { $from } bis { $to } (Geschäftsjahre { $fiscalYears })
+reports-nav-heading-outside = Vom { $from } bis { $to } (ausserhalb der Geschäftsjahre)
+# Story 55-2 (AC-6) — la ligne des comptes de TVA au grand livre, après le décompte.
+reports-nav-vat-accounts = Konten im Hauptbuch:
+# Story 55-3b (Epic 55, D9 à D12) — die Belege einer Buchung, aus dem Journal und dem Hauptbuch.
+reports-nav-documents-title = Belege der Buchung Nr. { $number }
+reports-nav-documents-kind-invoice = Rechnung
+reports-nav-documents-kind-credit-note = Gutschrift
+reports-nav-documents-kind-supplier-document = Lieferantendokument
+reports-nav-documents-list = Belege der Buchung
+reports-nav-documents-loading = Belege werden geladen…
+reports-nav-documents-none = Diese Buchung hat keinen Beleg mehr.
+reports-nav-documents-close = Schliessen
+reports-nav-documents-empty = Das erhaltene Dokument ist leer.
+reports-nav-documents-not-issued = PDF noch nicht ausgestellt: Diese Rechnung hat noch kein festgeschriebenes PDF; der nächste Download oder der nächste Versand per E-Mail schreibt es fest.
+reports-nav-ledger-column-documents = Belege
+
 # Story 39-11d — écrans Wise : réglages du compte, page Wise (import des relevés et du zip), libellés
 wise-csv-line-field-count = Zellenzahl weicht von der Kopfzeile ab
 wise-csv-line-date = Datum unlesbar oder im falschen Format (TT-MM-JJJJ oder JJJJ-MM-TT erwartet)
@@ -4623,3 +4660,9 @@ bank-accounts-help-wise-account = Dieselbe Bezeichnung für die Konten jeder Wä
 bank-accounts-help-wise-ledger = Pflicht: das Konto des Kontenplans des Wise-Saldos, in seiner Währung (ein Fremdwährungskonto erfordert die Mehrwährung).
 nav-wise = Wise
 fiscal-years-checks-k2-link-wise = Wise-Seite öffnen
+
+# Epic 52 — Story 49-2 : réordonner les lignes d'une facture (↑ / ↓)
+invoice-line-move-up = Zeile { $n } nach oben verschieben
+invoice-line-move-down = Zeile { $n } nach unten verschieben
+invoice-lines-moved-status = Zeile an Position { $position } von { $total } verschoben
+invoice-line-remove = Zeile { $n } löschen

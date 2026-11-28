@@ -424,3 +424,193 @@ describe('GeneralLedgerView — Story 37-4, compte en devise', () => {
 		expect(r.container.querySelectorAll('tbody tr')).toHaveLength(2); // ouverture + 1 ligne
 	});
 });
+
+// Story 55-2 (AC-4, AC-5, D8) — les contreparties deviennent des liens (numéro → compte par la carte de la
+// page), même période ; le titre d'une section n'est un lien que si le rapport en rend plusieurs.
+describe('GeneralLedgerView — Story 55-2, contreparties et titre', () => {
+	const carte = new Map([
+		['6000', 60],
+		['1020', 7],
+		['2000', 20],
+	]);
+
+	it('une contrepartie résolue est un lien vers son grand livre, même période', async () => {
+		const { LINK_CLASS } = await import('$lib/shared/navigation/link-class');
+		const { getByTestId } = render(GeneralLedgerView, { dto: dto(), accountIdByNumber: carte });
+		const cellule = getByTestId('ledger-counterpart-1');
+		const a = cellule.querySelector('a');
+		// Mutation : `counterpart.join(', ')` gardé → aucun lien, rouge.
+		expect(a?.getAttribute('href')).toBe('/reports?tab=general-ledger&accountId=60&from=2026-01-01&to=2026-12-31');
+		expect(a?.getAttribute('class')).toBe(LINK_CLASS);
+		expect(a?.textContent).toBe('6000');
+	});
+
+	it('plusieurs contreparties : séparées par « , », une non résolue reste en texte, sans erreur', () => {
+		const { getByTestId } = render(GeneralLedgerView, {
+			dto: dto({ sections: [section({ lines: [line({ counterpart: ['6000', '9999', '2000'] })] })] }),
+			accountIdByNumber: carte,
+		});
+		const cellule = getByTestId('ledger-counterpart-1');
+		expect(cellule.textContent).toBe('6000, 9999, 2000');
+		const liens = [...cellule.querySelectorAll('a')].map((a) => a.textContent);
+		expect(liens).toEqual(['6000', '2000']);
+	});
+
+	it('sans carte (liste des comptes en échec) : les contreparties en texte', () => {
+		const { getByTestId } = render(GeneralLedgerView, { dto: dto() });
+		expect(getByTestId('ledger-counterpart-1').querySelector('a')).toBeNull();
+		expect(getByTestId('ledger-counterpart-1').textContent).toBe('6000');
+	});
+
+	it('une seule section : le numéro du titre reste du texte (un lien vers lui-même n’apprend rien)', () => {
+		const { getByTestId } = render(GeneralLedgerView, { dto: dto(), accountIdByNumber: carte });
+		// Mutation : titre toujours lié → rouge.
+		expect(getByTestId('ledger-title-1020').querySelector('a')).toBeNull();
+		expect(getByTestId('ledger-title-1020').textContent).toBe('1020');
+	});
+
+	it('plusieurs sections : le numéro de chaque titre est un lien vers son grand livre', () => {
+		const { getByTestId } = render(GeneralLedgerView, {
+			dto: dto({
+				sections: [
+					section(),
+					section({ accountId: 60, accountNumber: '6000', accountName: 'Loyer', lines: [line({ lineId: 2, counterpart: ['1020'] })] }),
+				],
+			}),
+			accountIdByNumber: carte,
+		});
+		// Mutation : titre jamais lié → rouge.
+		expect(getByTestId('ledger-title-1020').querySelector('a')?.getAttribute('href')).toBe(
+			'/reports?tab=general-ledger&accountId=7&from=2026-01-01&to=2026-12-31',
+		);
+		expect(getByTestId('ledger-title-6000').querySelector('a')?.getAttribute('href')).toBe(
+			'/reports?tab=general-ledger&accountId=60&from=2026-01-01&to=2026-12-31',
+		);
+	});
+
+	it('le lien des postes ouverts garde sa classe soulignée en plein (R-7, liens déjà soulignés inchangés)', () => {
+		const { getByTestId } = render(GeneralLedgerView, {
+			dto: dto(),
+			letterableAccountIds: new Set([7]),
+		});
+		expect(getByTestId('ledger-open-items-1020').getAttribute('class')).toBe('ml-auto text-xs text-primary underline');
+	});
+});
+
+describe('GeneralLedgerView — Story 55-3b (AC-6), la colonne « Justificatifs »', () => {
+	/** La somme des `colspan` d'une rangée. */
+	function span(tr: Element): number {
+		return Array.from(tr.children).reduce((n, td) => n + Number(td.getAttribute('colspan') ?? '1'), 0);
+	}
+	/** Le texte de chaque colonne d'une rangée, `colspan` déplié. */
+	function byColumn(tr: Element): string[] {
+		const out: string[] = [];
+		for (const td of Array.from(tr.children)) {
+			const n = Number(td.getAttribute('colspan') ?? '1');
+			for (let i = 0; i < n; i++) out.push(td.textContent?.trim() ?? '');
+		}
+		return out;
+	}
+	function headers(root: HTMLElement, accountNumber = '1020'): string[] {
+		return Array.from(
+			root.querySelector(`[data-testid="ledger-section-${accountNumber}"] thead`)!.querySelectorAll('th'),
+		).map((th) => th.textContent?.trim() ?? '');
+	}
+	/** Une section à rupture, la première ligne avec justificatif. */
+	function sectionAvecJustificatif(over: Partial<LedgerSection> = {}): LedgerSection {
+		return section({
+			opening: '500.00',
+			lines: [
+				line({ lineId: 1, fiscalYearId: 1, letteringCode: 'AB', hasDocuments: true }),
+				line({ lineId: 2, fiscalYearId: 2, letteringCode: null }),
+			],
+			fiscalYearBreaks: [{ date: '2025-12-31', closingFiscalYearId: 1, closingBalance: '1700.00' }],
+			lineCount: 2,
+			...over,
+		});
+	}
+
+	it('sans justificatif : aucune colonne, aucune icône (9 en-têtes)', () => {
+		const { container, queryByTestId } = render(GeneralLedgerView, { dto: dto() });
+		expect(headers(container)).toHaveLength(9);
+		expect(headers(container)).not.toContain('Justificatifs');
+		expect(queryByTestId('ledger-entry-documents-1')).toBeNull();
+	});
+
+	it('une ligne à justificatif : 10 en-têtes, « Justificatifs » après « Libellé », l’icône sur cette ligne seule', () => {
+		const { container, getByTestId, queryByTestId } = render(GeneralLedgerView, {
+			dto: dto({ sections: [sectionAvecJustificatif()] }),
+		});
+		const ths = headers(container);
+		expect(ths).toHaveLength(10);
+		expect(ths.indexOf('Justificatifs')).toBe(ths.indexOf('Libellé') + 1);
+		expect(ths.at(-1)).toBe('Lettrage');
+		const bouton = getByTestId('ledger-entry-documents-1');
+		// Le numéro de piece() : préfixé de l'exercice, la période en traversant deux.
+		expect(bouton.getAttribute('aria-label')).toBe("Justificatifs de l'écriture n° Exercice 2026/12");
+		expect(queryByTestId('ledger-entry-documents-2')).toBeNull();
+		// La cellule de l'icône tombe sous l'en-tête « Justificatifs ».
+		const tr = bouton.closest('tr')!;
+		expect(Array.from(tr.children).indexOf(bouton.closest('td')!)).toBe(ths.indexOf('Justificatifs'));
+	});
+
+	it('rejoué avec la colonne — chaque rangée du corps et du pied couvre exactement les en-têtes (devise comprise)', () => {
+		const usd = section({
+			accountId: 9,
+			accountNumber: '1021',
+			currency: 'USD',
+			openingCurrency: '0.0000',
+			lines: [
+				line({
+					lineId: 31,
+					hasDocuments: true,
+					debitCurrency: '0.0000',
+					creditCurrency: '200.0000',
+					exchangeRate: '0.9500000000',
+					rateSource: 'manual',
+					runningBalanceCurrency: '1300.0000',
+				}),
+			],
+			totalDebitCurrency: '0.0000',
+			totalCreditCurrency: '200.0000',
+			closingCurrency: '1300.0000',
+		});
+		for (const s of [sectionAvecJustificatif(), usd]) {
+			const { container, unmount } = render(GeneralLedgerView, { dto: dto({ sections: [s] }) });
+			const table = container.querySelector(`[data-testid="ledger-section-${s.accountNumber}"] table`)!;
+			const n = table.querySelectorAll('thead th').length;
+			expect(n).toBe(10);
+			const rows = table.querySelectorAll('tbody tr, tfoot tr');
+			expect(rows.length).toBeGreaterThan(3);
+			for (const tr of rows) expect(span(tr)).toBe(n);
+			unmount();
+		}
+	});
+
+	it('rejoué avec la colonne — le solde tombe sous « Solde progressif », le total sous « Débit » et « Crédit »', () => {
+		const { container, getByTestId } = render(GeneralLedgerView, {
+			dto: dto({ sections: [sectionAvecJustificatif({ totalDebit: '1234.00', totalCredit: '567.00' })] }),
+		});
+		const table = getByTestId('ledger-section-1020').querySelector('table')!;
+		const ths = headers(container);
+		const running = ths.indexOf('Solde progressif');
+		for (const tr of [getByTestId('ledger-opening').parentElement!, getByTestId('ledger-closing').parentElement!]) {
+			const cols = byColumn(tr);
+			expect(cols[running]).toMatch(/^-?[\d’.]+$/);
+			expect(cols[running - 1]).not.toMatch(/^-?[\d’.]+$/);
+		}
+		const total = byColumn(table.querySelectorAll('tfoot tr')[0]);
+		expect(total[ths.indexOf('Débit')]).toBe('1’234.00');
+		expect(total[ths.indexOf('Crédit')]).toBe('567.00');
+	});
+
+	it('deux sections, une seule avec justificatif : même nombre d’en-têtes (condition sur le rapport)', () => {
+		const { container } = render(GeneralLedgerView, {
+			dto: dto({
+				sections: [sectionAvecJustificatif(), section({ accountId: 8, accountNumber: '6000' })],
+			}),
+		});
+		expect(headers(container, '1020')).toHaveLength(10);
+		expect(headers(container, '6000')).toHaveLength(10);
+	});
+});

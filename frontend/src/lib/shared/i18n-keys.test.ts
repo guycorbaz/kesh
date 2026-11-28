@@ -1263,6 +1263,16 @@ const ATTENDU = {
 	// la garde (« expected 3786 to be 3779 »).
 	// Epic 46 reposé sur main à a914c4823 (branche pr/46-rapports-groupes-v2, 2026-11-25) : les deux côtés
 	// gardés ; 3771 (main) + 18 (Epic 46 : 3508 → 3526) = **3789**, confirmé par la garde (`kesh-gate-logs/s46-pr/front-vitest-a.log`).
+	// Story 55-1a (Epic 55, base epic/55-navigation) : sites ajoutés (sélecteur, en-tête, période invalide) et
+	// retirés (invites « cliquez sur Générer », bouton de la balance âgée, en-tête « Période : » des six vues)
+	// = **3788**, recompté par la garde (`kesh-gate-logs/s55-dev/55-1a/front-1/front-test-unit.log`).
+	// Story 55-2 : le titre `reports-ledger-open-from-balance` des cinq liens de compte passe dans le seul
+	// `AccountLink` (−4) ; `reports-nav-vat-accounts` et les deux étiquettes de la ligne des comptes de TVA
+	// ajoutés, le Grand livre sur `ReportSelector` (ses libellés « Du », « Au » repris du composant) = **3785**,
+	// relevé par la garde (« expected 3785 to be 3788 », `kesh-gate-logs/s55-dev/55-2/front-1/front-test-unit.log`).
+	// Story 55-3b : les onze sites des justificatifs (titre, trois genres, document vide, liste, « PDF pas encore
+	// émis », chargement, liste vide, « Fermer », colonne du grand livre) = **3796**, relevé par la garde
+	// (« expected 3796 to be 3785 »).
 	// Story 46-5b (2026-11-22) : **3517 → 3599**, relevé par la garde (« expected 3599 to be 3517 »,
 	// `kesh-gate-logs/s46-5b/front-test-unit.log` au gate) — l'écran « Créer des groupes »
 	// (`accounts/groups/+page.svelte`, ses messages `accounts/groups/messages.ts`, bloc
@@ -1298,7 +1308,19 @@ const ATTENDU = {
 	// Revue P4 de la 63-1 (M1) : **3979 → 3980**, relevé par la garde (« expected 3980 to be
 	// 3979 », `$GATE_LOGS/e63/rem5/vitest-1.log`) — `invoices-write-off-no-vat-cancel-confirm`
 	// (`invoices/[id]/+page.svelte`), la confirmation d'un solde en frais ou en arrondi.
-	sitesTotal: 3980,
+	// Story 49-2 (#1756, réordonner les lignes d'une facture) : **3963** (« expected 3963 to be 3958 »,
+	// `$GATE_LOGS/e492/rouge-T7.log`) — `invoice-line-move-up` et `invoice-line-move-down` (chacune lue deux fois, `aria-label`
+	// et `title`, dans le snippet `actionsDeLigne`) et `invoice-lines-moved-status` : 3958 + 5.
+	// Fusion de origin/main (Epic 55, 3958 + 7 = 3965) dans la branche de la 49-2 (2026-11-27) : les deux côtés gardés, soit 3958 + 5 + 7 = 3970 (garde : `$GATE_LOGS/e492/remediation/garde-sites-1.log`).
+	// Remédiation de la revue P1 de la 49-2 : **3971** (« expected 3971 to be 3970 ») — `invoice-line-remove`, lue une fois
+	// (`aria-label` de la poubelle du snippet `actionsDeLigne`) : 3970 + 1.
+	// Story 64-1 (#1178, #1758) : **3965 → 3978** (+13 : six messages de la page des taux de TVA, deux du changement
+	// de taux après clôture, cinq de la page de modification d'une facture), relevé par la garde (« expected 3978 to be 3965 »).
+	// Revue P1 de la 64-1 (R1-7) : **3978 → 3979** (+1 : le message du changement de taux après une coupure).
+	// Fusion de la 0.20.1 (2026-11-28) : 3971 (49-2) + 14 (64-1, 3965 → 3979) = **3985**, relevé par la garde.
+	// Reprise de la 0.20.1 (v0.20.1, 287deea33) dans epic/53-ecritures-justes (2026-11-28) : les deux côtés gardés ;
+	// 3985 (main) + 22 (Epic 53 et 63, de 3958 à 3980 de leur côté) = **4007**, à confirmer par la garde.
+	sitesTotal: 4007,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
@@ -1392,9 +1414,11 @@ const MOTIFS_DYNAMIQUES: Record<string, readonly string[]> = {
  * que découvert.*
  *
  * (`:52` → `:54` le 2026-11-04, v0172-correctifs : deux lignes d'import de
- * `formatSwissDate` ajoutées au-dessus, #880.)
+ * `formatSwissDate` ajoutées au-dessus, #880 ; `:54` → `:62` le 2026-11-27, 64-1 : huit
+ * lignes d'import et de type du validateur ajoutées au-dessus, #1178 ; `:62` → `:63` le
+ * 2026-11-27, revue P1 de la 64-1 : import d'`isUnknownOutcome`, R1-7.)
  */
-const ANGLE_MORT_CLE_EN_COLONNE = 'routes/(app)/settings/vat-rates/+page.svelte:54';
+const ANGLE_MORT_CLE_EN_COLONNE = 'routes/(app)/settings/vat-rates/+page.svelte:63';
 
 /**
  * Cardinalité attendue de chaque préfixe dynamique — **la contrepartie des valeurs

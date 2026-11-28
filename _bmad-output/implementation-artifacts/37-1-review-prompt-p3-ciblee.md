@@ -1,9 +1,9 @@
 # Prompt de revue de code P3 ciblée — story 37-1
 
 Passe **ciblée** (`CLAUDE.md` § *La passe ciblée*), une seule lentille, contexte frais, braquée sur la remédiation P2 :
-`git show a7a1d70a` (et `git diff 822fe8b5 a7a1d70a`), worktree `/home/beat/claude/kesh/.claude/worktrees/kesh-s37-1`
+`git show a7a1d70a` (et `git diff 822fe8b5 a7a1d70a`), worktree `<worktree>/kesh-s37-1`
 (branche `story/37-1-reglage-et-devise-des-comptes`). N'écris nulle part ailleurs, sauf journaux dans
-`/home/beat/claude/kesh-gate-logs/s37-1/review-p3/`.
+`$GATE_LOGS/s37-1/review-p3/`.
 
 À lire : la fiche 37-1 (AC, entrée « revue de code P2 » du Change Log), le rapport implicite des correctifs : refus
 `foreignCurrency` jugé sur l'état résultant (`check_own_fx_accounts_in_tx`, prop `accountId` d'`AccountCurrencyFields`),

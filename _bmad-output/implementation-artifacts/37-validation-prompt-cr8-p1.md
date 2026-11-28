@@ -1,6 +1,6 @@
 # Prompt de validation CR-8 P1 — fiche 37-5 (contrôle de clôture bloquant)
 
-Première passe complète du cycle CR-8, contexte frais. Worktree `/home/beat/claude/kesh/.claude/worktrees/kesh-wt37`
+Première passe complète du cycle CR-8, contexte frais. Worktree `<worktree>/kesh-wt37`
 (branche `epic/37-multi-devises`) : n'écris nulle part ailleurs.
 
 ## À lire

@@ -2,9 +2,9 @@
 
 Tu développes la story **37-3b** (`_bmad-output/implementation-artifacts/37-3b-ecritures-en-devise-ecrans.md`) selon le
 skill `bmad-dev-story` (lis `.claude/skills/bmad-dev-story/SKILL.md` et suis-le), dans le worktree
-`/home/beat/claude/kesh/.claude/worktrees/kesh-s37-3b` (branche `story/37-3b-ecritures-en-devise-ecrans`, partie de
+`<worktree>/kesh-s37-3b` (branche `story/37-3b-ecritures-en-devise-ecrans`, partie de
 `epic/37-multi-devises`). **N'écris jamais hors de ce worktree**, sauf les journaux dans
-`/home/beat/claude/kesh-gate-logs/s37-3b/`. Chemins absolus.
+`$GATE_LOGS/s37-3b/`. Chemins absolus.
 
 ## À lire d'abord
 
@@ -43,9 +43,9 @@ questions.
 - **Base de départ** : cette branche part de la pointe de `story/37-3a-ecritures-en-devise-modele` (37-3a livrée en
   `review`, qui contient 37-1 et 37-2 terminées). La 37-3a entre en revue de code en parallèle : **ne modifie pas son
   code** (contrôle central, API, MCP) ; un défaut trouvé là va à
-  `/home/beat/claude/kesh-gate-logs/issues-a-ouvrir-epic-37.md` sous « pour la revue de 37-3a ». L'orchestrateur te dira
+  `$GATE_LOGS/issues-a-ouvrir-epic-37.md` sous « pour la revue de 37-3a ». L'orchestrateur te dira
   de fusionner ses correctifs.
-- **Étape 0 déjà faite** contre 37-2 : `/home/beat/claude/kesh-gate-logs/etape0/37-3b.md` ; vérifie maintenant les
+- **Étape 0 déjà faite** contre 37-2 : `$GATE_LOGS/etape0/37-3b.md` ; vérifie maintenant les
   prémisses « attend 37-3a » contre ta base, et reporte le tout au Change Log.
 - **Reçu de la 37-3a** : libellés d'écran des nouveaux codes de lot (aujourd'hui le code brut s'affiche), motif
   `ENTRY_IS_FX_REVALUATION` dans `blocker-messages.ts`, type `modificationBlockedBy`. Ordre des refus au `PUT` retenu par
@@ -53,8 +53,8 @@ questions.
 - `CurrencySettingsSection.svelte` (37-1) importe `fetchAccounts` et manque à l'inventaire de l'AC-4 : exempte-le ou
   filtre-le, avec justification. Le manuel n'existe qu'en français. La 37-4 (rapports) avance en parallèle : n'y touche
   pas.
-- Pour régénérer le squash, le client MariaDB exige TLS : `MARIADB_HOME=/home/beat/claude/kesh-gate-logs/s37-3a/mycnf`.
+- Pour régénérer le squash, le client MariaDB exige TLS : `MARIADB_HOME=$GATE_LOGS/s37-3a/mycnf`.
 - Base de test `kesh_s37_3b` / `kesh_e2e_s37_3b`, port **3375**. Exécutions lourdes **uniquement** par
-  `/home/beat/claude/kesh-gate-logs/heavy.sh scripts/mem-guard.sh <commande>` ; backend lancé avec `7>&- 8>&- 9>&-`.
-  Captures d'écran (thème clair) dans `/home/beat/claude/kesh-gate-logs/s37-3b/captures/`.
-- Les défauts hors périmètre vont à `/home/beat/claude/kesh-gate-logs/issues-a-ouvrir-epic-37.md`, jamais en issue.
+  `$GATE_LOGS/heavy.sh scripts/mem-guard.sh <commande>` ; backend lancé avec `7>&- 8>&- 9>&-`.
+  Captures d'écran (thème clair) dans `$GATE_LOGS/s37-3b/captures/`.
+- Les défauts hors périmètre vont à `$GATE_LOGS/issues-a-ouvrir-epic-37.md`, jamais en issue.

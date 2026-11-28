@@ -1,8 +1,8 @@
 # Prompt de revue de code P4 ciblée — story 37-3a
 
 Passe **ciblée** (`CLAUDE.md` § *La passe ciblée*), une seule lentille, contexte frais, braquée sur la remédiation P3 :
-worktree `/home/beat/claude/kesh/.claude/worktrees/kesh-s37-3a` (branche `story/37-3a-ecritures-en-devise-modele`),
-`git show f5ab5716`. N'écris nulle part ailleurs, sauf journaux dans `/home/beat/claude/kesh-gate-logs/s37-3a/review-p4/`.
+worktree `<worktree>/kesh-s37-3a` (branche `story/37-3a-ecritures-en-devise-modele`),
+`git show f5ab5716`. N'écris nulle part ailleurs, sauf journaux dans `$GATE_LOGS/s37-3a/review-p4/`.
 
 À lire : la fiche 37-3a (AC, entrées « revue de code P1 », « P2 » et « P3 ciblée » du Change Log).
 
@@ -16,7 +16,7 @@ nouvelle variante — grep — dont les chemins automatiques, les lots (`FailedP
 traduit ? les tests rougissent-ils sans le correctif ?). Déclare les axes exercés / non exercés.
 
 Phase 2 : corrige, avec tests ; gate ciblé (fmt, clippy workspace, nextest des binaires touchés ; **complet si
-`kesh-db` est touché**) par `/home/beat/claude/kesh-gate-logs/heavy.sh scripts/mem-guard.sh <commande>`, base
+`kesh-db` est touché**) par `$GATE_LOGS/heavy.sh scripts/mem-guard.sh <commande>`, base
 `kesh_s37_3a` (aucun `GRANT` à la main) ; commit « fix(37-3a) : revue de code P4 — … » (aucun mot-clé de fermeture,
 **aucune mention d'IA**). Change Log « 2026-11-16 — revue de code P4 ciblée (<modèle>) : <décompte> ». Aucun push.
 Si tu ne corriges rien : aucun commit, aucun gate.

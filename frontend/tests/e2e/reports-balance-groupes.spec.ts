@@ -67,12 +67,12 @@ test('balance par groupes : défaut, pied, niveau 1, ouverture à la main, expor
 
 	await page.goto('/reports');
 	await page.waitForLoadState('networkidle');
-	await page.locator('#reports-tab-trial-balance').click();
-	await expect(page.getByTestId('grouping-controls')).toBeVisible();
 
 	// 1. Première visite : groupée, tous les comptes, sous-totaux sur le titre (AC-1).
+	// Story 55-1a (D16) — plus de *Générer* : le clic sur l'onglet charge la balance.
 	let req = page.waitForRequest((r) => BALANCE.test(r.url()));
-	await page.getByRole('button', { name: /générer/i }).click();
+	await page.locator('#reports-tab-trial-balance').click();
+	await expect(page.getByTestId('grouping-controls')).toBeVisible();
 	let url = new URL((await req).url());
 	expect(url.searchParams.get('detailLevel')).toBe('all');
 	expect(url.searchParams.get('subtotalPosition')).toBe('header');

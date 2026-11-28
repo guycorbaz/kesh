@@ -6,6 +6,7 @@ import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 import { todayLocal } from '$lib/shared/utils/local-date';
 import { ZONE_SUISSE, instantDuServeur, formatSwissDate, formatSwissDateTime } from '$lib/shared/utils/swiss-date';
 import { formatSwissAmount } from '$lib/features/journal-entries/balance';
+import { reportHref } from './reports-url';
 import type {
 	AgedReceivablesDto,
 	BalanceSheetDto,
@@ -23,6 +24,7 @@ import type {
 	LedgerQuery,
 	TrialBalanceDto,
 	VatReportDto,
+	EntryDocument,
 } from './reports.types';
 
 function buildQuery(params: Record<string, string | number | undefined>): string {
@@ -572,11 +574,33 @@ export async function downloadGeneralLedger(
  * fait ? » se pose toujours devant un bilan ou une balance.
  */
 export function ledgerHref(accountId: number, from: string, to: string): string {
-	const qs = new URLSearchParams({
-		tab: 'general-ledger',
-		accountId: String(accountId),
-		from,
-		to,
-	});
-	return `/reports?${qs.toString()}`;
+	// Story 55-1a (AC-6, D6) — écrite sur la fonction d'écriture de l'URL des Rapports : sortie
+	// inchangée à l'octet près (`tab`, `accountId`, `from`, `to`), que l'accueil et la réévaluation
+	// emploient et que `homepage-charts.spec.ts` vérifie dans cet ordre.
+	return reportHref({ tab: 'general-ledger', accountId, from, to });
+}
+
+/**
+ * Story 55-3b (AC-2) — les justificatifs d'une écriture, lus au clic sur son icône
+ * (`GET /api/v1/journal-entries/{id}/documents`, route de la 55-3a, tout rôle authentifié).
+ */
+export async function fetchEntryDocuments(entryId: number): Promise<EntryDocument[]> {
+	return apiClient.get<EntryDocument[]>(`/api/v1/journal-entries/${entryId}/documents`);
+}
+
+/**
+ * Story 55-3b (AC-3, D12) — le PDF d'une facture, en `Blob`.
+ *
+ * ⚠️ `GET /invoices/{id}/pdf` **fige** une facture qui ne l'est pas encore : l'écran des Rapports ne l'appelle
+ * que pour un justificatif dont `pdfStatus` vaut `'frozen'` (le PDF figé, servi sans rien écrire).
+ */
+export async function fetchInvoicePdf(invoiceId: number): Promise<Blob> {
+	const response = await apiClient.getBlob(`/api/v1/invoices/${invoiceId}/pdf`);
+	return response.blob();
+}
+
+/** Story 55-3b (AC-3) — le PDF d'un avoir, en `Blob` (`GET /credit-notes/{id}/pdf`). */
+export async function fetchCreditNotePdf(creditNoteId: number): Promise<Blob> {
+	const response = await apiClient.getBlob(`/api/v1/credit-notes/${creditNoteId}/pdf`);
+	return response.blob();
 }

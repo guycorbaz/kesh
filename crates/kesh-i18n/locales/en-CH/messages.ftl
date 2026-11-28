@@ -374,9 +374,9 @@ error-designated-account-type-expense = an expense account
 # Story 35-1 (#948, D4, D5) — 400 NUMBER_FORMAT_UNRENDERABLE : la pièce, puis la cause.
 error-number-format-unrenderable-invoice = This invoice cannot be validated: its number cannot be produced. Nothing has been saved and no number has been used.
 error-number-format-unrenderable-credit-note = This credit note cannot be created: its number cannot be produced. Nothing has been saved and no number has been used.
-error-number-format-unrenderable-too-long = The format “{ $format }”, with the fiscal year name “{ $fiscalYear }”, gives a number that is too long (more than 64 bytes; an accented letter counts as two): an administrator must shorten the format in Administration → Invoicing, or the fiscal year name.
+error-number-format-unrenderable-too-long = The format “{ $format }” gives, in the fiscal year “{ $fiscalYear }”, a number that is too long (more than 64 bytes; an accented letter counts as two, “–” or “€” as three, an emoji as four): an administrator must shorten the format in Administration → Invoicing, and the fiscal year name if it uses {"{"}FY{"}"}.
 error-number-format-unrenderable-brace = The fiscal year name “{ $fiscalYear }” contains a brace, which the format “{ $format }” would carry into the number: an administrator must rename the fiscal year, or remove {"{"}FY{"}"} from the format in Administration → Invoicing.
-error-number-format-unrenderable-duplicate = The format “{ $format }” produces, in the fiscal year “{ $fiscalYear }”, a number already assigned: it must distinguish each document — a counter ({"{"}SEQ{"}"}), which restarts every fiscal year, and the fiscal year ({"{"}FY{"}"}); the year ({"{"}YEAR{"}"}) is not enough if two fiscal years start in the same year. An administrator must correct it in Administration → Invoicing.
+error-number-format-unrenderable-duplicate = The format “{ $format }” produces, in the fiscal year “{ $fiscalYear }”, a number already assigned in the company — in this fiscal year, in another, or under a previous format: each document must have a distinct number. A counter ({"{"}SEQ{"}"}) restarts every fiscal year; to tell fiscal years apart you need {"{"}FY{"}"}, or {"{"}YEAR{"}"} if two fiscal years never start in the same year. An administrator must correct it in Administration → Invoicing.
 error-number-format-unrenderable-invalid = The saved format “{ $format }” is not valid: an administrator must correct it in Administration → Invoicing.
 error-rounding-account-not-configured = This payment settles the invoice to the centime, but no usable rounding-difference account is designated: choose one in Administration → Invoicing.
 error-rounding-account-not-configured-issuance = The total of this document is rounded to 5 centimes, but no usable rounding-difference account is designated: choose one in Administration → Invoicing.
@@ -644,7 +644,7 @@ invoices-description-error-unknown-placeholder = Unknown placeholder: {"{"}{ $na
 invoices-description-error-no-placeholder = The label must contain at least one known placeholder ({"{"}YEAR{"}"}, {"{"}INVOICE_NUMBER{"}"}, {"{"}CONTACT_NAME{"}"})
 invoices-format-error-empty = The numbering format is empty
 invoices-format-error-numbering = The format must read: a free prefix, {"{"}YEAR{"}"}, a separator without digits, then {"{"}SEQ{"}"} or {"{"}SEQ:NN{"}"}, nothing after (example: FF-{"{"}YEAR{"}"}-{"{"}SEQ:03{"}"})
-invoices-format-error-too-long = The format exceeds { $max } characters (currently { $actual })
+invoices-format-error-too-long = The format exceeds { $max } bytes (currently { $actual })
 invoices-format-error-bad-chars = The format contains disallowed characters
 invoices-format-error-bad-padding = Invalid padding {"{"}SEQ:{ $n }{"}"} — must be between 1 and { $max }
 invoices-format-error-unknown-placeholder = Unknown placeholder: {"{"}{ $name }{"}"}
@@ -652,6 +652,10 @@ invoices-format-error-no-placeholder = The format must contain at least one know
 invoices-format-error-rendered-too-long = The format would produce a { $len }-character number (max { $max })
 invoice-new-title = New invoice
 invoice-edit-title = Edit invoice
+invoice-edit-forbidden = Your role does not allow editing an invoice.
+invoice-edit-not-draft-validated = This invoice is validated: it can no longer be edited.
+invoice-edit-not-draft-cancelled = This invoice is cancelled: it can no longer be edited.
+invoice-edit-back = Back to the invoice
 invoice-view-title = Invoice
 invoice-form-contact = Contact
 invoice-form-date = Date
@@ -2235,7 +2239,7 @@ reports-filter-fiscal-year = Fiscal Year
 reports-filter-journal = Journal
 reports-button-generate = Generate
 
-reports-error-no-entries-in-period = No entries in the selected period. Change the dates or pick a different fiscal year.
+reports-error-no-entries-in-period = No entries in this period.
 reports-error-period-out-of-fiscal-year = The selected period exceeds the fiscal year bounds. Pick a period between { $fyStart } and { $fyEnd }.
 reports-error-no-fiscal-year-available = No fiscal year available. Create a fiscal year before generating reports.
 
@@ -2252,8 +2256,7 @@ reports-archived-label = archived
 
 # Reports page — chrome (3 — code review Pass 1 i18n leaks)
 reports-page-title = Accounting Reports
-reports-instruction-select-and-generate = Select a fiscal year and click Generate.
-reports-loading = Generating report…
+reports-loading = Loading…
 
 # Story 9-2a — Export PDF & CSV (10 keys)
 reports-export-pdf-button = Export PDF
@@ -2284,7 +2287,6 @@ reports-project-return-total = Total
 reports-project-selector-label = Analytical account
 reports-project-selector-placeholder = — Choose an analytical account
 reports-aged-instruction = Aged balance as of today.
-reports-aged-instruction-generate = Click Generate to display the aged balance as of today.
 reports-aged-as-of = As of { $date }
 reports-aged-empty = No open customer receivables.
 reports-aged-col-contact = Customer
@@ -3077,6 +3079,15 @@ settings-vat-rates-link = Set up the VAT rates and their validity dates (rate ch
 vat-rates-active = Active
 vat-rates-change = Change the rate
 vat-rates-change-error = The rate change failed.
+vat-rates-err-rate-required = Enter a rate.
+vat-rates-err-rate-invalid = The rate must be a number.
+vat-rates-err-rate-range = The rate must be between 0 and 100.
+vat-rates-err-rate-decimals = The rate cannot have more than two decimals.
+vat-rates-err-from-required = Enter the start date.
+vat-rates-err-switch-required = Enter the switch date.
+vat-rates-change-error-closed = The old rate was closed on the switch date, but the new rate was not created. Once the cause is removed, repeat « Change the rate » with the same date.
+vat-rates-change-error-closed-reason = The old rate was closed on the switch date, but the new rate was not created: { $reason } Once the cause is removed, repeat « Change the rate » with the same date.
+vat-rates-change-error-closed-unknown = The old rate was closed on the switch date; the new rate may not have been created. Check the list: if it is missing, repeat « Change the rate » with the same date.
 vat-rates-change-hint = The old rate will end on the changeover date, and the new rate will take effect on that date.
 vat-rates-changed = Rate updated.
 vat-rates-col-actions = Actions
@@ -3634,7 +3645,7 @@ reports-fx-line = { $amount } × { $rate }
 reports-fx-totals = debit { $debit } · credit { $credit }
 reports-fx-trial-balance = opening { $opening } · debit { $debit } · credit { $credit } · closing { $closing }
 reports-ledger-include-zero = Include accounts with no movement
-reports-ledger-instruction = Pick a period, then click Generate. The account is optional.
+reports-ledger-instruction = Pick a period. For all accounts, click Generate; a chosen account is shown on its own.
 
 # --- Journal d'audit — route, vocabulaire et export (Story 25-1c-a) ---
 # ----------------------------------------------------------------------
@@ -4544,6 +4555,32 @@ stripe-gap-payout-entry = Payout entry
 stripe-gap-receipt-link = Link the receipt in the reconciliation
 stripe-gap-receipt-import = Import the statement of the destination account (Wise).
 
+## Story 55-1a (Epic 55, D15, D16) — the reports' fiscal year selector, the period heading
+reports-nav-fy-multiple = Multiple
+reports-nav-fy-outside = Outside fiscal years
+reports-nav-fy-whole = Whole fiscal year
+reports-nav-needs-one-fy = This report covers a single fiscal year: choose two dates in the same fiscal year.
+reports-nav-period-invalid = The start date must be on or before the end date.
+reports-nav-heading-fy = Fiscal year { $years } — from { $from } to { $to }
+reports-nav-heading-named = { $name } — from { $from } to { $to }
+reports-nav-heading-part = From { $from } to { $to } (part of fiscal year { $fiscalYear })
+reports-nav-heading-several = From { $from } to { $to } (fiscal years { $fiscalYears })
+reports-nav-heading-outside = From { $from } to { $to } (outside fiscal years)
+# Story 55-2 (AC-6) — la ligne des comptes de TVA au grand livre, après le décompte.
+reports-nav-vat-accounts = Ledger accounts:
+# Story 55-3b (Epic 55, D9 à D12) — the supporting documents of an entry, from the Journal and the General ledger.
+reports-nav-documents-title = Supporting documents of entry no. { $number }
+reports-nav-documents-kind-invoice = Invoice
+reports-nav-documents-kind-credit-note = Credit note
+reports-nav-documents-kind-supplier-document = Supplier document
+reports-nav-documents-list = Supporting documents of the entry
+reports-nav-documents-loading = Loading supporting documents…
+reports-nav-documents-none = This entry no longer has a supporting document.
+reports-nav-documents-close = Close
+reports-nav-documents-empty = The document received is empty.
+reports-nav-documents-not-issued = PDF not yet issued: this invoice has no frozen PDF yet; its next download, or its next sending by e-mail, will freeze it.
+reports-nav-ledger-column-documents = Documents
+
 # Story 39-11d — écrans Wise : réglages du compte, page Wise (import des relevés et du zip), libellés
 wise-csv-line-field-count = number of cells differs from the header
 wise-csv-line-date = unreadable or malformed date (DD-MM-YYYY or YYYY-MM-DD expected)
@@ -4629,3 +4666,9 @@ bank-accounts-help-wise-account = The same label for the accounts of each curren
 bank-accounts-help-wise-ledger = Required: the chart account of the Wise balance, in its currency (a foreign-currency account requires multi-currency).
 nav-wise = Wise
 fiscal-years-checks-k2-link-wise = Open the Wise page
+
+# Epic 52 — Story 49-2 : réordonner les lignes d'une facture (↑ / ↓)
+invoice-line-move-up = Move line { $n } up
+invoice-line-move-down = Move line { $n } down
+invoice-lines-moved-status = Line moved to position { $position } of { $total }
+invoice-line-remove = Delete line { $n }

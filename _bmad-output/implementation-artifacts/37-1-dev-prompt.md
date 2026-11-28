@@ -2,9 +2,9 @@
 
 Tu développes la story **37-1** (`_bmad-output/implementation-artifacts/37-1-reglage-et-devise-des-comptes.md`) selon le
 skill `bmad-dev-story` (lis `.claude/skills/bmad-dev-story/SKILL.md` et suis-le), dans le worktree
-`/home/beat/claude/kesh/.claude/worktrees/kesh-s37-1` (branche `story/37-1-reglage-et-devise-des-comptes`, partie de
+`<worktree>/kesh-s37-1` (branche `story/37-1-reglage-et-devise-des-comptes`, partie de
 `epic/37-multi-devises`). **N'écris jamais hors de ce worktree**, sauf les journaux dans
-`/home/beat/claude/kesh-gate-logs/s37-1/`. Chemins absolus.
+`$GATE_LOGS/s37-1/`. Chemins absolus.
 
 ## À lire d'abord
 

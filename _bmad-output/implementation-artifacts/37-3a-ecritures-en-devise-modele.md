@@ -1346,7 +1346,7 @@ l'API aussi ; ouverture à deux devises par `create_opening_entry` (au dépôt),
 
 ### Gates réellement exécutés
 
-Journaux : `/home/beat/claude/kesh-gate-logs/s37-3a/`.
+Journaux : `$GATE_LOGS/s37-3a/`.
 
 - **Backend complet** au dernier commit de code, la fusion `e89291e6`, bases remises à zéro (recréées, migrées,
   semées) : `scripts/test-fast.sh --ci` (fmt `--check`, clippy `--workspace --all-targets -D warnings`, nextest

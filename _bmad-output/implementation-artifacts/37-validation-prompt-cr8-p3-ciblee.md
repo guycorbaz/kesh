@@ -1,6 +1,6 @@
 # Prompt de validation CR-8 P3 ciblée — fiche 37-5 (contrôle de clôture bloquant)
 
-Passe ciblée (modèle différent de P2, Sonnet) braquée sur la remédiation P2 :, contexte frais. Worktree `/home/beat/claude/kesh/.claude/worktrees/kesh-wt37`
+Passe ciblée (modèle différent de P2, Sonnet) braquée sur la remédiation P2 :, contexte frais. Worktree `<worktree>/kesh-wt37`
 (branche `epic/37-multi-devises`) : n'écris nulle part ailleurs.
 
 ## À lire

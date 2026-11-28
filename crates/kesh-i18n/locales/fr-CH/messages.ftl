@@ -374,9 +374,9 @@ error-designated-account-type-expense = compte de charge
 # Story 35-1 (#948, D4, D5) — 400 NUMBER_FORMAT_UNRENDERABLE : la pièce, puis la cause.
 error-number-format-unrenderable-invoice = Cette facture ne peut pas être validée : son numéro ne peut pas être produit. Rien n’a été enregistré, aucun numéro n’a été consommé.
 error-number-format-unrenderable-credit-note = Cet avoir ne peut pas être créé : son numéro ne peut pas être produit. Rien n’a été enregistré, aucun numéro n’a été consommé.
-error-number-format-unrenderable-too-long = Le format « { $format } », avec le nom de l’exercice « { $fiscalYear } », donne un numéro trop long (plus de 64 octets ; une lettre accentuée en compte deux) : un administrateur doit raccourcir le format dans Administration → Facturation, ou le nom de l’exercice.
+error-number-format-unrenderable-too-long = Le format « { $format } » donne, dans l’exercice « { $fiscalYear } », un numéro trop long (plus de 64 octets ; une lettre accentuée en compte deux, « – » ou « € » trois, un emoji quatre) : un administrateur doit raccourcir le format dans Administration → Facturation, et le nom de l’exercice s’il reprend {"{"}FY{"}"}.
 error-number-format-unrenderable-brace = Le nom de l’exercice « { $fiscalYear } » contient une accolade, que le format « { $format } » reprendrait dans le numéro : un administrateur doit renommer l’exercice, ou retirer {"{"}FY{"}"} du format dans Administration → Facturation.
-error-number-format-unrenderable-duplicate = Le format « { $format } » produit, dans l’exercice « { $fiscalYear } », un numéro déjà attribué : il doit distinguer chaque pièce — un compteur ({"{"}SEQ{"}"}), qui repart à chaque exercice, et l’exercice ({"{"}FY{"}"}) ; l’année ({"{"}YEAR{"}"}) ne suffit pas si deux exercices commencent la même année. Un administrateur doit le corriger dans Administration → Facturation.
+error-number-format-unrenderable-duplicate = Le format « { $format } » produit, dans l’exercice « { $fiscalYear } », un numéro déjà attribué dans la société — dans cet exercice, dans un autre, ou sous un format précédent : chaque pièce doit avoir un numéro distinct. Un compteur ({"{"}SEQ{"}"}) repart à chaque exercice ; pour distinguer les exercices il faut {"{"}FY{"}"}, ou {"{"}YEAR{"}"} si deux exercices ne commencent jamais la même année. Un administrateur doit le corriger dans Administration → Facturation.
 error-number-format-unrenderable-invalid = Le format « { $format } » enregistré n’est pas valide : un administrateur doit le corriger dans Administration → Facturation.
 error-rounding-account-not-configured = Ce paiement solde la facture au centime, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Administration → Facturation.
 error-rounding-account-not-configured-issuance = Le total de cette pièce est arrondi à 5 centimes, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Administration → Facturation.
@@ -638,7 +638,7 @@ invoices-description-error-unknown-placeholder = Placeholder inconnu : {"{"}{ $n
 invoices-description-error-no-placeholder = Le libellé doit contenir au moins un placeholder reconnu ({"{"}YEAR{"}"}, {"{"}INVOICE_NUMBER{"}"}, {"{"}CONTACT_NAME{"}"})
 invoices-format-error-empty = Le format de numérotation est vide
 invoices-format-error-numbering = Le format doit s'écrire : un préfixe libre, {"{"}YEAR{"}"}, un séparateur sans chiffre, puis {"{"}SEQ{"}"} ou {"{"}SEQ:NN{"}"}, rien après (exemple : FF-{"{"}YEAR{"}"}-{"{"}SEQ:03{"}"})
-invoices-format-error-too-long = Le format dépasse { $max } caractères (actuel : { $actual })
+invoices-format-error-too-long = Le format dépasse { $max } octets (actuel : { $actual })
 invoices-format-error-bad-chars = Le format contient des caractères non autorisés
 invoices-format-error-bad-padding = Padding {"{"}SEQ:{ $n }{"}"} invalide — doit être entre 1 et { $max }
 invoices-format-error-unknown-placeholder = Placeholder inconnu : {"{"}{ $name }{"}"}
@@ -646,6 +646,10 @@ invoices-format-error-no-placeholder = Le format doit contenir au moins un place
 invoices-format-error-rendered-too-long = Le format générerait un numéro de { $len } caractères (max { $max })
 invoice-new-title = Nouvelle facture
 invoice-edit-title = Modifier la facture
+invoice-edit-forbidden = Votre rôle ne permet pas de modifier une facture.
+invoice-edit-not-draft-validated = Cette facture est validée : elle ne se modifie plus.
+invoice-edit-not-draft-cancelled = Cette facture est annulée : elle ne se modifie plus.
+invoice-edit-back = Revenir à la facture
 invoice-view-title = Facture
 invoice-form-contact = Contact
 invoice-form-date = Date
@@ -2324,7 +2328,7 @@ reports-filter-journal = Journal
 reports-button-generate = Générer
 
 # Erreurs UX (3)
-reports-error-no-entries-in-period = Aucune écriture dans la période sélectionnée. Modifiez les dates ou choisissez un autre exercice.
+reports-error-no-entries-in-period = Aucune écriture sur cette période.
 reports-error-period-out-of-fiscal-year = La période sélectionnée dépasse les bornes de l'exercice. Choisissez une période entre { $fyStart } et { $fyEnd }.
 reports-error-no-fiscal-year-available = Aucun exercice comptable disponible. Créez un exercice avant de générer des rapports.
 
@@ -2342,8 +2346,7 @@ reports-archived-label = archivé
 
 # Page rapports — chrome (3 — code review Pass 1 i18n leaks)
 reports-page-title = Rapports comptables
-reports-instruction-select-and-generate = Sélectionnez un exercice et cliquez sur Générer.
-reports-loading = Génération du rapport en cours…
+reports-loading = Chargement…
 
 # Story 9-2a — Export PDF & CSV (10 clés)
 reports-export-pdf-button = Export PDF
@@ -2374,7 +2377,6 @@ reports-project-return-total = Total
 reports-project-selector-label = Compte analytique
 reports-project-selector-placeholder = — Choisir un compte analytique
 reports-aged-instruction = Balance âgée arrêtée à ce jour.
-reports-aged-instruction-generate = Cliquez sur Générer pour afficher la balance âgée arrêtée à ce jour.
 reports-aged-as-of = Arrêté au { $date }
 reports-aged-empty = Aucune créance client ouverte.
 reports-aged-col-contact = Client
@@ -2824,6 +2826,15 @@ vat-rates-created = Taux TVA créé.
 vat-rates-create-error = La création a échoué.
 vat-rates-changed = Taux mis à jour.
 vat-rates-change-error = Le changement de taux a échoué.
+vat-rates-err-rate-required = Saisissez un taux.
+vat-rates-err-rate-invalid = Le taux doit être un nombre.
+vat-rates-err-rate-range = Le taux doit être compris entre 0 et 100.
+vat-rates-err-rate-decimals = Le taux ne peut avoir plus de deux décimales.
+vat-rates-err-from-required = Saisissez la date de début.
+vat-rates-err-switch-required = Saisissez la date de bascule.
+vat-rates-change-error-closed = L'ancien taux a été clôturé à la date de bascule, mais le nouveau taux n'a pas été créé. Une fois la cause levée, refaites « Changer le taux » à la même date.
+vat-rates-change-error-closed-reason = L'ancien taux a été clôturé à la date de bascule, mais le nouveau taux n'a pas été créé : { $reason } Une fois la cause levée, refaites « Changer le taux » à la même date.
+vat-rates-change-error-closed-unknown = L'ancien taux a été clôturé à la date de bascule ; le nouveau taux n'a peut-être pas été créé. Vérifiez la liste : s'il manque, refaites « Changer le taux » à la même date.
 vat-rates-deactivated = Taux désactivé.
 vat-rates-deactivate-error = La désactivation a échoué.
 vat-rates-deactivate-confirm = Désactiver ce taux ? Il ne sera plus proposé à la saisie mais restera dans l'historique.
@@ -3706,7 +3717,7 @@ reports-fx-line = { $amount } × { $rate }
 reports-fx-totals = débit { $debit } · crédit { $credit }
 reports-fx-trial-balance = ouverture { $opening } · débit { $debit } · crédit { $credit } · clôture { $closing }
 reports-ledger-include-zero = Inclure les comptes sans mouvement
-reports-ledger-instruction = Choisissez une période, puis cliquez sur Générer. Le compte est facultatif.
+reports-ledger-instruction = Choisissez une période. Pour tous les comptes, cliquez sur Générer ; un compte choisi s'affiche de lui-même.
 
 # --- Journal d'audit — route, vocabulaire et export (Story 25-1c-a) ---
 # ----------------------------------------------------------------------
@@ -4619,6 +4630,32 @@ stripe-gap-payout-entry = Écriture du versement
 stripe-gap-receipt-link = Rattacher la réception à la réconciliation
 stripe-gap-receipt-import = Importez le relevé du compte de destination (Wise).
 
+## Story 55-1a (Epic 55, D15, D16) — le sélecteur d'exercice des Rapports, l'en-tête de la période
+reports-nav-fy-multiple = Plusieurs
+reports-nav-fy-outside = Hors exercice
+reports-nav-fy-whole = Exercice entier
+reports-nav-needs-one-fy = Ce rapport porte sur un seul exercice : choisissez deux dates du même exercice.
+reports-nav-period-invalid = La date de début doit précéder la date de fin, ou lui être égale.
+reports-nav-heading-fy = Exercice { $years } — du { $from } au { $to }
+reports-nav-heading-named = { $name } — du { $from } au { $to }
+reports-nav-heading-part = Du { $from } au { $to } (partie de l’exercice { $fiscalYear })
+reports-nav-heading-several = Du { $from } au { $to } (exercices { $fiscalYears })
+reports-nav-heading-outside = Du { $from } au { $to } (hors exercice)
+# Story 55-2 (AC-6) — la ligne des comptes de TVA au grand livre, après le décompte.
+reports-nav-vat-accounts = Comptes au grand livre :
+# Story 55-3b (Epic 55, D9 à D12) — les justificatifs d'une écriture, depuis le Journal et le Grand livre.
+reports-nav-documents-title = Justificatifs de l'écriture n° { $number }
+reports-nav-documents-kind-invoice = Facture
+reports-nav-documents-kind-credit-note = Avoir
+reports-nav-documents-kind-supplier-document = Document fournisseur
+reports-nav-documents-list = Justificatifs de l'écriture
+reports-nav-documents-loading = Chargement des justificatifs…
+reports-nav-documents-none = Cette écriture n'a plus de justificatif.
+reports-nav-documents-close = Fermer
+reports-nav-documents-empty = Le document reçu est vide.
+reports-nav-documents-not-issued = PDF pas encore émis : cette facture n'a pas encore de PDF figé ; son prochain téléchargement, ou son prochain envoi par e-mail, le figera.
+reports-nav-ledger-column-documents = Justificatifs
+
 # Story 39-11d — écrans Wise : réglages du compte, page Wise (import des relevés et du zip), libellés
 wise-csv-line-field-count = nombre de cellules différent de l’en-tête
 wise-csv-line-date = date illisible ou hors format (JJ-MM-AAAA ou AAAA-MM-JJ attendu)
@@ -4704,3 +4741,9 @@ bank-accounts-help-wise-account = Le même libellé pour les comptes de chaque d
 bank-accounts-help-wise-ledger = Obligatoire : le compte du plan du solde Wise, dans sa devise (un compte en devise exige le multi-devises).
 nav-wise = Wise
 fiscal-years-checks-k2-link-wise = Ouvrir la page Wise
+
+# Epic 52 — Story 49-2 : réordonner les lignes d'une facture (↑ / ↓)
+invoice-line-move-up = Monter la ligne { $n }
+invoice-line-move-down = Descendre la ligne { $n }
+invoice-lines-moved-status = Ligne déplacée en position { $position } sur { $total }
+invoice-line-remove = Supprimer la ligne { $n }

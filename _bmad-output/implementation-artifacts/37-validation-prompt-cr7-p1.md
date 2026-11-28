@@ -1,7 +1,7 @@
 # Prompt de validation CR-7 P1 — fiches de l'Epic 37 (multi-devises sans retour)
 
 Première passe complète du cycle CR-7, contexte frais, sur une fiche du worktree
-`/home/beat/claude/kesh/.claude/worktrees/kesh-wt37` (branche `epic/37-multi-devises` ; n'écris nulle part ailleurs).
+`<worktree>/kesh-wt37` (branche `epic/37-multi-devises` ; n'écris nulle part ailleurs).
 
 ## À lire
 

@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { Button } from '$lib/components/ui/button';
+	import { LINK_UNDERLINE_CLASS } from '$lib/shared/navigation/link-class';
 	import { Input } from '$lib/components/ui/input';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { apiClient, isApiError } from '$lib/shared/utils/api-client';
@@ -196,7 +197,7 @@
 				{#if featureFlags.forgotPasswordEnabled}
 					<a
 						href="/forgot-password"
-						class="self-end text-sm text-primary hover:underline"
+						class="self-end text-sm text-primary {LINK_UNDERLINE_CLASS}"
 						data-testid="forgot-password-link"
 					>
 						Mot de passe oublié ?

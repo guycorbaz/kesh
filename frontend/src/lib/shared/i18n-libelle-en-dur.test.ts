@@ -490,6 +490,12 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
 
 // **149 → 151** (Epic 46 reposé sur main à a914c4823, branche pr/46-rapports-groupes-v2) : `toggleLabel`
 // (46-2) et `fxText` (46-6b) ; `conforme` **128 → 130**, confirmés par la garde (`kesh-gate-logs/s46-pr/front-vitest-a.log`).
+// **151 → 152** (Story 55-1a) : `keepDisplay` (`routes/(app)/reports/+page.svelte`, une constante
+// booléenne de `generate()` que le nom fait relever, aucun texte) ; `conforme` **130 → 131**, relevés par
+// la garde (`kesh-gate-logs/s55-dev/55-1a/front-1/front-test-unit.log`), non additionnés.
+// **152 → 154** (Story 55-3b) : `entryDocumentKindLabel` et `entryDocumentItemLabel`
+// (`features/reports/entry-documents.ts`), par `i18nMsg` et un gabarit ; `conforme` **131 → 133**, relevés par
+// la garde (« expected 154 to be 152 »), non additionnés.
 // **151 → 154** (Story 46-5 ajoutée à la branche pr/46-rapports-groupes-v2, 2026-11-26) : `typeLabel`,
 // `proposalMessageText` et `kindLabel` (46-5b) ; `conforme` **130 → 133**, à confirmer par la garde.
 // **168** (fusion anticipée de pr/39-wise-v2 dans pr/46-rapports-groupes-v2, 2026-11-26) : 163 (pr/39) + 5
@@ -500,7 +506,15 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
 // **169 → 170** (Story 53-6a, #1674) : `vatText` (`reconciliation/CancelReconciliationDialog.svelte`,
 // par `i18nMsg`) ; `conforme` **147 → 148**, relevés par la garde (« expected 170 to be 169 »,
 // `kesh-gate-logs/e53/s536a/t5-vitest-gardes.log`).
-const CANDIDATES_ATTENDUES = 170;
+// **171** (fusion de pr/46-rapports-groupes-v2, ecf6cf835, dans epic/55-navigation, 2026-11-26) : 168 (pr/46)
+// + 3 (Epic 55 : `keepDisplay`, `entryDocumentKindLabel`, `entryDocumentItemLabel`) ; `conforme` **149** (146 + 3),
+// `ecartee` **22**, confirmés par la garde (`kesh-gate-logs/s55-revue/fusion/gardes-1.log`).
+// **172** (story 64-1, revue P2, lot L2-1/L2-4, 2026-11-28) : 171 + 1 (`hasOwnLabel` de
+// `vat-rates.distinct.ts`, booléen, aucun texte rendu) ; `conforme` **150** (149 + 1), `ecartee` **22**,
+// confirmés par la garde (`$GATE_LOGS/e64/rem/garde-libelles-1.log`).
+// **174** (reprise de la 0.20.1 dans epic/53-ecritures-justes, 2026-11-28) : 172 (main) + 2 (53-1a `entryDuplicateText`,
+// 53-6a `vatText`) ; `conforme` **152** (150 + 2), `ecartee` **22** ; à confirmer par la garde.
+const CANDIDATES_ATTENDUES = 174;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -1017,7 +1031,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 22, conforme: 148 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 22, conforme: 152 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);
