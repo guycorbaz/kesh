@@ -8,7 +8,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.20.1] — Non publié
+## [0.20.1] — 2026-11-28
 
 **Aucune migration.** La sauvegarde d'avant la mise à jour reste recommandée, comme avant toute mise à jour d'une installation qui tient des livres : la base, un `.keshbackup` et le dossier des documents. Le schéma ne change pas, `kesh_version_min_required` reste à 0.17.6, et Kesh n'écrit aucune sauvegarde dans `backup/pre-upgrade/` à cette mise à jour (il n'en écrit qu'avant une migration). **Le retour à la 0.20.0 se fait en reprenant l'image `gcorbaz/kesh:0.20.0`** : il n'y a pas de migration à défaire, et ce qui a été saisi entre-temps reste. Une sauvegarde `.keshbackup` prise en 0.20.0 s'importe dans la 0.20.1, et inversement. Le détail est au manuel d'administration, *Passer à la 0.20.1*.
 
