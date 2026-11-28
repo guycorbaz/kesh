@@ -1352,7 +1352,7 @@ development_status:
   # 2026-11-28 — Epic 65 : suite de l'Epic 58 (58-4 à 58-6 sorties de l'Epic 58 réduit, décision du Project Lead du 2026-11-27), pour la release du vendredi 2026-12-04. Fichier d'epic : planning-artifacts/epic-65-nettoyage-suite.md.
   epic-65: backlog
   58-4-textes-interface-i18n: backlog  # → Epic 65 (2026-11-28) ; 10 issues ; catalogues des quatre locales
-  58-5-cosmetique-ecrans: drafted  # 2026-11-28 fiche rédigée, Epic 65 ; 10 issues retenues (#253, #933, #996, #1008, #1015, #1016, #1153, #1154, #1184, #1549), #1096 écartée (déjà corrigée, invoices/[id]/+page.svelte:1093) ; recette visuelle
+  58-5-cosmetique-ecrans: drafted  # 2026-11-28 fiche rédigée, Epic 65 ; 9 issues retenues (#253, #933, #1008, #1015, #1016, #1153, #1154, #1184, #1549), #1096 écartée (déjà corrigée, invoices/[id]/+page.svelte:1093), #996 sortie (story à venir de l'Epic 65, décision du Project Lead du 2026-11-28) ; recette visuelle
   58-6-tests-frontend-reconciliation: backlog  # → Epic 65 (2026-11-28) ; 10 issues
   epic-65-retrospective: optional
 
