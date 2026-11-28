@@ -852,7 +852,7 @@ invoices-settlements-type-bank = Bonifico bancario
 invoices-settlements-type-internal = Contanti o altro conto
 invoices-settlement-cancel-button = Annulla il pagamento
 invoices-settlement-cancel-reconciliation = Annulla la riconciliazione
-invoices-settlement-cancel-confirm = Annullare questo pagamento? Una scrittura di storno con la data di oggi sarà registrata nel libro mastro, e l'importo tornerà dovuto.
+invoices-settlement-cancel-confirm = Annullare questo pagamento? Una scrittura di storno con la data del pagamento sarà registrata nel libro mastro nel suo esercizio, e l'importo tornerà dovuto. I totali di quel periodo cambiano: se è già stato dichiarato, fate prima bloccare il periodo — l'annullamento sarà allora rifiutato, il che protegge la dichiarazione.
 invoices-settlement-cancelled = Pagamento annullato: la scrittura di storno è stata registrata.
 invoices-settlement-cancel-blocked-credited = Questa fattura è stata stornata da una nota di credito: questo pagamento resta aperto sul conto debitori, non si annulla.
 invoices-settlement-cancel-blocked-written-off = Il residuo di questa fattura è stato saldato: annullate prima il saldo.
@@ -861,7 +861,7 @@ invoices-settlements-type-write-off = Saldo — { $nature }
 invoices-write-off-amount-label = Importo saldato
 invoices-write-off-button = Saldare il residuo
 invoices-write-off-cancel-button = Annullare il saldo
-invoices-write-off-cancel-confirm = Annullare questo saldo? Una registrazione inversa datata oggi sarà registrata nel libro mastro, IVA compresa, e l'importo tornerà dovuto.
+invoices-write-off-cancel-confirm = Annullare questo saldo? Una registrazione inversa con la data del saldo sarà registrata nel libro mastro nel suo esercizio, IVA compresa, e l'importo tornerà dovuto. I totali di quel periodo cambiano, IVA compresa: se è già stato dichiarato, fate prima bloccare il periodo — l'annullamento sarà allora rifiutato, il che protegge la dichiarazione.
 invoices-write-off-cancelled = Saldo annullato: la registrazione inversa è stata registrata.
 invoices-write-off-confirm = Saldare il residuo
 invoices-write-off-date-label = Data del saldo
@@ -888,6 +888,9 @@ settlement-cancel-blocked-lettering-closed = Questo pagamento è abbinato alla s
 settlement-cancel-blocked-bank-match = Questo pagamento è riconciliato con una transazione bancaria: annulla prima la riconciliazione, dal dettaglio dell'importazione bancaria — oppure, per una fattura cliente, dalla sua scheda.
 settlement-cancel-blocked-account-archived = Un conto di questo pagamento è stato archiviato: riattivalo per poter annullare il pagamento.
 settlement-cancel-blocked-no-fiscal-year = Nessun esercizio aperto copre la data di oggi: crealo per poter annullare questo pagamento.
+# Story 63-1 (#1752, #1753) — l'annullamento porta la data del pagamento: sotto il limite del blocco, la scheda lo annuncia.
+settlement-cancel-blocked-period-locked = Questo pagamento è in un periodo bloccato: per poterlo annullare, un amministratore deve riportare il blocco prima della sua data.
+settlement-cancel-blocked-period-locked-through = Il periodo è bloccato fino al { $date } incluso.
 # Story 25-3-b (#418) — annuler un rapprochement : ses motifs et son dialogue.
 reconciliation-cancel-blocked-not-reconciled = Questa transazione bancaria non è riconciliata: non c'è alcuna riconciliazione da annullare.
 reconciliation-cancel-blocked-credited = La fattura di questa riconciliazione è stata stornata da una nota di credito: il suo pagamento resta aperto sul conto debitori e non si annulla.
@@ -3190,7 +3193,7 @@ imported-supplier-invoices-report-qr-unreadable = QR illeggibile
 imported-supplier-invoices-qr-unreadable-hint = Documento accettato senza i dati del QR: creando la fattura, inserisci a mano l'IBAN e il riferimento.
 supplier-invoices-add-line = Aggiungi una riga
 supplier-invoices-cancel = Annulla la fattura
-supplier-invoices-cancel-confirm = Annullare questa fattura? Una scrittura inversa dell'acquisto, datata oggi, sarà registrata nel libro mastro.
+supplier-invoices-cancel-confirm = Annullare questa fattura? Una scrittura inversa dell'acquisto, con la stessa data, sarà registrata nel libro mastro nel suo esercizio. I totali di quel periodo cambiano, IVA compresa: se è già stato dichiarato, fate prima bloccare il periodo — l'annullamento sarà allora rifiutato, il che protegge la dichiarazione.
 supplier-invoices-cancel-confirm-paid = È pagata: il suo pagamento resta nel libro mastro, staccato dalla fattura — un pagamento senza fattura, da abbinare. Se è il pagamento stesso a essere errato, annullate piuttosto prima il pagamento.
 supplier-invoices-cancelled = Fattura annullata: la scrittura inversa dell'acquisto è stata registrata nel libro mastro.
 supplier-invoices-cancelled-info = Fattura annullata.
@@ -3201,11 +3204,13 @@ supplier-invoices-cancel-blocked-lettering-closed = Questa fattura è abbinata a
 supplier-invoices-cancel-blocked-bank-match = La scrittura d'acquisto di questa fattura è riconciliata con una transazione bancaria: annullate prima questa riconciliazione.
 supplier-invoices-cancel-blocked-account-archived = Un conto della scrittura d'acquisto di questa fattura è stato archiviato: riattivatelo per poter annullare la fattura.
 supplier-invoices-cancel-blocked-no-fiscal-year = Nessun esercizio aperto copre la data odierna: createlo per poter annullare questa fattura.
+# Story 63-1 (#1754) — l'annullamento porta la data dell'acquisto: sotto il limite del blocco, la scheda lo annuncia.
+supplier-invoices-cancel-blocked-period-locked = La scrittura d'acquisto di questa fattura è in un periodo bloccato: per poterla annullare, un amministratore deve riportare il blocco prima della sua data.
 supplier-invoices-cancel-blocked-in-payment-batch = Questa fattura figura in un lotto di pagamento in corso: annullate prima il lotto.
 
 ## Story 25-3-a-2 (#414) — annuler un règlement fournisseur
 supplier-invoices-settlement-cancel-button = Annulla il pagamento
-supplier-invoices-settlement-cancel-confirm = Annullare questo pagamento? Una scrittura di storno con la data di oggi sarà registrata nel libro mastro, e la fattura tornerà convalidata, da pagare.
+supplier-invoices-settlement-cancel-confirm = Annullare questo pagamento? Una scrittura di storno con la data del pagamento sarà registrata nel libro mastro nel suo esercizio, e la fattura tornerà convalidata, da pagare. I totali di quel periodo cambiano: se è già stato dichiarato, fate prima bloccare il periodo — l'annullamento sarà allora rifiutato, il che protegge la dichiarazione.
 supplier-invoices-settlement-cancel-batch-warning = Questa fattura figura nell'ordine di pagamento n. { $batch }, confermato il { $date }. Se la banca ha eseguito quest'ordine, è già stata pagata: correggete allora con un nuovo pagamento diretto, mai con un nuovo ordine.
 supplier-invoices-settlement-cancelled = Pagamento annullato: la scrittura di storno è stata registrata e la fattura è di nuovo convalidata, da pagare.
 supplier-invoices-settlement-entry-link = Vedi la scrittura di pagamento

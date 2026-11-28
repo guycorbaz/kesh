@@ -852,7 +852,7 @@ invoices-settlements-type-bank = Bank transfer
 invoices-settlements-type-internal = Cash or other account
 invoices-settlement-cancel-button = Cancel the settlement
 invoices-settlement-cancel-reconciliation = Cancel the reconciliation
-invoices-settlement-cancel-confirm = Cancel this settlement? A reversing entry dated today will be posted to the general ledger, and the amount will be due again.
+invoices-settlement-cancel-confirm = Cancel this settlement? A reversing entry, dated as the settlement, will be posted to the general ledger in its fiscal year, and the amount will be due again. The totals of that period change: if it has already been declared, have the period locked first — the cancellation will then be refused, which protects the declaration.
 invoices-settlement-cancelled = Settlement cancelled: the reversing entry has been posted.
 invoices-settlement-cancel-blocked-credited = This invoice has been credited by a credit note: this settlement stays open on the receivables account, it cannot be cancelled.
 invoices-settlement-cancel-blocked-written-off = The remainder of this invoice has been written off: cancel the write-off first.
@@ -861,7 +861,7 @@ invoices-settlements-type-write-off = Write-off — { $nature }
 invoices-write-off-amount-label = Amount written off
 invoices-write-off-button = Write off the remainder
 invoices-write-off-cancel-button = Cancel the write-off
-invoices-write-off-cancel-confirm = Cancel this write-off? A reversing entry dated today will be posted to the general ledger, VAT included, and the amount will become due again.
+invoices-write-off-cancel-confirm = Cancel this write-off? A reversing entry, dated as the write-off, will be posted to the general ledger in its fiscal year, VAT included, and the amount will become due again. The totals of that period change, VAT included: if it has already been declared, have the period locked first — the cancellation will then be refused, which protects the declaration.
 invoices-write-off-cancelled = Write-off cancelled: the reversing entry has been posted.
 invoices-write-off-confirm = Write off the remainder
 invoices-write-off-date-label = Write-off date
@@ -888,6 +888,9 @@ settlement-cancel-blocked-lettering-closed = This settlement is matched with its
 settlement-cancel-blocked-bank-match = This settlement is reconciled with a bank transaction: undo the reconciliation first, from the bank import detail — or, for a customer invoice, from its record.
 settlement-cancel-blocked-account-archived = An account of this settlement has been archived: reactivate it to be able to cancel the settlement.
 settlement-cancel-blocked-no-fiscal-year = No open fiscal year covers today's date: create it to be able to cancel this settlement.
+# Story 63-1 (#1752, #1753) — the cancellation is dated as the settlement: under the lock bound, the page says so in advance.
+settlement-cancel-blocked-period-locked = This settlement is in a locked period: to be able to cancel it, an administrator must move the lock back before its date.
+settlement-cancel-blocked-period-locked-through = The period is locked up to and including { $date }.
 # Story 25-3-b (#418) — annuler un rapprochement : ses motifs et son dialogue.
 reconciliation-cancel-blocked-not-reconciled = This bank transaction is not reconciled: there is no reconciliation to cancel.
 reconciliation-cancel-blocked-credited = The invoice of this reconciliation has been credited by a credit note: its settlement stays open on the receivables account, it is not cancelled.
@@ -3195,7 +3198,7 @@ imported-supplier-invoices-report-qr-unreadable = QR unreadable
 imported-supplier-invoices-qr-unreadable-hint = Document accepted without the QR data: when creating the invoice, enter the IBAN and the reference by hand.
 supplier-invoices-add-line = Add a line
 supplier-invoices-cancel = Cancel the invoice
-supplier-invoices-cancel-confirm = Cancel this invoice? A reversing entry of the purchase, dated today, will be posted to the general ledger.
+supplier-invoices-cancel-confirm = Cancel this invoice? A reversing entry of the purchase, dated as the purchase, will be posted to the general ledger in its fiscal year. The totals of that period change, VAT included: if it has already been declared, have the period locked first — the cancellation will then be refused, which protects the declaration.
 supplier-invoices-cancel-confirm-paid = It is paid: its settlement stays in the general ledger, detached from the invoice — a payment without an invoice, to be matched. If the payment itself is wrong, cancel the settlement first instead.
 supplier-invoices-cancelled = Invoice cancelled: the reversing entry of the purchase has been posted to the general ledger.
 supplier-invoices-cancelled-info = Invoice cancelled.
@@ -3206,11 +3209,13 @@ supplier-invoices-cancel-blocked-lettering-closed = This invoice is matched with
 supplier-invoices-cancel-blocked-bank-match = The purchase entry of this invoice is matched with a bank transaction: cancel that reconciliation first.
 supplier-invoices-cancel-blocked-account-archived = An account of this invoice's purchase entry has been archived: reactivate it to be able to cancel the invoice.
 supplier-invoices-cancel-blocked-no-fiscal-year = No open fiscal year covers today's date: create it to be able to cancel this invoice.
+# Story 63-1 (#1754) — the cancellation is dated as the purchase: under the lock bound, the page says so in advance.
+supplier-invoices-cancel-blocked-period-locked = This invoice's purchase entry is in a locked period: to be able to cancel it, an administrator must move the lock back before its date.
 supplier-invoices-cancel-blocked-in-payment-batch = This invoice is part of a payment batch in progress: cancel the batch first.
 
 ## Story 25-3-a-2 (#414) — annuler un règlement fournisseur
 supplier-invoices-settlement-cancel-button = Cancel the settlement
-supplier-invoices-settlement-cancel-confirm = Cancel this settlement? A reversing entry dated today will be posted to the general ledger, and the invoice will be back to validated, to be paid.
+supplier-invoices-settlement-cancel-confirm = Cancel this settlement? A reversing entry, dated as the payment, will be posted to the general ledger in its fiscal year, and the invoice will be back to validated, to be paid. The totals of that period change: if it has already been declared, have the period locked first — the cancellation will then be refused, which protects the declaration.
 supplier-invoices-settlement-cancel-batch-warning = This invoice is part of payment batch no. { $batch }, confirmed on { $date }. If the bank executed that order, it has already been paid: correct it with a new direct settlement, never with a new batch.
 supplier-invoices-settlement-cancelled = Settlement cancelled: the reversing entry has been posted and the invoice is back to validated, to be paid.
 supplier-invoices-settlement-entry-link = View the settlement entry
