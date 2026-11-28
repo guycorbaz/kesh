@@ -3,8 +3,9 @@
 Tu conduis la **passe P5** de la story 63-1 de Kesh, **complète** (non ciblée), avec le modèle **Sonnet** (P1 Opus, P2 Sonnet, P3 Haiku ciblée, P4 Opus). Contexte : Kesh est un
 logiciel de comptabilité suisse, tenu en production par Guy ; la story corrige trois P1 (#1752, #1753, #1754) : les annulations depuis les fiches contre-passaient
 à la date du jour, elles contre-passent désormais à la date de l'écriture d'origine. Worktree `kesh-63-1` (chemin donné par l'orchestrateur), branche
-`story/63-1-annulations-datees-origine`. Commit(s) à relire : la remédiation de M1 de la P4, contre `f9a5070f5` (tête de la P4) ; l'orchestrateur te donne la tête.
-Un diff unique aplati : `git diff f9a5070f5..<tête>`.
+`story/63-1-annulations-datees-origine`. Commit(s) à relire : la remédiation de M1 de la P4, contre `f9a5070f5` (tête de la P4) : commit de code `f5e29384e`, puis le commit de la fiche (l'orchestrateur te donne la tête).
+Un diff unique aplati : `git diff f9a5070f5..<tête>`. La remédiation a aussi changé la spec E2E `annulations-datees-origine.spec.ts` (recette du solde en frais bancaires, non rejouée),
+`i18n-keys.test.ts` (`sitesTotal` 3979 → 3980) et la clé neuve `invoices-write-off-no-vat-cancel-confirm` ; le L2 (contrepartie sur le compte d'impôt préalable) est un angle mort écrit au § 5 de l'inventaire.
 
 ## Pourquoi une passe complète
 
