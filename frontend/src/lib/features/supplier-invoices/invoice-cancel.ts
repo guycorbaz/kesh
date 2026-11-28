@@ -12,8 +12,13 @@
  *
  * ⚠️ Les replis en dur disent **mot pour mot** le FTL fr-CH — le serveur rend
  * les mêmes clés quand il refuse (`crates/kesh-api/src/errors.rs`).
+ *
+ * Story 63-1 (#1754) : l'annulation est datée de l'écriture d'achat ; sous la
+ * borne du verrou, le serveur rend `PERIOD_LOCKED` (borne en étiquette), et
+ * `FISCAL_YEAR_INVALID` n'est plus produit (variante gardée, issue #1759).
  */
 import { i18nMsg } from "$lib/shared/utils/i18n.svelte";
+import { periodLockedThrough } from "$lib/shared/utils/settlement-cancel-blocked";
 
 export type SupplierInvoiceCancelCode =
   // Story v017-4b (#849, AC-25) — rang 1 du serveur (AC-13 de la 4a) : un brouillon
@@ -26,12 +31,16 @@ export type SupplierInvoiceCancelCode =
   | "LETTERING_ALL_LINES_IN_CLOSED_PERIODS"
   | "MATCHED_BANK_TRANSACTION"
   | "ACCOUNT_ARCHIVED"
+  // Story 63-1 — l'écriture d'achat est sous la borne du verrou de période.
+  | "PERIOD_LOCKED"
+  // Inatteignable depuis la Story 63-1 ; gardé (issue #1759).
   | "FISCAL_YEAR_INVALID"
   | "SUPPLIER_INVOICE_IN_PAYMENT_BATCH";
 
 /**
  * Le texte affiché à la place du bouton « Annuler la facture ». `label`
- * porte le **numéro du compte** archivé.
+ * porte le **numéro du compte** archivé, ou la **borne** du verrou de période
+ * (`PERIOD_LOCKED`), ajoutée en date suisse.
  */
 export function supplierInvoiceCancelMessage(
   code: SupplierInvoiceCancelCode,
@@ -72,6 +81,15 @@ export function supplierInvoiceCancelMessage(
       );
       return label ? `${base} (${label})` : base;
     }
+    case "PERIOD_LOCKED":
+      return periodLockedThrough(
+        i18nMsg(
+          "supplier-invoices-cancel-blocked-period-locked",
+          "L'écriture d'achat de cette facture est dans une période verrouillée : pour pouvoir l'annuler, un administrateur doit faire reculer le verrou avant sa date.",
+        ),
+        label,
+      );
+    // Inatteignable depuis la Story 63-1 (datée de l'achat) ; clé et repli gardés.
     case "FISCAL_YEAR_INVALID":
       return i18nMsg(
         "supplier-invoices-cancel-blocked-no-fiscal-year",

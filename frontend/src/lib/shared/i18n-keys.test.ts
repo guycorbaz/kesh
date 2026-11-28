@@ -1291,7 +1291,11 @@ const ATTENDU = {
 	// Revue P1 de la 53-6a (L1) : **3975 → 3976**, relevé par la garde (« expected 3976 to be 3975 »,
 	// `$GATE_LOGS/e53/s536a/remediation/front-vitest-1.log`) — `reconciliation-cancel-blocked-period-locked-through`
 	// (`reconciliation-cancel.ts`), la phrase qui nomme la borne du verrou.
-	sitesTotal: 3976,
+	// Story 63-1 (#1752, #1753, #1754) : **3976 → 3979**, relevé par la garde (« expected 3979 to be
+	// 3976 », `$GATE_LOGS/e63/t4-vitest-1.log`) — `settlement-cancel-blocked-period-locked` et
+	// `settlement-cancel-blocked-period-locked-through` (`settlement-cancel-blocked.ts`),
+	// `supplier-invoices-cancel-blocked-period-locked` (`invoice-cancel.ts`).
+	sitesTotal: 3979,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

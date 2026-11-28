@@ -316,7 +316,7 @@
 		settlementCancelError = '';
 		let message = i18nMsg(
 			'supplier-invoices-settlement-cancel-confirm',
-			"Annuler ce règlement ? Une écriture inverse datée d'aujourd'hui sera passée au grand livre, et la facture redeviendra validée, à payer.",
+			"Annuler ce règlement ? Une écriture inverse, datée du paiement, sera passée au grand livre dans son exercice, et la facture redeviendra validée, à payer. Les totaux de cette période changent : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
 		);
 		const batch = invoice.lastConfirmedBatch;
 		if (batch) {
@@ -363,7 +363,7 @@
 		cancelError = '';
 		let message = i18nMsg(
 			'supplier-invoices-cancel-confirm',
-			"Annuler cette facture ? Une écriture inverse de l'achat, datée d'aujourd'hui, sera passée au grand livre.",
+			"Annuler cette facture ? Une écriture inverse de l'achat, datée comme lui, sera passée au grand livre dans son exercice. Les totaux de cette période changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
 		);
 		if (invoice.status === 'paid') {
 			message +=

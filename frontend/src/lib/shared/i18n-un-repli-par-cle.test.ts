@@ -286,8 +286,12 @@ const PREFIXES = [
  * Story 48-12b (#975, #985) : **463 → 480**, relevé par la garde (`expected 480 to be 463`,
  * `kesh-gate-logs/e4812/dev/vitest-12b-complet-1.log`), non additionné — les dix-sept clés
  * `supplier-invoices-*` neuves de l'écran (avis, boutons, notifications du relevé C).
+ *
+ * Story 63-1 (#1754) : **480 → 481**, relevé par la garde (`expected 481 to be 480`,
+ * `$GATE_LOGS/e63/t4-vitest-1.log`) — `supplier-invoices-cancel-blocked-period-locked`
+ * (`invoice-cancel.ts`), le motif de la période verrouillée.
  */
-const CLES_RELEVEES = 480;
+const CLES_RELEVEES = 481;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

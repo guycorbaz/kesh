@@ -1864,11 +1864,11 @@
 					{cancelIsWriteOff
 						? i18nMsg(
 								'invoices-write-off-cancel-confirm',
-								"Annuler ce solde ? Une écriture inverse datée d'aujourd'hui sera passée au grand livre, TVA comprise, et le montant redeviendra dû.",
+								"Annuler ce solde ? Une écriture inverse, datée du solde, sera passée au grand livre dans son exercice, TVA comprise, et le montant redeviendra dû. Les totaux de cette période changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
 							)
 						: i18nMsg(
 								'invoices-settlement-cancel-confirm',
-								"Annuler ce règlement ? Une écriture inverse datée d'aujourd'hui sera passée au grand livre, et le montant redeviendra dû.",
+								"Annuler ce règlement ? Une écriture inverse, datée du règlement, sera passée au grand livre dans son exercice, et le montant redeviendra dû. Les totaux de cette période changent : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
 							)}
 				</Dialog.Description>
 			</Dialog.Header>
