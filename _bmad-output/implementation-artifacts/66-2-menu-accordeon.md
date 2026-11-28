@@ -1,0 +1,103 @@
+# Story 66-2-menu-accordeon : Le menu latéral en accordéon, un seul groupe déplié à la fois (#852, #959)
+
+Status: ready-for-dev
+
+<!-- Fiche écrite par bmad-create-story le 2026-11-28 (Sonnet 5.5). Validations : voir le Change Log. Prompts des passes : `66-2-menu-accordeon-validation-prompt-pN.md`, à côté de la fiche. -->
+
+## Story
+
+En tant que **personne qui parcourt le menu latéral**,
+je veux **qu'un seul groupe soit déplié à la fois, et que le groupe de la page où je suis s'ouvre de lui-même sans rester ouvert quand je change de page**,
+afin de **ne pas me perdre dans un menu qui s'allonge** (demande du Project Lead, 2026-10-31).
+
+- Issues : [#852](https://github.com/guycorbaz/kesh/issues/852) (`enhancement`, P3) et [#959](https://github.com/guycorbaz/kesh/issues/959) (`enhancement`, P4) ; contexte lu : #851 (fermée : le menu défile, garde E2E à adapter) et #247 (repli en rail d'icônes et « tout replier », **hors périmètre**).
+- **Epic 66**, release intermédiaire du **mardi 2026-12-01**. **Décision D6 de l'epic : si la story n'est pas close le lundi 2026-11-30 au soir, elle sort de la release sans discussion** (l'e-mail d'essai, 66-1, garde la priorité). D'où la taille : un gabarit, un petit module pur, des tests, une phrase de manuel.
+- **Frontend seul. Aucune migration, aucun changement d'API, aucune clé i18n nouvelle.**
+
+## Ce qui se lit au code (`aa488d62b`)
+
+1. **Le menu** est dans `frontend/src/routes/(app)/+layout.svelte` (515 lignes) : `navGroups` (l. 86-224, trois groupes `quotidien`, `mensuel`, `administration`), un `<details>` par groupe (l. 432-436, `open={expandedState[group.key]}`, `ontoggle={handleToggle}`, `data-testid="nav-group-<clé>"`), un `<summary>` cliquable (l. 437). Aucun `aria-expanded` écrit à la main : l'état est celui, natif, de `<details>`/`<summary>`.
+2. **L'état** : `expandedState` (l. 274), un booléen **par groupe**, initialisé par `initialOpen` (l. 256) depuis `localStorage` clé `kesh:sidebar:expanded:<groupe>` (`'true'`/`'false'`, l. 240-254), défauts **Quotidien et Mensuel ouverts, Administration fermé**.
+3. **Le dépliage d'office** (l. 261-298) : `findGroupKeyForPath` cherche le groupe dont une entrée a un `href` **égal** au chemin (**égalité exacte** : `/invoices/123` n'appartient à aucun groupe) ; un `$effect` déplie ce groupe **une seule fois par chemin** (`autoExpandedPaths`), **sans écrire** au stockage (#424, story 33-9). C'est la cause de #959 : le groupe ouvert d'office **reste ouvert** quand on navigue ailleurs, personne ne le referme.
+4. **`handleToggle`** (l. 300-308) : `toggle` part aussi quand Kesh pose `open` lui-même ; la garde `open === expandedState[key]` évite d'écrire dans ce cas. Le correctif de #424 repose sur cette garde ; la nouvelle mécanique (D3) la remplace par un clic contrôlé.
+5. **Aucun test Vitest du menu n'existe.** Trois tests lisent le **source** du layout (`mcp-sends-i18n.test.ts:54`, `mcp-prompts-i18n.test.ts:42`, et `i18n-keys.test.ts` pour `sitesTotal`) : `navGroups` **reste dans le layout** (les clés i18n d'entrées y sont lues).
+6. **Specs E2E qui touchent le menu** (grep `nav-group-`, `nav-link-`, `kesh:sidebar` sur `frontend/tests/e2e`, recompté) :
+   - `sidebar-navigation.spec.ts` : cinq tests v014-1/#424 + le bloc #851 (`AC-B5`, `AC-B5 bis`, `AC-B5 ter`, `AC-B6`) ;
+   - `company-name-header.spec.ts:147` (AC5 : clique deux fois chaque `summary`, vérifie que le nom ne bouge pas) ;
+   - `users.spec.ts:45`, `audit-log.spec.ts:87,140`, `bank-accounts-crud.spec.ts:182` (clic sur le `summary` d'Administration puis sur un lien) ; `mcp-server.spec.ts:79` (clic sur `nav-group-administration` lui-même, avant `nav-link-admin-mcp`) ;
+   - `supplier-invoices.spec.ts:191`, `opening-balances.spec.ts:85` (lien visé sur une page de son propre groupe : dépliage d'office) ;
+   - `mcp-prompts.spec.ts:285`, `backup-schedule.spec.ts:214` (`nav a[href=…]` `toHaveCount(0)` : le DOM d'un groupe replié est conservé, inchangé).
+7. **Ce qui casse avec l'accordéon, par construction** (à traiter, pas à découvrir) : **le bloc #851 de `sidebar-navigation.spec.ts`** relève, après ouverture d'Administration, l'atteignabilité des entrées de Quotidien et Mensuel (`scenario851` : `releve(page, [...QUOTIDIEN, ...MENSUEL, ...ADMINISTRATION])`), et `AC-B5 ter` met **tous** les groupes à `'true'` : avec un seul groupe ouvert, ces entrées sont cachées, donc non atteignables. La garde de #851 (« le menu défile, aucune entrée n'est perdue ») doit être **refaite groupe par groupe**, pas supprimée : Administration seul (18 entrées de 44 px) dépasse encore la fenêtre de 720 px et défile.
+8. **Le manuel** : `docs/manual/fr/user-manual.tex:142-149` décrit « trois groupes dépliables » ; rien d'autre dans `docs/manual/fr/` ne décrit le menu (l'`admin-manual.tex:2983` dit seulement « le menu latéral défile »). `docs/manual/{de,en,it}/` ne contiennent qu'un `README.md` : pas de manuel à tenir pour ces langues.
+9. **Le CHANGELOG** (l. 293, release passée) dit « le groupe reste déplié pendant que vous naviguez » : c'est ce que la story change ; le texte passé ne se réécrit pas, la Note de version de cette story dit la nouveauté.
+
+## Décisions
+
+- **D1 — Un seul groupe ouvert.** Un état unique, `openGroup : clé | null`, remplace les trois booléens. Ouvrir un groupe referme l'autre ; refermer le groupe ouvert est permis et laisse **tous les groupes fermés** (`null`).
+- **D2 — Qui est ouvert : trois sources, dans cet ordre.**
+  1. le **choix de l'utilisateur sur cette page** (un clic depuis l'arrivée sur le chemin courant) ;
+  2. à défaut, le **groupe de la page courante** (dépliage d'office, non persisté, `findGroupKeyForPath` inchangé : égalité exacte) ;
+  3. à défaut, le **choix mémorisé** (D4), sinon `quotidien`.
+  À chaque **changement de chemin**, le « choix sur cette page » est oublié : la règle 2 reprend la main, et un groupe ouvert d'office **se referme** à la sortie de ses pages dès que la page suivante appartient à un autre groupe (accordéon), ou **laisse la place au choix mémorisé** si la page suivante n'appartient à aucun groupe. **C'est la réponse à #959** : l'auto-dépliage ne survit plus à la navigation.
+- **D3 — Le clic est contrôlé.** Le `<summary>` porte un `onclick` qui fait `preventDefault()` et applique D1 ; `open` du `<details>` est **dérivé** de l'état (`open={openGroup === group.key}`), et `ontoggle` disparaît. Motif : plus de course entre `toggle` (asynchrone) et l'état (la cause de #424), un seul écrivain du stockage. Le clavier est conservé : Entrée et Espace sur un `<summary>` déclenchent `click`.
+- **D4 — Mémorisation : une clé, `kesh:sidebar:open`.** Valeur : la clé d'un groupe (`quotidien`, `mensuel`, `administration`) ou `none` (tout fermé). **Écrite uniquement par un clic de l'utilisateur**, jamais au montage, jamais par le dépliage d'office, jamais par la fermeture automatique d'un groupe (#424 reste vrai). Une valeur inconnue est ignorée (comme une clé absente).
+- **D5 — Rétrocompatibilité de l'ancien format.** Quand `kesh:sidebar:open` est **absente**, on lit les trois anciennes clés `kesh:sidebar:expanded:<groupe>` avec **leurs anciens défauts** (Quotidien `true`, Mensuel `true`, Administration `false` quand la clé manque) et l'on retient **le premier groupe ouvert dans l'ordre du menu** ; aucun ouvert : `none`. Ainsi : rien d'écrit ⇒ `quotidien` ; Administration seule à `'true'` ⇒ `administration` ; Quotidien et Mensuel à `'false'` ⇒ `none`. **Les anciennes clés ne sont ni effacées ni réécrites** (un retour à la version précédente retrouve son état). Dès que `kesh:sidebar:open` existe, les anciennes clés sont ignorées.
+- **D6 — Stockage indisponible.** Toute lecture et toute écriture de `localStorage` sont gardées par `try/catch` (SSR, navigation privée, quota) : le menu fonctionne alors sans mémoire, choix par défaut `quotidien`. (Le code actuel garde seulement `typeof localStorage`.)
+- **D7 — Accessibilité.** On **garde la sémantique native** de `<details>`/`<summary>` (rôle et état « déplié » exposés par le navigateur à partir de `open`), **sans** `aria-expanded` écrit à la main : il doublerait l'état natif et un `aria-expanded` sur un `<summary>` est un risque pour axe-core. L'issue demande « `aria-expanded` conservé » : ce qui est conservé est **l'état déplié exposé à l'accessibilité**, vérifié par un test (AC6), non l'attribut littéral. Si le test montre que le navigateur n'expose pas l'état, le dev écrit `aria-expanded={openGroup === group.key}` sur le `<summary>` et le dit au Dev Agent Record.
+- **D8 — Un module pur, testé.** La logique (choix de l'ouvert, lecture de l'ancien format, valeurs de `none`) est une **fonction pure** dans `frontend/src/lib/shared/utils/sidebar-accordion.ts` (précédent : `onboarding-screens.ts`, lue par le layout, testée en Vitest) ; `navGroups` reste dans le layout (constat 5). Le gabarit ne garde que l'état Svelte et le rendu.
+- **D9 — Hors périmètre, dit une fois.** #247 (rail d'icônes, « tout replier ») : non touchée ; avec l'accordéon, la fermeture du groupe ouvert suffit à tout replier. La correspondance de groupe par **préfixe** (`/invoices/123` ⇒ Quotidien) : non touchée (constat 3) ; une page hors de tout groupe laisse le choix mémorisé (D2.3).
+
+## Critères d'acceptation
+
+- **AC1 — Accordéon.** Quotidien étant ouvert, un clic sur le titre *Mensuel* l'ouvre **et** referme Quotidien : à tout instant **au plus un** des trois `<details>` porte `open`. Un clic sur le titre du groupe ouvert le referme : les trois sont fermés. (E2E.)
+- **AC2 — Défaut.** Sans aucune clé de stockage, sur `/`, seul `quotidien` est ouvert (avant : Quotidien et Mensuel). (E2E + Vitest.)
+- **AC3 — Groupe de la page courante.** Arriver (chargement ou `goto`) sur une page d'un groupe ouvre ce groupe et referme les autres, **quel que soit le choix mémorisé** ; rien n'est écrit au stockage (la valeur de `kesh:sidebar:open` est identique avant et après, y compris absente). (E2E, avec un compteur d'écritures, comme le test #424 actuel.)
+- **AC4 — Navigation interne (#959).** (a) Depuis une page d'Administration (groupe ouvert d'office), un clic sur un lien de Quotidien ouvre Quotidien et **referme Administration** (le groupe d'office ne reste pas ouvert) ; (b) depuis une page d'un groupe, navigation vers une page **hors de tout groupe** (par exemple `/invoices/<id>` ou `/profile` si l'application la porte : le dev choisit une URL réelle et la nomme) : le groupe affiché est le **choix mémorisé** (D2.3) ; (c) l'utilisateur replie à la main le groupe de la page, puis navigue vers une page **du même groupe** : le groupe se rouvre (un nouveau chemin, la règle 2) ; (d) il le replie, puis **recharge** : il se rouvre d'office, et le stockage n'a reçu **que** l'écriture du clic de repli. (E2E : ce sont les deux « trous de couverture » de #959.)
+- **AC5 — Mémorisation et ancien format.** (a) Un clic d'ouverture écrit `kesh:sidebar:open` = la clé du groupe ; un clic de fermeture écrit `none` ; après rechargement **sur une page sans groupe** (par exemple `/invoices/<id>`, ou une page dont le groupe est celui mémorisé), le choix est restitué ; (b) l'ancien format est lu sans rien écrire (D5) : les trois cas de D5 sont des tests Vitest (fonction pure) **et** un cas E2E (clés anciennes posées par `evaluate`, puis rechargement, sur une page hors groupe) ; (c) `kesh:sidebar:open` = `foo` se comporte comme une clé absente ; (d) un `localStorage` qui lève (`Storage.prototype.getItem` et `setItem` simulés) ne casse ni le rendu ni les clics (Vitest sur la fonction pure et son enveloppe de stockage, ou E2E par `addInitScript`). Un **seul** clic ⇒ **une seule** écriture.
+- **AC6 — Clavier et accessibilité.** (a) Tabulation jusqu'à un titre de groupe, **Entrée** puis **Espace** le basculent ; le focus reste sur ce titre après la bascule, l'ordre de tabulation des titres est inchangé ; (b) les liens d'un groupe fermé ne sont **pas** atteignables à la tabulation (comportement natif conservé) ; (c) l'état déplié du groupe est **exposé à l'accessibilité** (D7) : le test lit l'arbre d'accessibilité de Chromium (`locator.ariaSnapshot()` ou, à défaut, `CDP Accessibility.getFullAXTree`) et y trouve « déplié » pour le seul groupe ouvert ; (d) le test axe-core existant du layout (grep `AxeBuilder` dans les E2E, dont `company-name-header.spec.ts`) reste vert. (E2E.)
+- **AC7 — Le menu défile toujours (#851 gardée).** La garde de #851 est **réécrite groupe par groupe** : pour chacun des trois groupes ouvert seul, **toutes** ses entrées sont atteignables par défilement de la barre (fenêtre 1280×720, mode guidé, avec et sans bandeau de sauvegarde, comme aujourd'hui) ; Administration seul **déborde** encore la barre (`scrollHeight > clientHeight`, `overflow-y: auto`). `AC-B5 ter` (aspect : fond et filet jusqu'au bas, pied de page sous le pli) se rejoue avec « tous repliés » (Comptable) et « Administration ouvert » (Administrateur). `AC-B6` (18 entrées d'Administration dans le DOM sur chaque page) est inchangé. (E2E.)
+- **AC8 — Aucune régression des autres specs.** Les specs du constat 6 passent sans autre changement que ceux que la fiche liste (tâche 4) : un lien visé dans un groupe **non ouvert** est ouvert par un clic sur son titre dans la spec, jamais par un `force: true`. Les `toHaveCount(0)` sur `nav a[href=…]` restent verts (DOM conservé).
+- **AC9 — Rien d'autre ne bouge.** Aucun libellé, aucun `data-testid`, aucune entrée, aucun style (hormis ce que l'état dérivé impose) ne change ; aucune clé i18n n'est ajoutée ; `sitesTotal` de `i18n-keys.test.ts` est recompté (attendu inchangé).
+- **AC10 — Recette visuelle** (CLAUDE.md § *Recette visuelle*, thème clair seulement, base de démonstration, `$GATE_LOGS/s66-2/captures/`), jointes au Dev Agent Record et au prompt de la revue : (1) arrivée sur `/` (Quotidien seul ouvert) ; (2) Mensuel ouvert par un clic (Quotidien refermé) ; (3) Administration ouvert sur une page d'Administration, barre défilée jusqu'en bas ; (4) tous les groupes fermés ; (5) un titre de groupe avec le focus clavier visible ; (6) après navigation d'Administration vers une page de Quotidien, Administration refermé.
+- **AC11 — Manuel et notes.** La phrase « Barre latérale gauche » de `docs/manual/fr/user-manual.tex` dit : un seul groupe déplié à la fois, le groupe de la page ouvert d'office, le choix mémorisé par le navigateur ; seul le `.tex` change (les PDF se régénèrent à la release) ; la Note de version est écrite.
+
+## Tâches
+
+1. **Module pur** `frontend/src/lib/shared/utils/sidebar-accordion.ts` (D4, D5, D6, D8) : constantes (`SIDEBAR_OPEN_KEY`, `LEGACY_PREFIX`, `NONE`), `readOpenChoice(groupKeys, storage?)` (nouveau format, sinon ancien, sinon défaut ; `try/catch`), `writeOpenChoice(key | null)` (`try/catch`), `resolveOpenGroup({ touched, landing, choice })` (D2). Doc `///`-équivalent (JSDoc).
+2. **Layout** : supprimer `expandedState`, `autoExpandedPaths`, `handleToggle`, `readPersisted`, `persistGroupState`, `initialOpen` et le `$effect` d'auto-dépliage ; ajouter `choice`, `touchedAt` (le chemin du dernier clic, remis à `null` au changement de chemin) et `openGroup` dérivé ; `<details open={openGroup === group.key}>` sans `ontoggle` ; `<summary onclick>` (D3). Garder `navGroups`, `findGroupKeyForPath`, `navTestid`. Mettre à jour les commentaires périmés du layout (« Story v014-1 … auto-expand », « une seule fois par pathname »).
+3. **Vitest** (`sidebar-accordion.test.ts`) : D2 (les trois sources et leur ordre), D5 (les trois cas + ancien défaut Mensuel `true`), valeur inconnue, stockage qui lève, aucune écriture hors clic ; **un test de rendu du layout** n'est pas exigé (E2E le couvre), le dev l'ajoute s'il est peu coûteux à monter comme `root-layout-session.test.ts`.
+4. **E2E** : (a) `sidebar-navigation.spec.ts` : réécrire la persistance (nouvelle clé, `none`), le test #424 (le compteur de `toggle` n'a plus de raison d'être : compter les `setItem` par `addInitScript`), ajouter AC1, AC3, AC4 (a à d), AC5 (b), AC6, AC7 ; (b) `company-name-header.spec.ts` AC5 : clics adaptés à l'accordéon (le nom ne bouge pas) ; (c) vérifier `users`, `audit-log`, `bank-accounts-crud`, `mcp-server` : l'ouverture d'Administration par clic suppose Administration **fermé** au départ (page `/`, Quotidien ouvert) ; si une spec part d'une page d'Administration, supprimer le clic superflu (il fermerait le groupe) ; (d) **grep** de tout autre clic sur un `nav-link-*` d'un groupe non ouvert par défaut (Mensuel n'est plus ouvert) : constat 6, recompter à l'étape 0.
+5. **Manuel** (`user-manual.tex`, AC11) et **Note de version** ci-dessous.
+6. **Captures** (AC10) et **gate** : `npm run check`, `npm run lint-i18n-ownership`, `npm run test:unit`, `npm run build`, puis la **suite E2E complète** au dernier commit de code (CLAUDE.md § *E2E*).
+
+## Tests à écrire (récapitulatif)
+
+Vitest : D2, D5, valeur inconnue, stockage qui lève. E2E : AC1 à AC7. Mutations à prouver, chacune tuée par un test nommé : M1 `open` non dérivé (deux groupes ouverts) ⇒ AC1 ; M2 clic sur le groupe ouvert ne le referme pas ⇒ AC1 ; M3 auto-dépliage qui écrit ⇒ AC3 ; M4 « choix sur cette page » non oublié au changement de chemin ⇒ AC4 (a) et (c) ; M5 ancien format ignoré ⇒ AC5 (b) ; M6 ancien défaut de Mensuel oublié ⇒ test D5 ; M7 deux écritures par clic ⇒ AC5.
+
+## Fichiers touchés et modules (règle de splitting)
+
+`frontend/src/routes/(app)/+layout.svelte`, `frontend/src/lib/shared/utils/sidebar-accordion.ts` (+ test), `frontend/tests/e2e/{sidebar-navigation,company-name-header}.spec.ts` (et, au besoin, `users`, `audit-log`, `bank-accounts-crud`, `mcp-server`), `docs/manual/fr/user-manual.tex`. **Un seul module** (frontend) : pas de découpage. Fichiers communs : aucun catalogue i18n, ni `CHANGELOG.md`, ni PDF.
+
+## Note de version (release du mardi 2026-12-01 ; le numéro s'attribue au tag) — prête pour le CHANGELOG
+
+*Le menu latéral s'ouvre en accordéon* ([#852](https://github.com/guycorbaz/kesh/issues/852), [#959](https://github.com/guycorbaz/kesh/issues/959)) : un seul groupe est déplié à la fois ; ouvrir *Mensuel* ou *Administration* referme celui qui était ouvert, et un clic sur le groupe ouvert les replie tous. Le groupe de la page où vous êtes s'ouvre de lui-même, et se referme quand vous passez à une page d'un autre groupe. Au premier lancement, seul *Quotidien* est ouvert. Votre dernier choix est mémorisé par le navigateur ; l'état enregistré par la version précédente est repris (le premier groupe ouvert est conservé).
+
+## Dev Notes
+
+- **Étape 0 du dev** : recompter les specs du constat 6 (`grep -rn "nav-group-\|nav-link-\|kesh:sidebar" frontend/tests/e2e`) et lire `docs/testing.md` § *Prérequis Playwright local* ; la spec `sidebar-navigation.spec.ts` est celle de la KF-052 (#424, fermée) : ne pas la réintroduire en attente fixe.
+- Le correctif de #424 (aucune écriture à l'auto-dépliage) est **conservé par construction** (D4) : un test l'exprime encore (AC3).
+- Une clé `kesh:sidebar:open` n'est pas dans le périmètre d'une sauvegarde (`.keshbackup`) : état de navigateur, aucune incidence sur la production.
+
+## Questions au Project Lead
+
+1. **Le défaut passe de « Quotidien et Mensuel ouverts » à « Quotidien seul »** (conséquence directe du « un seul à la fois »). Confirmé par la fiche ; à contredire sinon.
+2. **Refermer le groupe ouvert laisse tous les groupes fermés** (D1) ; l'alternative, « toujours un groupe ouvert », ferait qu'un clic sur le groupe ouvert ne ferait rien. La fiche retient la première (elle remplace « tout replier » de #247).
+3. **Une page hors de tout groupe** (`/invoices/<id>`, fiches de détail) ne déplie pas son groupe (correspondance exacte, inchangée) : le menu y montre le dernier choix. Une correspondance par préfixe serait un petit ajout, hors de cette story ; à ouvrir en issue si vous le souhaitez.
+
+## Dev Agent Record
+
+*(à remplir par le dev)*
+
+## Change Log
+
+- 2026-11-28 : fiche écrite (Sonnet 5.5), statut `ready-for-dev` ; validations à suivre.
