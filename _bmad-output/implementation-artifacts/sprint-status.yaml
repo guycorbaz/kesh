@@ -1,3 +1,4 @@
+# last_updated: 2026-11-28 (Epic 63 : 63-1-annulations-datees-origine in-progress, branche reprise d'epic/53-ecritures-justes à 843bcc27f)
 # last_updated: 2026-11-27 (Epic 63 ouvert : 63-1-annulations-datees-origine ready-for-dev sous réserve de validation, #1752, #1753, #1754 ; dépend de la 53-6a)
 # last_updated: 2026-11-27 (Epic 53 : 53-6 découpée en 53-6a ready-for-dev sous réserve de validation et 53-6b backlog, #1674 ; commentaire de la 53-2 : #525 et #1198 reclassées P2 le 2026-11-21)
 # last_updated: 2026-11-20 (Epic 40 : refonte KISS, décision du responsable de l'epic — phase 1 40-7a à 40-7d, phase 2 40-8a et 40-8b, drafted ; 40-1, 40-2, 40-3, 40-6 superseded ; 40-4, 40-5 deferred)
@@ -1282,7 +1283,7 @@ development_status:
 
   # 2026-11-27 — Epic 63 « Annulations datées de l'origine » : la story de correction de la v0.21.0 (décision du Project Lead du 2026-11-27) ; dépend de la 53-6a ; fichier epic-63-annulations-datees-origine.md
   epic-63: in-progress  # v0.21.0 (vendredi 2026-12-04), avec l'Epic 53 ; aucune migration ; branche story/63-1-… à repartir d'epic/53-ecritures-justes une fois la 53-6a fusionnée
-  63-1-annulations-datees-origine: ready-for-dev  # #1752, #1753, #1754 (P1) ; fiche rédigée le 2026-11-27 (Opus 5.5) ; SOUS RÉSERVE de la validation (P1 Sonnet à lancer) ; questions Q-A à Q-D au Project Lead ; aucune migration
+  63-1-annulations-datees-origine: in-progress  # #1752, #1753, #1754 (P1) ; fiche validée en trois passes (2026-11-27) ; développement commencé le 2026-11-28 sur la branche reprise d'epic/53-ecritures-justes ; aucune migration
   epic-63-retrospective: optional
 
   # 2026-11-18 — Epic 49 « Types de lignes de la facture client » (#1242, P2, demande de Guy, échéance fin novembre), release 0.20.0 ;

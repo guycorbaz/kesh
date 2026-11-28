@@ -1,6 +1,6 @@
 # Story 63-1 : Les annulations depuis la fiche contre-passent dans l'exercice de l'écriture, à sa date (#1752, #1753, #1754)
 
-Status: ready-for-dev  <!-- validation terminée le 2026-11-27 : P1 (Sonnet) 0/0/2/6, P2 (Opus) 0/0/1/6, P3 (Sonnet, complète) 0/0/0/5 ; aucune passe de plus -->
+Status: in-progress  <!-- développement commencé le 2026-11-28 ;  validation terminée le 2026-11-27 : P1 (Sonnet) 0/0/2/6, P2 (Opus) 0/0/1/6, P3 (Sonnet, complète) 0/0/0/5 ; aucune passe de plus -->
 
 *Fiche rédigée le 2026-11-27 (Opus 5.5, `bmad-create-story`), worktree `kesh-63-1`, branche `story/63-1-annulations-datees-origine`, partie
 de `story/53-6-annulation-rapprochement-exercice` à `6b71d4c21` (la 53-6a en développement). Epic 63 « Annulations datées de l'origine »
@@ -405,7 +405,7 @@ Après chaque mutation, toucher le fichier à la restauration.
 
 ## Tâches
 
-- [ ] **T0 — Reprise et relecture** : la 53-6a fusionnée dans `epic/53-ecritures-justes`, repartir de cette branche (rebase ou nouvelle
+- [x] **T0 — Reprise et relecture** : la 53-6a fusionnée dans `epic/53-ecritures-justes`, repartir de cette branche (rebase ou nouvelle
   branche `story/63-1-…` depuis elle — demander à l'orchestrateur) ; relire chaque prémisse P1 à P10 et chaque numéro de ligne de la fiche,
   corriger la fiche s'il le faut (P4 fichier par fichier ; P8 au code de `kesh-report` ; D6 la date de l'écriture d'achat `:1831` ; D4 si `pay`
   accepte un paiement antérieur à la facture ; P10 l'annulation d'un lot) ; `gh issue view 1752|1753|1754 --json state` (lecture seule,
@@ -573,6 +573,47 @@ préférée : les trois gestes partagent la queue, les textes et le manuel, et l
 ## Dev Agent Record
 
 ### Agent Model Used
+
+Opus 5.5 (`claude-opus-5-5`), `bmad-dev-story`, worktree `kesh-63-1`, le 2026-11-28.
+
+### T0 — reprise et relevé des prémisses (2026-11-28)
+
+**Reprise.** `git merge origin/epic/53-ecritures-justes` (tête `843bcc27f`, 53-6a fusionnée) dans la branche à `6965ba802` : **aucun
+conflit** — la branche de la story ne portait que `_bmad-output/` (fiche, prompts de validation, `sprint-status.yaml`, fichier d'epic) ;
+aucun compteur commun n'a donc divergé (`sitesTotal` de `i18n-keys.test.ts` est celui de l'epic, recompté au T4). Commit de fusion seul
+`a9b551d5a`, poussé.
+
+**Prémisses relues sur la branche reprise** (numéros à `a9b551d5a` ; seuls changent ceux des fichiers que la 53-6a a touchés après
+`6b71d4c21` : `settlement_cancellation.rs`, `journal_entries.rs` (±12 lignes, hors des sites cités), `jour_suisse_nuit_e2e.rs`,
+`user-manual.tex`) :
+
+- **P1 confirmée** : `CancellationDating` `journal_entries.rs:3192`, `From` `:3205`/`:3208`, `reverse_in_tx` `:3095`, `reverse_owned_in_tx`
+  `:3169`, `reversal_date_verdict` `:3278`. Inchangés.
+- **P2 confirmée, lignes décalées** : bras `OriginDate` de la queue `settlement_cancellation.rs:209-235` (non `:200-226`), bras `Today`
+  `:237` (non `:228`). Têtes inchangées (`invoice_settlements_write.rs:876`, `:889` ; `supplier_invoices.rs:3330`, `:3356`) ;
+  `supplier_invoice_cancel_blocker` `:3020`, `Today` en dur `:3063` : confirmé.
+- **P3 confirmée** : `services/factures.rs:590` (`Today(aujourd_hui)`), `supplier_invoices.rs:3739` et `:3743`, `factures_fournisseur.rs:206`.
+- **P4 confirmée fichier par fichier** : `grep -n aujourd_hui` sur `supplier_invoices.rs` hors tests — la date ne sert qu'au transit
+  (`:1478/1482`, `:1498/1506`, `:1521/1527`, `:2463/2472`, `:3024/3063`, `:3125/3185/3221`, `:3305/3308/3309`, `:3633/3642/3645`,
+  `:3694/3697`, `:3722/3739/3743`, `:3790/3800`). Routes : `supplier_invoices.rs:799/807/826/878`, `:920/928`, `:956/969`, `:992/1001`,
+  `:1025/1032`, `:1064/1069` ; `imported_supplier_invoices.rs:139/147/173/251`, `:599/607/625/676`, `:710/717/734/767` — **aucun autre
+  usage** dans ces fonctions (lu). `invoices.rs:1621` garde une lecture pour `from_parts` (`:1637`).
+- **P5, P6, P7, P9 confirmées** (fichiers inchangés depuis `6b71d4c21`).
+- **P8 confirmée au code** : `kesh-report/src/vat_report.rs:292` lit `invoice_settlements.write_off_vat` et `:342` joint
+  `invoice_settlements s ON s.journal_entry_id = jel.entry_id` — le décompte part des pièces.
+- **P10 confirmée** : `payment_batches::cancel_batch` (`:712`) ne crée ni ne contre-passe aucune écriture (aucun `create_in_tx`,
+  `reverse_in_tx`, `reverse_owned_in_tx` dans le fichier).
+- **D4 confirmée** (`pay` sans comparaison à `invoice_date`) ; **D6 confirmée** (`:2308-2315` seule création d'achat, `entry_date: invoice_date` ;
+  `:1831` est un `Hint` ; `:2728` `entry_date: payment_date`).
+- **D3, recompte** : `git grep -c` des signatures changées dans `*/tests/*` = **230 occurrences dans 35 fichiers** (confirmé), dont 183 passent
+  `aujourd_hui_test()`.
+- **AC-11, lignes décalées** (`jour_suisse_nuit_e2e.rs`, 53-6a) : `ac3_contre_passation_la_nuit_du_nouvel_an` `:622`, client `:641`,
+  facture fournisseur `:659`, règlement fournisseur `:674`, rapprochement `:709`, `ac3_sans_exercice_au_jour_suisse_l_annulation_est_refusee`
+  `:755`, `ac7_les_services_jugent_au_jour_suisse` `:940`. **Un test de plus que la fiche** :
+  `ac3_sans_exercice_au_jour_suisse_l_annulation_d_un_paiement_fournisseur_est_refusee` (`:792`, ajouté par la revue P1 de la 53-6a, L12) —
+  il change d'attendu comme le premier (AC-9 pour #1753). Tests `kesh-db` de l'AC-11 : numéros inchangés (`invoice_settlement.rs:1475`,
+  `supplier_invoices_repository.rs:1762`, `:2076`, `:2209`, `lettering_documents.rs:814`, `:1530`, `open_items.rs:871`).
+- **Issues** : #1752, #1753, #1754 `OPEN`, `bug`, `P1` (lecture seule, espacées).
 
 ### Completion Notes List
 
