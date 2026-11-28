@@ -129,7 +129,7 @@ describe('CancelReconciliationDialog', () => {
 		expect(t).toContain("dans l'exercice « FY 2025 »");
 		expect(t).not.toContain("aujourd'hui");
 		const tva = (await findByTestId('reconciliation-cancel-vat')).textContent ?? '';
-		// Story 63-1 (revue P4) — une écriture propre ne change la TVA que si elle porte le
+		// Story 63-1 (revue P3, M2) — une écriture propre ne change la TVA que si elle porte le
 		// compte d'impôt préalable : la phrase est conditionnelle, jamais « TVA comprise ».
 		expect(tva).toContain("Si cette écriture porte le compte d'impôt préalable");
 		expect(tva).not.toContain('TVA comprise');

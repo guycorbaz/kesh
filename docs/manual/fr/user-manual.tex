@@ -1971,8 +1971,10 @@ ensuite tel quel. Les \emph{frais bancaires} et le \emph{reste d'arrondi}, qui n
 TVA, ne sont pas concernés, non plus qu'un reste de quelques centimes dont la part de TVA,
 arrondie au centime, est nulle. Un solde s'\textbf{annule}
 comme un règlement --- bouton \emph{Annuler le solde}, contre-passation \textbf{datée du solde},
-dans son exercice, TVA comprise (depuis la version~0.21.0~; elle était datée du jour)~: la correction
-de TVA est reprise dans la période même du solde.
+dans son exercice (depuis la version~0.21.0~; elle était datée du jour)~: pour un escompte ou une
+perte, la TVA est comprise, et la correction de TVA est reprise dans la période même du solde~;
+les frais bancaires et le reste d'arrondi n'en portent pas, et leur annulation ne change aucun
+décompte de TVA.
 
 \textbf{Annuler.} Un règlement enregistré par erreur ne se supprime pas~: il s'\textbf{annule par
 contre-passation}. Le bouton \emph{Annuler le règlement} de sa ligne (comptable ou

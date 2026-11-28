@@ -331,6 +331,48 @@ describe("fiche facture — annuler un solde", () => {
     ).toBeTruthy();
   });
 
+  // Story 63-1 (revue P4, M1) — seuls l'escompte et la perte écrivent une ligne de TVA
+  // (`corrects_vat`) : l'annulation d'un solde en frais bancaires ou en reste d'arrondi ne
+  // change aucun décompte, et son dialogue ne conseille pas de verrouiller une déclaration.
+  // Mutation : retirer la condition `cancelWriteOffWithoutVat` du dialogue → les deux
+  // natures sans TVA montrent le texte avec « TVA comprise » → rouge.
+  it.each([["discount"], ["bad_debt"]] as const)(
+    "la confirmation d'un solde en %s dit « TVA comprise » et la période déclarée",
+    async (nature) => {
+      getInvoiceMock.mockResolvedValue(
+        invoice({ paidAt: "2026-03-10T00:00:00", amountSettled: "100.0000", amountDue: "0.0000" }),
+      );
+      listSettlementsMock.mockResolvedValue([
+        settlement({ id: 8, amount: "100.0000", settlementType: "write_off", writeOffNature: nature }),
+      ]);
+      const r = render(Page);
+      await fireEvent.click(await r.findByTestId("invoice-settlement-cancel"));
+      const texte = (await r.findByText(/Annuler ce solde \?/)).textContent ?? "";
+      expect(texte).toContain("TVA comprise");
+      expect(texte).toContain("ce qui protège la déclaration");
+    },
+  );
+
+  it.each([["bank_fees"], ["rounding"]] as const)(
+    "la confirmation d'un solde en %s ne parle d'aucun changement de TVA ni de déclaration à protéger",
+    async (nature) => {
+      getInvoiceMock.mockResolvedValue(
+        invoice({ paidAt: "2026-03-10T00:00:00", amountSettled: "100.0000", amountDue: "0.0000" }),
+      );
+      listSettlementsMock.mockResolvedValue([
+        settlement({ id: 8, amount: "100.0000", settlementType: "write_off", writeOffNature: nature }),
+      ]);
+      const r = render(Page);
+      await fireEvent.click(await r.findByTestId("invoice-settlement-cancel"));
+      expect(
+        await r.findByText(
+          "Annuler ce solde ? Une écriture inverse, datée du solde, sera passée au grand livre dans son exercice, et le montant redeviendra dû. Les soldes de la période du solde changent, la TVA non : des frais bancaires ou un reste d'arrondi n'en corrigent pas. Si cette période est verrouillée, l'annulation sera refusée : un administrateur doit d'abord faire reculer le verrou.",
+        ),
+      ).toBeTruthy();
+      expect(r.queryByText(/TVA comprise/)).toBeNull();
+    },
+  );
+
   it("la confirmation d'un règlement dit la date du règlement et son exercice (mutation : texte « datée d'aujourd'hui » rétabli)", async () => {
     getInvoiceMock.mockResolvedValue(
       invoice({ paidAt: null, amountSettled: "40.0000", amountDue: "60.0000" }),

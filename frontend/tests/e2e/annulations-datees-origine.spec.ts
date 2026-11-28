@@ -291,8 +291,10 @@ test.describe.serial('63-1 — annuler depuis la fiche, daté de l’origine', (
 		await boutons.last().click();
 		const dialog = page.getByRole('dialog');
 		await expect(dialog).toContainText(
-			'Annuler ce solde ? Une écriture inverse, datée du solde, sera passée au grand livre dans son exercice, TVA comprise',
+			// Revue P4, M1 — un solde en frais bancaires ne corrige pas la TVA : le texte sans TVA.
+			'Annuler ce solde ? Une écriture inverse, datée du solde, sera passée au grand livre dans son exercice, et le montant redeviendra dû. Les soldes de la période du solde changent, la TVA non',
 		);
+		await expect(dialog).not.toContainText('TVA comprise');
 		await capture(page, testInfo, 'confirmation-solde-client');
 	});
 

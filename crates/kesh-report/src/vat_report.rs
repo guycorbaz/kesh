@@ -86,9 +86,10 @@ pub struct VatReport {
     /// les parts sans TVA (0 %, ou arrondies à zéro) n'apparaissent pas.
     ///
     /// Les seuls gestes d'annulation qui changent un décompte sont l'annulation
-    /// d'un **achat** (impôt préalable) et celle d'un **solde** (cette ligne) : le
-    /// règlement client, le paiement fournisseur et le dé-rapprochement d'un
-    /// règlement ne portent aucune ligne de TVA.
+    /// d'un **achat** (impôt préalable) et celle d'un **solde en escompte ou en
+    /// perte** (cette ligne ; `corrects_vat`) : le solde en frais bancaires ou en
+    /// reste d'arrondi, le règlement client, le paiement fournisseur et le
+    /// dé-rapprochement d'un règlement ne portent aucune ligne de TVA.
     pub write_off_rows: Vec<VatWriteOffRow>,
     /// Somme de la TVA des soldes de la période.
     pub total_vat_write_off: Decimal,

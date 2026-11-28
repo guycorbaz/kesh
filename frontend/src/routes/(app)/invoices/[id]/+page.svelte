@@ -183,6 +183,13 @@
 	 * « règlement » pendant l'animation.
 	 */
 	let cancelIsWriteOff = $state(false);
+	/**
+	 * Story 63-1 (revue P4, M1) — le solde est-il en frais bancaires ou en reste
+	 * d'arrondi, qui n'écrivent aucune ligne de TVA (`corrects_vat`, seuls
+	 * l'escompte et la perte en écrivent) ? FIGÉ à l'ouverture, comme
+	 * `cancelIsWriteOff`. Nature absente : le texte avec TVA, par prudence.
+	 */
+	let cancelWriteOffWithoutVat = $state(false);
 	let cancelSubmitting = $state(false);
 	let cancelError = $state('');
 
@@ -1536,6 +1543,8 @@
 			onCancel={(s) => {
 				cancelError = '';
 				cancelIsWriteOff = s.settlementType === 'write_off';
+				cancelWriteOffWithoutVat =
+					s.writeOffNature === 'bank_fees' || s.writeOffNature === 'rounding';
 				cancelTarget = s;
 			}}
 			onCancelReconciliation={(txId) => (reconciliationTxId = txId)}
@@ -1868,7 +1877,12 @@
 						: i18nMsg('invoices-settlement-cancel-button', 'Annuler le règlement')}
 				</Dialog.Title>
 				<Dialog.Description>
-					{cancelIsWriteOff
+					{cancelIsWriteOff && cancelWriteOffWithoutVat
+						? i18nMsg(
+								'invoices-write-off-no-vat-cancel-confirm',
+								"Annuler ce solde ? Une écriture inverse, datée du solde, sera passée au grand livre dans son exercice, et le montant redeviendra dû. Les soldes de la période du solde changent, la TVA non : des frais bancaires ou un reste d'arrondi n'en corrigent pas. Si cette période est verrouillée, l'annulation sera refusée : un administrateur doit d'abord faire reculer le verrou.",
+							)
+						: cancelIsWriteOff
 						? i18nMsg(
 								'invoices-write-off-cancel-confirm',
 								"Annuler ce solde ? Une écriture inverse, datée du solde, sera passée au grand livre dans son exercice, TVA comprise, et le montant redeviendra dû. Les totaux de la période du solde changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
