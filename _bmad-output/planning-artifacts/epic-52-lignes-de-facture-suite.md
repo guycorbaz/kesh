@@ -49,3 +49,7 @@ le décompte du tag précédent et l'objectif s'écrivent ici à ce moment-là. 
 `v0.22.0` : elle ne se ferme pas avec la 49-2 (titres de section à l'Epic 62, sous-totaux #1330). L'issue propre au
 réordonnancement est **#1756** (milestone `v0.21.0`), que la 49-2 ferme (décision du Project Lead du 2026-11-27) ; la page
 de modification ouverte sur une facture validée est #1758 (P3, hors de l'epic).
+
+## Clôture (2026-11-28)
+
+Epic clos et publié dans la **v0.20.1** (release avancée à la demande du Project Lead, 2026-11-27). La 49-2 est close (revue P1 0/0/2/11 → P2 0/0/1/0 → P3 0/0/0/1). La **story de solde est close vide** : la 49-2 n'a renvoyé aucun LOW en issue — tous ont été corrigés dans la story (règle des LOW du 2026-11-27) ; #1757 (glisser-déposer) est une évolution, non une dette.
