@@ -1351,7 +1351,7 @@ development_status:
 
   # 2026-11-28 — Epic 65 : suite de l'Epic 58 (58-4 à 58-6 sorties de l'Epic 58 réduit, décision du Project Lead du 2026-11-27), pour la release du vendredi 2026-12-04. Fichier d'epic : planning-artifacts/epic-65-nettoyage-suite.md.
   epic-65: backlog
-  58-4-textes-interface-i18n: backlog  # → Epic 65 (2026-11-28) ; 10 issues ; catalogues des quatre locales
+  58-4-textes-interface-i18n: drafted  # 2026-11-28 fiche rédigée (Sonnet 5.5), Epic 65 ; validation à lancer ; 9 issues retenues (#324, #339 liste des factures seule, #844, #861, #873, #874, #908, #1049, #1491), #1086 sortie (replis : coût L) ; catalogues des quatre locales
   58-5-cosmetique-ecrans: backlog  # → Epic 65 (2026-11-28) ; 10 issues ; recette visuelle
   58-6-tests-frontend-reconciliation: backlog  # → Epic 65 (2026-11-28) ; 10 issues
   epic-65-retrospective: optional
