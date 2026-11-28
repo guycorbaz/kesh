@@ -312,4 +312,36 @@ describe("fiche facture — annuler un solde", () => {
     );
     expect(await r.findByText(/Annuler ce solde \?/)).toBeTruthy();
   });
+
+  // Story 63-1 (#1752, AC-13, D5) — l'inverse est datée du solde, dans son exercice :
+  // le texte neuf est affirmé (non l'absence de l'ancien, qui passerait à vide).
+  it("la confirmation du solde dit la date du solde, son exercice, TVA comprise, et la période déclarée (mutation : texte « datée d'aujourd'hui » rétabli)", async () => {
+    getInvoiceMock.mockResolvedValue(
+      invoice({ paidAt: "2026-03-10T00:00:00", amountSettled: "100.0000", amountDue: "0.0000" }),
+    );
+    listSettlementsMock.mockResolvedValue([
+      settlement({ id: 8, amount: "100.0000", settlementType: "write_off", writeOffNature: "discount" }),
+    ]);
+    const r = render(Page);
+    await fireEvent.click(await r.findByTestId("invoice-settlement-cancel"));
+    expect(
+      await r.findByText(
+        "Annuler ce solde ? Une écriture inverse, datée du solde, sera passée au grand livre dans son exercice, TVA comprise, et le montant redeviendra dû. Les totaux de cette période changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("la confirmation d'un règlement dit la date du règlement et son exercice (mutation : texte « datée d'aujourd'hui » rétabli)", async () => {
+    getInvoiceMock.mockResolvedValue(
+      invoice({ paidAt: null, amountSettled: "40.0000", amountDue: "60.0000" }),
+    );
+    listSettlementsMock.mockResolvedValue([settlement({ id: 9, amount: "40.0000" })]);
+    const r = render(Page);
+    await fireEvent.click(await r.findByTestId("invoice-settlement-cancel"));
+    expect(
+      await r.findByText(
+        "Annuler ce règlement ? Une écriture inverse, datée du règlement, sera passée au grand livre dans son exercice, et le montant redeviendra dû. Les totaux de cette période changent : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
+      ),
+    ).toBeTruthy();
+  });
 });

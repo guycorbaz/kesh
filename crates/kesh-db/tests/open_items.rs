@@ -865,8 +865,14 @@ async fn as_of_in_a_closed_fiscal_year_is_stable(pool: MySqlPool) {
 /// Test 19 (AC12 b) — `X` ≤ `books_locked_through`, exercice ouvert :
 /// l'annulation d'un règlement dont tout le groupe `document` est ≤ borne est
 /// REFUSÉE et la liste est identique ; un administrateur déverrouille, la même
-/// annulation réussit, et la créance et la ligne de règlement réapparaissent
-/// « au X ».
+/// annulation réussit, et la créance réapparaît « au X ».
+///
+/// Story 63-1 (#1752, AC-11) : la contre-passation est datée du **règlement**
+/// (`jours_avant(90)`), non du jour : le groupe `reversal` {règlement, miroir}
+/// est lettré à `MAX(entry_date)` = −90 ≤ `X`, donc **acquis au X** — la ligne
+/// de règlement n'est plus listée (avant la 63-1, elle l'était, « lettrée après
+/// `X` » avec une inverse du jour). La démonstration « lettrée après `X` » reste
+/// portée par les autres tests du fichier.
 #[sqlx::test(migrations = "./test-schema")]
 async fn as_of_under_the_lock_is_stable_until_an_admin_unlocks(pool: MySqlPool) {
     let m = monde(&pool).await;
@@ -943,12 +949,11 @@ async fn as_of_under_the_lock_is_stable_until_an_admin_unlocks(pool: MySqlPool) 
     let apres = vue(&pool, &m, x).await;
     invariant(&pool, &m, &apres).await;
     assert_eq!(item(&apres, l_vente).reason, OpenReason::Unlettered);
-    assert_eq!(
-        item(&apres, l_regl).reason,
-        OpenReason::LetteredAfterAsOf,
-        "lettrée `reversal` avec sa contre-passation du jour"
+    assert!(
+        absente(&apres, l_regl),
+        "lettrée `reversal` avec sa contre-passation datée du règlement : acquise au X"
     );
-    assert_eq!(apres.total, avant.total + 2);
+    assert_eq!(apres.total, avant.total + 1);
 }
 
 /// Test 19 (AC12 c) — `X` au-dessus de la borne, exercice ouvert : le

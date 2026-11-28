@@ -98,6 +98,28 @@ describe('InvoiceSettlements', () => {
 		}
 	});
 
+	// Story 63-1 (#1752, AC-13) — l'annulation est datée du règlement : sous la borne du
+	// verrou, le motif remplace le bouton, borne en date suisse (mutation : bouton affiché
+	// qui échouerait au clic en `400 PERIOD_LOCKED`, ou borne ignorée).
+	it('période verrouillée ⇒ le motif et la borne à la place du bouton', () => {
+		const { queryByTestId, getByTestId } = render(InvoiceSettlements, {
+			settlements: [
+				s({
+					id: 1,
+					cancellable: false,
+					cancelBlockedBy: 'PERIOD_LOCKED',
+					cancelBlockedLabel: '2026-03-31',
+				}),
+			],
+			canManage: true,
+			onCancel: vi.fn(),
+		});
+		expect(queryByTestId('invoice-settlement-cancel')).toBeNull();
+		const motif = getByTestId('invoice-settlement-cancel-blocked').textContent ?? '';
+		expect(motif).toContain('Ce règlement est dans une période verrouillée');
+		expect(motif).toContain("verrouillée jusqu'au 31.03.2026 inclus.");
+	});
+
 	it('rapproché ⇒ bouton « Annuler le rapprochement » qui remonte la TRANSACTION nommée (Story 25-3-b ; mutation : identifiant du règlement remonté)', async () => {
 		const onCancelReconciliation = vi.fn();
 		const { getByTestId } = render(InvoiceSettlements, {

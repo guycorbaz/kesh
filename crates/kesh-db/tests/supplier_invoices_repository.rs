@@ -3930,3 +3930,67 @@ async fn pay_with_foreign_currency_internal_account_is_rejected(pool: MySqlPool)
     .unwrap();
     assert_eq!((status.as_str(), settlement), ("open", None));
 }
+
+/// Story 63-1 (#1754, AC-12, D1) — **l'annulation de la facture tient l'exercice
+/// de l'achat, et non celui du jour** : la facture payée de `monter` (achat et
+/// paiement dans l'exercice raccourci à `aujourd'hui − 60 j`, un exercice
+/// « Courant » ouvert qui couvre le jour), annulée par `cancel_in_tx`,
+/// transaction tenue ouverte. Une sonde `FOR UPDATE NOWAIT` d'une autre
+/// connexion trouve l'exercice de l'achat **tenu** — une clôture concurrente
+/// attendrait l'annulation, qui passe dans cet exercice (première branche de
+/// l'AC-12 ; la seconde, la clôture d'abord, est
+/// `a_concurrent_close_waits_for_the_invoice_cancellation`) — et l'exercice du
+/// jour **libre** : datée de l'achat, la contre-passation n'y écrit plus (sous
+/// `Today`, l'inverse y tombait et le tenait). Tue M3.
+#[sqlx::test(migrations = "./test-schema")]
+async fn s631_ac12_l_annulation_tient_l_exercice_de_l_achat_et_non_celui_du_jour(pool: MySqlPool) {
+    let (ctx, id) = monter(&pool, &[]).await;
+    let courant: i64 =
+        sqlx::query_scalar("SELECT id FROM fiscal_years WHERE company_id = ? AND name = 'Courant'")
+            .bind(ctx.seeded.company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let sonde = "SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE NOWAIT";
+    let mut tx = pool.begin().await.unwrap();
+    supplier_invoices::cancel_in_tx(
+        &mut tx,
+        ctx.seeded.company_id,
+        id,
+        ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("annulation dans la transaction");
+    let libre_achat =
+        kesh_db::test_fixtures::sonde_verrou_nowait(&pool, sonde, ctx.seeded.fiscal_year_id).await;
+    let libre_du_jour = kesh_db::test_fixtures::sonde_verrou_nowait(&pool, sonde, courant).await;
+    let (date, exercice): (NaiveDate, i64) = sqlx::query_as(
+        "SELECT r.entry_date, r.fiscal_year_id FROM journal_entries r \
+         JOIN supplier_invoices s ON s.purchase_journal_entry_id = r.reverses_entry_id \
+         WHERE s.id = ?",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    let achat: NaiveDate = sqlx::query_scalar(
+        "SELECT je.entry_date FROM journal_entries je \
+         JOIN supplier_invoices s ON s.purchase_journal_entry_id = je.id WHERE s.id = ?",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    tx.rollback().await.unwrap();
+    assert_eq!(
+        (date, exercice),
+        (achat, ctx.seeded.fiscal_year_id),
+        "l'inverse est datée de l'achat, dans son exercice"
+    );
+    assert_eq!(
+        (!libre_achat, !libre_du_jour),
+        (true, false),
+        "(exercice de l'achat tenu, exercice du jour tenu)"
+    );
+}

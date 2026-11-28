@@ -310,6 +310,64 @@ async fn a_cancelled_write_off_disappears(pool: MySqlPool) {
     assert_eq!(r.reconciliation_delta, dec!(0.00));
 }
 
+/// Story 63-1 (#1752, AC-3, P8) — **le décompte et le grand livre concordent
+/// dans la période du solde** : un escompte du 10 mars 2026 annulé (le jour du
+/// poste, hors du premier trimestre) — le décompte du trimestre ne retient plus
+/// le solde (il part des pièces) et, au grand livre, le compte de TVA due du
+/// trimestre, lu **par date d'écriture**, dit la même TVA nette : l'inverse est
+/// datée du solde, dans le trimestre. Datée du jour, elle tombait hors du
+/// trimestre, qui gardait le débit de TVA du solde : 0.– au grand livre pour
+/// 10.70 au décompte. Tue M1 (pour le solde).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s631_ac3_a_cancelled_discount_is_reversed_in_its_own_period(pool: MySqlPool) {
+    let seeded = company(&pool).await;
+    let contact = seed_contact(&pool, &seeded).await;
+    let inv = create_validated_invoice(&pool, &seeded, contact, ymd(2026, 3, 1), &LINES).await;
+    let sid = write_off(&pool, &seeded, inv, Nature::Discount, ymd(2026, 3, 10)).await;
+    let q1 = ReportPeriod {
+        fiscal_year_id: seeded.fiscal_year_id,
+        start_date: ymd(2026, 1, 1),
+        end_date: ymd(2026, 3, 31),
+    };
+    let jour_du_poste = crate::jour::aujourd_hui_test();
+    assert!(
+        jour_du_poste > q1.end_date,
+        "montage : le jour ({jour_du_poste}) est hors du trimestre du solde"
+    );
+    invoice_settlements_write::cancel_settlement(
+        &pool,
+        kesh_db::entities::audit_log::Acteur::utilisateur(seeded.admin_user_id),
+        seeded.company_id,
+        inv,
+        sid,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("annulation");
+
+    let r = vat_report::generate(&pool, seeded.company_id, &q1)
+        .await
+        .expect("rapport du trimestre");
+    assert!(r.write_off_rows.is_empty(), "{:?}", r.write_off_rows);
+    assert_eq!(r.total_vat_due_net, dec!(10.70));
+    let grand_livre: Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(jel.credit), 0) - COALESCE(SUM(jel.debit), 0) \
+         FROM journal_entry_lines jel JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE je.company_id = ? AND jel.account_id = ? AND je.entry_date BETWEEN ? AND ?",
+    )
+    .bind(seeded.company_id)
+    .bind(seeded.accounts["2000"])
+    .bind(q1.start_date)
+    .bind(q1.end_date)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        grand_livre, r.total_vat_due_net,
+        "la TVA due du trimestre au grand livre suit le décompte"
+    );
+}
+
 /// Une ventilation de forme fausse est une erreur, jamais un zéro silencieux.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn a_malformed_breakdown_is_an_error(pool: MySqlPool) {

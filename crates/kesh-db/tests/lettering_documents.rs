@@ -1672,6 +1672,34 @@ async fn locked_period_supplier_cancels_are_refused_until_unlocked(pool: MySqlPo
         marque(&pool, achat(&pool, s1).await, a.payable).await,
         (None, None)
     );
+    // Story 63-1 (#1754, AC-8 c, AC-11) : l'inverse de l'achat est datée de
+    // l'achat (`jours_avant(100)`), **sous** la borne `le − 1` — le groupe
+    // {achat, paiement} n'est plus figé (le paiement, daté `le`, est au-dessus),
+    // le rang 2 bis cède, et c'est le socle qui refuse : `PeriodLocked`, rien
+    // n'est écrit. Le déverrouillage **avant l'achat** le lève.
+    let avant = traces(pool.clone()).await;
+    let err = supplier_invoices::cancel(
+        &pool,
+        seeded.company_id,
+        s2,
+        seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("l'achat est sous la borne");
+    assert!(matches!(err, DbError::PeriodLocked { .. }), "{err:?}");
+    assert_eq!(traces(pool.clone()).await, avant, "rien d'écrit");
+    assert_eq!(statut_fournisseur(&pool, s2).await, "paid");
+    companies::unlock_books(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        Some(jours_avant(101)),
+        "annuler une facture".into(),
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("déverrouillage avant l'achat");
     supplier_invoices::cancel(
         &pool,
         seeded.company_id,

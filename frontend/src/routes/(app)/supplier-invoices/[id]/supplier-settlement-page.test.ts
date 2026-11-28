@@ -318,6 +318,33 @@ describe("fiche facture fournisseur — annuler la facture (Story 25-3-c)", () =
     expect(String(confirmSpy.mock.calls[0][0])).not.toContain("paiement sans facture");
   });
 
+  // Story 63-1 (#1754, AC-13, D5) — l'inverse de l'achat est datée comme lui, dans son
+  // exercice : le texte neuf est affirmé (mutation : « datée d'aujourd'hui » rétabli).
+  it("confirmation de l'annulation ⇒ l'inverse datée comme l'achat, dans son exercice, TVA comprise", async () => {
+    getMock.mockResolvedValue(inv({ status: "open", settlementJournalEntryId: null }));
+    cancelInvoiceMock.mockResolvedValue(inv({ status: "cancelled", cancellable: false }));
+    const { findByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("supplier-invoice-cancel"));
+    await waitFor(() => expect(cancelInvoiceMock).toHaveBeenCalled());
+    expect(String(confirmSpy.mock.calls[0][0])).toContain(
+      "Annuler cette facture ? Une écriture inverse de l'achat, datée comme lui, sera passée au grand livre dans son exercice. Les totaux de cette période changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
+    );
+  });
+
+  // Story 63-1 (#1753, AC-13, D5) — même chose pour le règlement : datée du paiement.
+  it("confirmation de l'annulation du règlement ⇒ l'inverse datée du paiement, dans son exercice", async () => {
+    getMock.mockResolvedValue(inv());
+    cancelSettlementMock.mockResolvedValue({
+      invoice: inv({ status: "open" }),
+      reversalJournalEntryId: 1,
+    });
+    const { findByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("supplier-invoice-settlement-cancel"));
+    expect(String(confirmSpy.mock.calls[0][0])).toContain(
+      "Annuler ce règlement ? Une écriture inverse, datée du paiement, sera passée au grand livre dans son exercice, et la facture redeviendra validée, à payer. Les totaux de cette période changent : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
+    );
+  });
+
   it("refus au clic ⇒ affiché LOCALEMENT, la fiche reste (mutation : refus dans `errorMsg`)", async () => {
     getMock.mockResolvedValue(inv({ status: "open", settlementJournalEntryId: null }));
     cancelInvoiceMock.mockRejectedValue({
