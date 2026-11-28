@@ -8,17 +8,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, screen } from '@testing-library/svelte';
 
-const { updateMock, toastError, notifyMock } = vi.hoisted(() => ({
+const { updateMock, toastError, notifyMock, i18nSpy } = vi.hoisted(() => ({
 	updateMock: vi.fn(),
 	toastError: vi.fn(),
-	notifyMock: vi.fn(() => false)
+	notifyMock: vi.fn(() => false),
+	// #592 : espion du `i18nMsg` du formulaire (importé d'`onboarding.svelte`) ; le repli
+	// est toujours rendu, les assertions de phrases ne changent pas.
+	i18nSpy: vi.fn((_key: string, fallback: string) => fallback)
 }));
 
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 	i18nMsg: (_key: string, fallback: string) => fallback
 }));
 vi.mock('$lib/features/onboarding/onboarding.svelte', () => ({
-	i18nMsg: (_key: string, fallback: string) => fallback
+	i18nMsg: i18nSpy
 }));
 vi.mock('./journal-entries.api', () => ({
 	createJournalEntry: vi.fn(),
@@ -100,6 +103,7 @@ describe('JournalEntryForm — mode édition', () => {
 		updateMock.mockReset();
 		toastError.mockReset();
 		notifyMock.mockClear();
+		i18nSpy.mockClear();
 	});
 
 	it('Story 35-7 (#1000, AC4) — une ligne dont on vide le compte puis qu’on quitte réaffiche son compte, celui qui part', async () => {
@@ -203,6 +207,11 @@ describe('JournalEntryForm — mode édition', () => {
 		const { onStale } = await submitWith(apiError('FISCAL_YEAR_CLOSED'));
 		expect(toastError).toHaveBeenCalledWith(
 			expect.stringContaining('exercice de cette écriture est clôturé')
+		);
+		// #592 : la clé que le site emploie (pas la « dernière » clé : le rendu en demande d'autres).
+		expect(i18nSpy).toHaveBeenCalledWith(
+			'journal-entries-modify-blocked-fiscal-year-closed',
+			expect.any(String)
 		);
 		expect(onStale).toHaveBeenCalledTimes(1);
 		expect(notifyMock).not.toHaveBeenCalled();

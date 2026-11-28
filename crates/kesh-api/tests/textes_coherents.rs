@@ -344,14 +344,29 @@ fn nombres_isoles_ne_prend_pas_un_point_de_code_pour_un_compte() {
 /// des mois).
 #[test]
 fn nombres_isoles_ne_prend_pour_date_que_des_mois_et_jours_bornes() {
-    for date in ["entre 1000-01-01 et 9999-12-31", "au 2026-02-28."] {
+    // #732 : les mois `10` et `11`, le jour `30`, une heure collée (`\D` borne le jour).
+    for date in [
+        "entre 1000-01-01 et 9999-12-31",
+        "au 2026-02-28.",
+        "2026-10-15",
+        "2026-11-30",
+        "2026-01-01T10:00",
+    ] {
         assert!(
             nombres_isoles(date).is_empty(),
             "« {date} » : une date ISO n'est pas un compte, rendu {:?}",
             nombres_isoles(date)
         );
     }
-    for pas_une_date in ["1171-99-99", "1171-13-01", "1171-00-10", "1171-12-32"] {
+    // #732 : le jour `00` (borne basse) et un jour à trois chiffres (le garde `(\D|$)`).
+    for pas_une_date in [
+        "1171-99-99",
+        "1171-13-01",
+        "1171-00-10",
+        "1171-12-32",
+        "1171-12-00",
+        "1171-01-011",
+    ] {
         let rendus: Vec<String> = nombres_isoles(pas_une_date)
             .into_iter()
             .map(|(n, ..)| n)
@@ -761,11 +776,6 @@ fn les_replis_rust_suivent_le_catalogue() {
     const LIGNES: &[(&str, &str)] = &[("{ $count }", "{n}")];
     // Story 49-4a (#1364) — les lignes demandées et offertes du refus à la validation.
     const BESOIN_PLACE: &[(&str, &str)] = &[("{ $besoin }", "{besoin}"), ("{ $place }", "{place}")];
-    // Story 35-1 (#948) — le format de numérotation et le nom de l'exercice.
-    const FORMAT_EXERCICE: &[(&str, &str)] = &[
-        ("{ $format }", "{format}"),
-        ("{ $fiscalYear }", "{fiscal_year_name}"),
-    ];
     type Cles = &'static [(&'static str, usize, &'static [(&'static str, &'static str)])];
     const TABLE: [(&str, Cles); 9] = [
         // Story 31-5 (#469, C-31-5-15) — les six refus du journal d'audit.
@@ -907,7 +917,11 @@ fn les_replis_rust_suivent_le_catalogue() {
                 (
                     "error-number-format-unrenderable-too-long",
                     1,
-                    FORMAT_EXERCICE,
+                    &[
+                        ("{ $format }", "{format}"),
+                        ("{ $fiscalYear }", "{fiscal_year_name}"),
+                        ("{\"{\"}FY{\"}\"}", "{{FY}}"),
+                    ],
                 ),
                 (
                     "error-number-format-unrenderable-brace",
