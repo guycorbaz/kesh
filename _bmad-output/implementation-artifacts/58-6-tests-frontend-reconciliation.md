@@ -25,12 +25,12 @@ sont ouvertes ; **aucune n'est déjà corrigée, aucune ne révèle de défaut d
 | #1078 | `reconciliation-manual-entry.spec.ts:239` : `expect(corps.counterpartyAccountId).toBe(capital!.id)` ; le test (l. 173-247) rougit par `toHaveValue(libelle)` (l. 229) avant d'y arriver. Avant la 35-7, le brouillon `zzz` restait affiché mais `2000` partait déjà : l'assertion est verte sur l'ancien code. | **gardée** (l. 239, non 236-237) |
 | #1079 | `ManualMatchModal.test.ts:340` `expect(champ().value).toBe('')` précède `:341` `submit.disabled` et `:343` (`manualMatchTransaction` non appelé). **Vérifié par mutation** (effet `keepOfferedCounterparty` du composant neutralisé) : l. 340 **passe**, l. 341 rougit seule. L'assertion du texte est donc muette, mais le test **rougit** déjà ; le défaut est l'ordre et l'absence d'explication. | **gardée**, plus étroite que l'issue : réordonner et dire pourquoi |
 | #1080 | `TransactionSplitModal.test.ts:553` (« deux comptes restés proposés ne sont pas touchés ») et `ManualMatchModal.test.ts:348` (« un compte resté proposé n’est pas touché… »). **Vérifié par mutation** : avec l'effet neutralisé, le test Manual de la l. 348 **reste vert** (16 verts sur 17, seul le test de la l. 340 rougit). | **gardée** |
-| #1082 | `reconciliation-manual-entry.spec.ts:220` `await option.dispatchEvent('mousedown');` (bloc 35-7). La l. 133 (test de la 34-3, hors issue) fait de même : voir D3. | **gardée** |
+| #1082 | `reconciliation-manual-entry.spec.ts:220` `await option.dispatchEvent('mousedown');` (bloc 35-7). La l. 133 (test de la 34-3, hors issue) fait de même : jumeau corrigé dans la story (D3, C-58-6-k, AC13). | **gardée** |
 | #1083 | `TransactionSplitModal.svelte:107-116` (effet par ligne) ; `TransactionSplitModal.test.ts:518` (ligne 1) et `:537` (ligne 2) : deux lignes seulement ; `split-add-line` n'est cliqué qu'aux l. 408 et 695, hors du bloc 35-7. `MAX_SPLITS` = 50. | **gardée** |
 | #1084 | `AccountAutocomplete.svelte:340-370` (`handleKeydown`) n'a pas de branche `Tab` ; `commitDraft` (l. ~465-500) jette le brouillon d'un champ strict. `grep -n Tab AccountAutocomplete.test.ts` : vide. Aucun test ne fixe « numéro complet puis Tab ». | **gardée** (l. 340-370 et 465-500, non 255-273 et 297-300) |
 | #1088 | `ReconciliationProposals.svelte:520` `if (!current) return;`. **Inatteignable** : `proposals` n'est écrit qu'à la l. 204 (dans `load()`), qui commence par `pendingGesture = null` (l. 182) et passe `loading` à vrai, ce qui démonte la confirmation (`{:else}` de `{#if loading}`, l. 636) ; la sélection est vidée avec elle. Le test d'invariant existe : `ReconciliationProposals.test.ts:1899` (AC4, M4), mais pour quatre gestes sur cinq (voir D2). | **gardée** ; tranchée : **retrait** (D2) |
 | #1090 | `reconciliation-already-booked-reject.spec.ts:170-177` `cliquerHors` : `expect(async () => { page.mouse.click(5, 5); expect(confirmation).toHaveCount(0, { timeout: 500 }) }).toPass({ timeout: 5000 })`. Appelée l. 235 et 335. | **gardée** |
-| #1091 | `reconciliation-already-booked-reject.spec.ts:242` `toContainText('1')`. | **gardée** (l. 242) ; **un site jumeau** hors issue : `reconciliation-reject-unmatched.spec.ts:173`, même assertion (voir *Issues à ouvrir*) |
+| #1091 | `reconciliation-already-booked-reject.spec.ts:242` `toContainText('1')`. | **gardée** (l. 242) ; **site jumeau** `reconciliation-reject-unmatched.spec.ts:173`, corrigé dans la story sans issue (C-58-6-k, AC14) |
 | #1093 | `ReconciliationProposals.test.ts:1790` (une signalée parmi deux cochées, `introRejetDes(2)`) et `:1811` (une cochée et signalée, `INTRO_REJET_UNE`). Ni trois cochées dont une signalée, ni toutes signalées. | **gardée** |
 
 ## Ce qui se lit au code (`287deea33`)
@@ -58,7 +58,7 @@ sont ouvertes ; **aucune n'est déjà corrigée, aucune ne révèle de défaut d
   `gesture.proposal`, **le même objet** que `proposals.find(...)` aurait rendu (la ligne vient de `proposals`, qui n'a pas été réécrit depuis). Le doc-comment de la fonction se réécrit (plus de « gardes défensives »).
   **Le retrait repose sur l'invariant « une relecture referme la confirmation »** ; or le test qui le tient (`ReconciliationProposals.test.ts:1899`) ne couvre que `accept`, `reject`, `manual`, `split`, **pas `group`** (déclaré par 43-3). La story l'étend à `group-settlement-button` avant de retirer : sans cela, le retrait
   s'appuierait sur un geste que rien n'éprouve. Si la relecture ne referme pas la confirmation d'un geste `group` (le test rougit), **la garde est conservée** et la story se ferme sur ce constat : un vrai défaut de production, à sortir en issue.
-- **D3 — #1082 : le bloc 35-7 seul.** La l. 133 (test de la 34-3) emploie aussi `dispatchEvent('mousedown')` : hors de l'issue, hors de la story ; elle s'ouvre en issue (§ *Issues à ouvrir*), une issue par problème.
+- **D3 — #1082 : le bloc 35-7, et le site jumeau de la l. 133 (C-58-6-k).** La l. 133 (test de la 34-3) emploie aussi `dispatchEvent('mousedown')` : même défaut, même fichier, même genre. Décision de l'orchestrateur du 2026-11-28 : pas d'issue ; le défaut se corrige dans la story (§ *Priorités des défauts*, « un LOW se corrige dans la story »), en tâche **sans issue** rattachée à #1082 (AC13).
 - **D4 — #1084 : on fixe le comportement, on ne le change pas.** Tab ne choisit rien (D2 de la 35-7) : le test l'écrit tel quel. Faire choisir l'unique correspondance exacte serait une règle d'interface nouvelle : décision du Project Lead, hors de cette story.
 - **D5 — #1090 : un état observable puis un seul clic ; repli à 100 ms mesuré.** Attendre que les animations de la confirmation soient terminées (`confirmation.evaluate(el => Promise.all(el.getAnimations().map(a => a.finished)))`) puis **un seul** `page.mouse.click(5, 5)` et `toHaveCount(0)` ;
   si le rejeu discriminant (D6) montre que cela ne suffit pas (les écouteurs de bits-ui se posent après `afterSleep(1)` et le clic est traité après un `debounce` de 10 ms : C-e354-2), repli : `waitForTimeout(100)` documenté, jamais une boucle de clics. Le commentaire de `cliquerHors` se réécrit.
@@ -80,6 +80,8 @@ sont ouvertes ; **aucune n'est déjà corrigée, aucune ne révèle de défaut d
 10. **#1093** — deux tests de plus : trois cochées dont une signalée → `introRejetDes(3)` et un seul élément nommé ; toutes les cochées signalées (deux, ou trois) → autant d'éléments que de lignes, `introRejetDes(n)`.
 11. **Preuve du rouge** — chaque test renforcé ou ajouté rougit sur sa mutation nommée (§ *Preuve du rouge*), jouée puis restaurée avec `touch`, journaux dans `kesh-gate-logs/e65/58-6/`.
 12. **Aucun effet hors périmètre** — `git diff` : tests, `ReconciliationProposals.svelte` (garde #1088 seulement) et le fichier de la story ; aucun `.ftl`, aucun `.rs`, aucune migration.
+13. **Jumeau de #1082 (C-58-6-k, sans issue)** — `reconciliation-manual-entry.spec.ts:133` (test de la 34-3) : `await option.click();` ; même réserve qu'à l'AC4 (si le montage l'empêche, la raison s'écrit et la tâche s'arrête).
+14. **Jumeau de #1091 (C-58-6-k, sans issue)** — `reconciliation-reject-unmatched.spec.ts:173` : `toHaveText(/^\s*1\s+\D/)` à la place de `toContainText('1')`.
 
 ## Preuve du rouge
 
@@ -99,6 +101,8 @@ sont ouvertes ; **aucune n'est déjà corrigée, aucune ne révèle de défaut d
 | 8 | E2E de rejet, `cliquerHors` | `AlreadyBookedConfirmDialog.svelte` : ignorer la première fermeture (`let ignore = true; onOpenChange={(v) => { if (!v) { if (ignore) { ignore = false; return; } onCancel(); } }}`) | rouge avec **un seul** clic ; vert avec l'ancienne boucle (démonstration de l'issue) |
 | 7 | `ReconciliationProposals.test.ts:1899`, cas `group` | `load()` : supprimer `pendingGesture = null;` (l. 182) | rouge pour les **cinq** gestes (aujourd'hui quatre) : c'est le filet sous le retrait de la garde |
 | 1 | E2E 35-7, l. 239 | `ManualMatchModal.svelte` : envoyer `filteredAccounts[0].id` au lieu de `counterpartyId` | rouge sur la comparaison libellé/identifiant ; **ne rougit pas** sur le code d'avant la 35-7 (écrit au commentaire, AC1) |
+| 14 | `reconciliation-reject-unmatched` (l. 173) | même mutation que l'AC9 (`lastSuccessCount = r.rejected.length + 9`, chemin *Rejeter*) | rouge avec le motif ; vert avec l'ancien `toContainText('1')` |
+| 13 | E2E 34-3, `option.click()` (l. 133) | même mutation que l'AC4 (`handleBlur` qui jette la sélection avant le choix) | rouge avec un vrai clic ; même écart déclaré qu'à l'AC4 |
 | 4 | E2E 35-7, `option.click()` | `AccountAutocomplete.svelte` : sur `blur`, jeter la sélection avant le `mousedown` (`handleBlur` qui appelle `commitDraft` avant le choix) | rouge avec un vrai clic ; non vu par `dispatchEvent` (la séquence `mousedown` → `blur` → `click` n'y est pas) |
 
 *Écart déclaré* : la mutation de l'AC4 est celle de la l. 133 de l'issue (« D2 fait dépendre le comportement de l'ordre blur/sélection ») ; si elle ne rougit pas avec un vrai clic, c'est que l'ordre n'est pas tenu par ce composant : le noter au Dev Agent Record et **ne pas** prétendre à la preuve.
@@ -120,6 +124,7 @@ sont ouvertes ; **aucune n'est déjà corrigée, aucune ne révèle de défaut d
   - [ ] **Seulement si T3 a montré que les cinq gestes rougissent sans `pendingGesture = null`.** Réécrire `confirmGesture` et son doc-comment (D2) ; `grep -rn "confirmGesture\|défensives" frontend docs _bmad-output/implementation-artifacts` pour propager le symptôme ; `npm run check`.
 - [ ] **T5 — E2E** (AC: 1, 4, 8, 9)
   - [ ] `reconciliation-manual-entry.spec.ts` : AC1, AC4 ; `reconciliation-already-booked-reject.spec.ts` : AC8, AC9. Mutations des AC 1, 4, 8, 9 (le front se reconstruit pour chaque mutation : `npm run build`).
+  - [ ] Jumeaux sans issue (C-58-6-k) : AC13 (`reconciliation-manual-entry.spec.ts:133`) et AC14 (`reconciliation-reject-unmatched.spec.ts:173`, ajouter cette spec aux E2E ciblés).
   - [ ] `--repeat-each=10` sur les deux tests de la spec de rejet ; `--repeat-each=3` sur le test 35-7 de la spec d'écriture manuelle.
 - [ ] **T6 — Gates et clôture** (AC: 11, 12)
   - [ ] Gates ci-dessous ; Dev Agent Record : mutations jouées (log cité), `git diff --stat`, chiffres recomptés.
@@ -127,7 +132,7 @@ sont ouvertes ; **aucune n'est déjà corrigée, aucune ne révèle de défaut d
 ## Gates
 
 - **Frontend** (voie frontend, `flock …/.gate-front.lock scripts/mem-guard.sh`) : Vitest ciblé par fichier à chaque tâche — `ManualMatchModal.test.ts`, `TransactionSplitModal.test.ts`, `ReconciliationProposals.test.ts`, `AccountAutocomplete.test.ts` ; en fin de story : `npm run check`, `npm run lint-i18n-ownership`, `npm run test:unit` (total recompté), `npm run build`.
-- **E2E ciblés** (voie base, backend dans la prise ; port 3656, bases `kesh_e2e_586`) : `reconciliation-already-booked-reject.spec.ts`, `reconciliation-manual-entry.spec.ts` et, en régression (aucun de ses fichiers n'est modifié), `reconciliation-split.spec.ts` ; noms vérifiés dans `frontend/tests/e2e/`.
+- **E2E ciblés** (voie base, backend dans la prise ; port 3656, bases `kesh_e2e_586`) : `reconciliation-already-booked-reject.spec.ts`, `reconciliation-manual-entry.spec.ts`, `reconciliation-reject-unmatched.spec.ts` (AC14) et, en régression (aucun de ses fichiers n'est modifié), `reconciliation-split.spec.ts` ; noms vérifiés dans `frontend/tests/e2e/`.
 - **E2E complet à la clôture** (dernier commit de code) : sous `LANG=fr_CH.UTF-8`, « vert » = les sept échecs de la KF-029 seuls ; ou sur idefix (`gate-distant.sh <branche> tout`, branche poussée).
 - **Rust** : aucun fichier Rust ne bouge ; pas de gate Rust, pas de `gate-ci.sh`. Dire au Dev Agent Record « gate Rust non lancé : aucun fichier Rust modifié ».
 - **Le story file n'affirme que ce qui a tourné.**
@@ -136,12 +141,9 @@ sont ouvertes ; **aucune n'est déjà corrigée, aucune ne révèle de défaut d
 
 *Pour l'assemblage du CHANGELOG (jamais écrit dans la story).* Section « Interne » : « Tests de la réconciliation renforcés (dix assertions qui passaient aussi sur l'ancien code) ; une garde inatteignable retirée de la confirmation « déjà comptabilisée ». Aucun changement visible. »
 
-## Issues à ouvrir (par l'orchestrateur, aucune n'est ouverte par la fiche)
+## Choix consignés
 
-1. `reconciliation-reject-unmatched.spec.ts:173` : `toContainText('1')`, même défaut que #1091 (accepte « 10 »). P4, `technical-debt`.
-2. `reconciliation-manual-entry.spec.ts:133` (test de la 34-3) : `dispatchEvent('mousedown')`, même défaut que #1082. P4, `technical-debt`.
-
-Vérifier avant d'ouvrir (`gh issue list --state all --search "toContainText"`, règle du 2026-11-26) qu'elles ne sont pas déjà couvertes.
+- **C-58-6-k — les deux défauts jumeaux se corrigent dans la story, sans issue** (décision de l'orchestrateur, 2026-11-28 ; règle du `CLAUDE.md` : un défaut LOW du même module et du même genre se corrige dans la story). Deux tâches sans issue : `reconciliation-reject-unmatched.spec.ts:173` (`toContainText('1')`, même correctif que #1091 : AC14) et `reconciliation-manual-entry.spec.ts:133` (`dispatchEvent('mousedown')`, même correctif que #1082 : AC13). Les commits les rattachent à `refs #1091` et `refs #1082` ; aucune issue n'est ouverte. Elles passent par la même boucle de revue que les dix autres.
 
 ## Questions (pour l'orchestrateur ; aucune ne bloque)
 
@@ -160,7 +162,7 @@ Vérifier avant d'ouvrir (`gh issue list --state all --search "toContainText"`, 
 ### Project Structure Notes
 
 - `frontend/src/lib/features/reconciliation/` (`ManualMatchModal.test.ts`, `TransactionSplitModal.test.ts`, `ReconciliationProposals.test.ts`, `ReconciliationProposals.svelte`), `frontend/src/lib/features/journal-entries/AccountAutocomplete.test.ts`,
-  `frontend/tests/e2e/reconciliation-manual-entry.spec.ts`, `frontend/tests/e2e/reconciliation-already-booked-reject.spec.ts`. Aucun nouveau fichier de production.
+  `frontend/tests/e2e/reconciliation-manual-entry.spec.ts`, `frontend/tests/e2e/reconciliation-already-booked-reject.spec.ts`, `frontend/tests/e2e/reconciliation-reject-unmatched.spec.ts`. Aucun nouveau fichier de production.
 
 ### References
 
