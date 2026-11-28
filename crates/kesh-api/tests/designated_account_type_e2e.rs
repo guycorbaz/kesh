@@ -378,6 +378,144 @@ async fn ac7_purchase_validation_orders_the_accounts_by_number(pool: MySqlPool) 
             "Le compte 1171, désigné comme compte TVA récupérable dans Administration → Facturation, est un compte de passif ; ce réglage demande un compte d’actif. Le compte 2000, désigné comme compte créanciers dans Administration → Facturation, est un compte d’actif ; ce réglage demande un compte de passif. {ACTION}"
         )
     );
+    // #1063 : rien n'est écrit — la facture fournisseur reste brouillon, sans numéro
+    // interne, à la même version. (Contrat à travers la route : l'attribution du
+    // numéro et le refus partagent une transaction, le `rollback` défait un ordre
+    // inversé ; ce test ne prétend pas le détecter.)
+    let after = app
+        .get(&format!("/api/v1/supplier-invoices/{}", inv["id"]))
+        .await;
+    assert_eq!(after["status"], "draft", "la facture reste brouillon");
+    assert!(
+        after["internalNumber"].is_null(),
+        "aucun numéro interne attribué : {after}"
+    );
+    assert_eq!(after["version"], inv["version"], "version inchangée");
+}
+
+/// #1062 — un MÊME compte, désigné aux deux réglages que la vente juge (créance et
+/// TVA due) et du mauvais type pour les deux : deux entrées, même numéro, dans
+/// l'ordre des réglages, deux phrases, une seule phrase d'action. Le compte est
+/// posé par SQL : la route des réglages refuserait son type, et aucun retypage ne
+/// peut faire partager un compte à la créance `1100` et à la TVA due `2000`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac7_sale_validation_names_the_same_account_wrong_for_two_settings(pool: MySqlPool) {
+    let (app, seeded, contact) = setup(&pool).await;
+    let id = draft_invoice(&app, contact).await;
+    new_account(&pool, seeded.company_id, "6999", "Expense").await;
+    let shared: i64 =
+        sqlx::query_scalar("SELECT id FROM accounts WHERE company_id = ? AND number = '6999'")
+            .bind(seeded.company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_receivable_account_id = ?, \
+         default_vat_payable_account_id = ? WHERE company_id = ?",
+    )
+    .bind(shared)
+    .bind(shared)
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (status, body) = app
+        .send(
+            reqwest::Method::POST,
+            &format!("/api/v1/invoices/{id}/validate"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(body["error"]["code"], "DESIGNATED_ACCOUNT_WRONG_TYPE");
+    assert_eq!(
+        rejected(&body),
+        vec![
+            r("6999", "receivable", "Asset", "Expense"),
+            r("6999", "vatPayable", "Liability", "Expense"),
+        ]
+    );
+    assert_eq!(
+        body["error"]["message"],
+        format!(
+            "Le compte 6999, désigné comme compte créance client dans Administration → Facturation, est un compte de charge ; ce réglage demande un compte d’actif. Le compte 6999, désigné comme compte TVA due dans Administration → Facturation, est un compte de charge ; ce réglage demande un compte de passif. {ACTION}"
+        )
+    );
+    let inv = app.get(&format!("/api/v1/invoices/{id}")).await;
+    assert_eq!(inv["status"], "draft", "la facture reste brouillon");
+}
+
+/// #1064 — l'avoir n'est pas soumis au contrôle de type des comptes désignés
+/// (manuel utilisateur, « Rôles des comptes » : une facture émise reste toujours
+/// annulable) : sur la créance `1100` retypée en passif, puis sur la TVA due `2000`
+/// retypée en actif, `POST /api/v1/credit-notes` rend 201 ; l'écriture inverse crédite
+/// la créance lue sur l'écriture de la facture.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac10_credit_note_stays_possible_on_a_retyped_receivable_and_vat_payable(pool: MySqlPool) {
+    let (app, seeded, contact) = setup(&pool).await;
+    // Deux factures validées AVANT tout retypage (la validation refuserait ensuite).
+    let mut invoices = Vec::new();
+    for _ in 0..2 {
+        let id = draft_invoice(&app, contact).await;
+        let (status, validated) = app
+            .send(
+                reqwest::Method::POST,
+                &format!("/api/v1/invoices/{id}/validate"),
+                json!({}),
+            )
+            .await;
+        assert_eq!(status, 200, "validation : {validated}");
+        invoices.push(id);
+    }
+    let receivable = seeded.accounts["1100"];
+
+    // La créance retypée en passif : l'avoir passe (201) et crédite `1100`.
+    app.retype(receivable, AccountType::Liability).await;
+    let (status, note) = app
+        .send(
+            reqwest::Method::POST,
+            "/api/v1/credit-notes",
+            json!({ "invoiceId": invoices[0], "date": "2026-06-16" }),
+        )
+        .await;
+    assert_eq!(status, 201, "avoir sur la créance retypée : {note}");
+    let entry = app
+        .get(&format!(
+            "/api/v1/journal-entries/{}",
+            note["journalEntryId"]
+        ))
+        .await;
+    let credited: Vec<&Value> = entry["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|l| {
+            l["accountId"] == receivable
+                && l["credit"]
+                    .as_str()
+                    .and_then(|c| c.parse::<rust_decimal::Decimal>().ok())
+                    .is_some_and(|c| c > rust_decimal::Decimal::ZERO)
+        })
+        .collect();
+    assert_eq!(
+        credited.len(),
+        1,
+        "l'écriture inverse crédite la créance : {entry}"
+    );
+
+    // La TVA due retypée en actif (la créance rendue à son type) : l'avoir passe encore.
+    app.retype(receivable, AccountType::Asset).await;
+    app.retype(seeded.accounts["2000"], AccountType::Asset)
+        .await;
+    let (status, note) = app
+        .send(
+            reqwest::Method::POST,
+            "/api/v1/credit-notes",
+            json!({ "invoiceId": invoices[1], "date": "2026-06-16" }),
+        )
+        .await;
+    assert_eq!(status, 201, "avoir sur la TVA due retypée : {note}");
 }
 
 /// Story 36-9 (#1044, AC7) — le **solde du reste** en escompte d'une facture à
@@ -475,31 +613,41 @@ async fn ac9_settings_route_reads_the_same_types_as_the_validation(pool: MySqlPo
             .push(new_account(&pool, c, number, kind.as_str()).await);
     }
     let expense = new_account(&pool, c, "4080", "Expense").await;
+    // #1060 : le message ENTIER de chaque refus, écrit en littéral (l'attendu ne
+    // sort pas du code : un `format!` recomposerait le libellé et le mot).
     let fields = [
         (
             "defaultReceivableAccountId",
             CLAIM_SETTING_ACCOUNT_TYPES.receivable,
+            "Compte créance : type de compte incompatible (attendu : actif)",
         ),
         (
             "defaultPayableAccountId",
             CLAIM_SETTING_ACCOUNT_TYPES.payable,
+            "Compte créanciers : type de compte incompatible (attendu : passif)",
         ),
         (
             "defaultVatPayableAccountId",
             VAT_SETTING_ACCOUNT_TYPES.payable,
+            "Compte TVA due : type de compte incompatible (attendu : passif)",
         ),
         (
             "defaultVatRecoverableAccountId",
             VAT_SETTING_ACCOUNT_TYPES.recoverable,
+            "Compte TVA récupérable : type de compte incompatible (attendu : actif)",
         ),
     ];
-    for (field, expected) in fields {
+    for (field, expected, message) in fields {
         let mut body = app.get(SETTINGS).await;
         body[field] = json!(expense);
         let (status, refused) = app.send(reqwest::Method::PUT, SETTINGS, body).await;
         assert_eq!(
             status, 400,
             "{field} : un compte de charge est refusé : {refused}"
+        );
+        assert_eq!(
+            refused["error"]["message"], message,
+            "{field} : le type attendu, en mots"
         );
 
         let candidates = fresh
@@ -525,5 +673,17 @@ async fn ac9_settings_route_reads_the_same_types_as_the_validation(pool: MySqlPo
     assert_eq!(
         refused["error"]["message"],
         "Compte créance : type de compte incompatible (attendu : actif)"
+    );
+
+    // #1060 : le compte d'arrondi n'est pas de la boucle (`[Expense, Revenue]`,
+    // `resolve_designated_account`) : un compte d'actif y est refusé, « charge ou produit ».
+    let asset = new_account(&pool, c, "1182", "Asset").await;
+    let mut body = app.get(SETTINGS).await;
+    body["defaultRoundingAccountId"] = json!(asset);
+    let (status, refused) = app.send(reqwest::Method::PUT, SETTINGS, body).await;
+    assert_eq!(status, 400, "{refused}");
+    assert_eq!(
+        refused["error"]["message"],
+        "Compte de différences d'arrondi : type de compte incompatible (attendu : charge ou produit)"
     );
 }

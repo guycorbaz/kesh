@@ -13,18 +13,22 @@
 //!
 //! # Règles de validation (`validate_template`)
 //!
-//! - Caractères autorisés : `[A-Za-z0-9\-_/.#\s{}:]`.
-//! - Longueur du template ≤ 64.
+//! - Caractères autorisés : lettres ASCII, chiffres, `- _ / . # : { }`, espace, tabulation.
+//! - Longueur du template ≤ 64 octets.
 //! - Au moins 1 placeholder reconnu présent.
 //! - Pour chaque `{SEQ:NN}` : 1 ≤ NN ≤ 10.
-//! - Longueur du rendu maximal ≤ 64 (cas worst-case `seq = 10^NN - 1`).
+//! - Longueur du rendu maximal ≤ 64 octets (pire cas : `max(NN, 19)` chiffres par compteur,
+//!   les 19 chiffres d'un `i64`).
 //! - Un compteur, `{SEQ}` ou `{SEQ:NN}` (Story 35-1, #932) — testé en dernier.
 
 use std::fmt;
 
-/// Longueur max du template et du rendu final.
+/// Longueur max du template, en **octets** (`template.len()`).
 pub const MAX_TEMPLATE_LEN: usize = 64;
-/// Longueur max du rendu final (identique à la VARCHAR(64) DB).
+/// Longueur max du rendu final, en **octets** (`String::len`). La colonne `VARCHAR(64)`
+/// compte des caractères : la borne est plus stricte, jamais plus lâche — un choix de
+/// prudence (#1122), non une exigence de la QR-facture, dont le message est tronqué à
+/// 140 caractères et la charge gardée à part.
 pub const MAX_RENDERED_LEN: usize = 64;
 /// Borne haute du padding `{SEQ:NN}`.
 pub const MAX_SEQ_PADDING: u32 = 10;
@@ -91,7 +95,7 @@ impl fmt::Display for FormatError {
             ),
             Self::RenderedTooLong(n) => write!(
                 f,
-                "Le format générerait un numéro de {n} caractères (max {MAX_RENDERED_LEN})"
+                "Le format générerait un numéro de {n} octets (max {MAX_RENDERED_LEN})"
             ),
             Self::UnmatchedBrace => write!(f, "Accolade non appariée dans le format"),
             Self::NotNumberingShape => write!(
@@ -342,9 +346,12 @@ pub fn supplier_invoice_long_label(
 /// - [`FormatError::FiscalYearNameBrace`] : le nom de l'exercice porte une
 ///   accolade et le format le reprend (`{FY}`) ;
 /// - [`FormatError::RenderedTooLong`] : le rendu dépasse
-///   [`MAX_RENDERED_LEN`] **octets** — borne en octets, non en caractères, parce
-///   que la QR-facture borne sa charge en octets (C-e351-7) ; un nom d'exercice
-///   accentué l'atteint avant 64 caractères.
+///   [`MAX_RENDERED_LEN`] **octets** — borne en octets, non en caractères, par
+///   prudence (C-e351-7) : plus stricte que la colonne `VARCHAR(64)`, qui compte des
+///   caractères, jamais plus lâche. Ce n'est pas la QR-facture qui l'impose : son
+///   message non structuré est tronqué à 140 caractères et sa charge est gardée
+///   par un contrôle à part. Un nom d'exercice à lettres accentuées (deux octets),
+///   « – » ou « € » (trois) l'atteint avant 64 caractères.
 pub fn render(template: &str, year: i32, fy_name: &str, seq: i64) -> Result<String, FormatError> {
     // Review P14 : DB CHECK `next_number >= 1` devrait garantir seq ≥ 1,
     // mais défense en profondeur si un caller contourne le repository.
@@ -514,6 +521,41 @@ mod tests {
             validate_template("F-{YEAR}-{SEQ:04}!"),
             Err(FormatError::IllegalCharacter('!'))
         ));
+    }
+
+    /// Story 58-1 (#1120) — seuls l'espace et la tabulation sont des blancs admis ;
+    /// l'écran (`invoice-number-format.ts`) juge de même.
+    #[test]
+    fn validates_template_only_space_and_tab_are_blanks() {
+        for blank in ['\u{a0}', '\u{2003}', '\n'] {
+            assert_eq!(
+                validate_template(&format!("F-{{YEAR}}-{{SEQ}}{blank}x")),
+                Err(FormatError::IllegalCharacter(blank)),
+                "{blank:?}"
+            );
+        }
+        assert!(validate_template("F-{YEAR}\t-{SEQ}").is_ok());
+        assert!(validate_template("F-{YEAR} -{SEQ}").is_ok());
+    }
+
+    /// Story 58-1 (#1119) — le serveur admet `{SEQ:+4}` (`u32::from_str` accepte un
+    /// `+`), que l'écran refuse par « caractères non autorisés » : l'écart est connu
+    /// et fixé des deux côtés. Si ce test rougit parce que le serveur se resserre, le
+    /// miroir TypeScript (`invoice-number-format.ts`, `ALLOWED_CHAR_RE`) est à mettre à
+    /// jour.
+    #[test]
+    fn validates_template_signed_padding_is_accepted_by_the_server() {
+        assert!(validate_template("F-{SEQ:+4}").is_ok());
+        assert_eq!(render("F-{SEQ:+4}", 2026, "2026", 42).unwrap(), "F-0042");
+    }
+
+    /// Story 58-1 (#1118) — la borne se compte en octets : le message le dit.
+    #[test]
+    fn rendered_too_long_display_speaks_of_bytes() {
+        let msg = FormatError::RenderedTooLong(65).to_string();
+        assert!(msg.contains("octets"), "{msg}");
+        assert!(!msg.contains("caractères"), "{msg}");
+        assert!(msg.contains("65"), "{msg}");
     }
 
     #[test]

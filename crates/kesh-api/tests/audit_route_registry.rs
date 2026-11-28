@@ -158,9 +158,11 @@
 //!   de configuration n'a pas de trafic concurrent : le rejeu n'achèterait rien
 //!   qu'on puisse mesurer.
 //! - **(v)** quoi que ce soit d'une route `GET` : l'extracteur ne balaie que
-//!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
-//!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
-//!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
+//!   `post`, `put`, `delete` et `patch`. Des routes `GET` écrivent pourtant au
+//!   journal (`report.generated` et `report.exported` pour les rapports,
+//!   `exports.global`, `invoice.pdf_frozen` au premier PDF d'une facture) : elles
+//!   restent hors de l'extracteur, angle mort assumé et du même ordre que celui de
+//!   l'audit (`GET /invoices/{id}/pdf`, plus bas).
 //! - **(vi)** **trente-sept routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `fiscal_years::update_fiscal_year` (enveloppe `DbError`, opération
 //!   `fiscal_years::update_name`, Story 34-7, #945 : le renommage tient l'exercice

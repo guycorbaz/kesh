@@ -88,8 +88,9 @@ services:
 
       # Logging — stdout (docker logs) + fichier avec rotation (Story v011-1).
       RUST_LOG: ${RUST_LOG:-info}
-      # Écrit AUSSI les logs dans un fichier /var/log/kesh/kesh.log (bind-monté
-      # sur l'hôte, cf. volumes) avec rotation. Opt-out : une ligne
+      # Écrit AUSSI les logs dans un fichier du dossier /var/log/kesh/, nommé
+      # kesh.AAAA-MM-JJ.log avec la rotation quotidienne (bind-monté sur
+      # l'hôte, cf. volumes). Opt-out : une ligne
       # `KESH_LOG_FILE_PATH=` VIDE dans .env → stdout uniquement. Tiret SANS
       # deux-points : le défaut ne vaut que pour une variable absente de .env.
       KESH_LOG_FILE_PATH: ${KESH_LOG_FILE_PATH-/var/log/kesh/kesh.log}
