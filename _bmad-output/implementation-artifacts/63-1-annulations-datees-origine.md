@@ -750,14 +750,41 @@ fiche fournisseur : une capture ne les montre pas, leur texte est écrit à côt
 #### Points à trancher par le Project Lead
 
 1. Le script du retrait mécanique des 232 arguments de tests (écart à « outil Edit pour le code », ci-dessus).
-2. `lib/shared/utils/settlement-cancel-blocked.ts` importe `formatSwissDate` de `features/reports/reports.api` : première
-   dépendance de `lib/shared` vers `features/` (le seul formateur de date suisse du frontend y vit) — accepter, ou le déplacer
-   dans `lib/shared` (issue `technical-debt`).
+2. *(Réglé par la remédiation de la revue P1, L1 : le formateur vit dans `lib/shared/utils/swiss-date.ts`, `reports.api` le
+   ré-exporte.)* `lib/shared/utils/settlement-cancel-blocked.ts` importait `formatSwissDate` de `features/reports/reports.api`.
 3. La boîte de confirmation de la fiche fournisseur est un `confirm()` natif : la recette visuelle ne peut la capturer.
 4. Un artefact écrit par erreur hors du worktree : `frontend/test-results/.last-run.json` **du dépôt principal** (créé le
    2026-11-28 à 04:00 par trois lancements de Playwright partis par mégarde du dépôt principal, « No tests found » ; fichier
    ignoré par git, `git status` du dépôt principal propre). Sa suppression m'a été refusée par les permissions : à effacer par
    l'orchestrateur (répertoire `test-results/` créé à cette heure-là, sans autre contenu).
+
+#### Remédiation de la revue P1 (Opus 5.5, 2026-11-28) — L10 (déclarations manquantes) et suite
+
+- **L10 (a)** : `features/invoices/settlement-cancel.test.ts` et `features/supplier-invoices/settlement-cancel.test.ts`, nommés par l'AC-13,
+  sont **inchangés** : la couverture des deux familles de motifs passe par `lib/shared/utils/settlement-cancel-blocked.test.ts`, qui appelle
+  `invoiceSettlementCancelMessage` et `supplierSettlementCancelMessage` (clé, texte, borne en date suisse).
+- **L10 (b)** : la relecture de `kesh-api/tests/date_du_jour_garde.rs`, prescrite par la D3, est faite : la garde ne lit aucune signature
+  retirée ; son binaire est vert à la remédiation (nextest, `$GATE_LOGS/e63/rem/nextest-1.log`).
+- **L10 (c)** : AC-3 `kesh-report` — le `reconciliation_delta` du rapport (`INNER JOIN invoice_settlements`) vaut 0 sous les deux datations
+  et ne détecte pas une annulation héritée ; seul le grand livre borné par `entry_date` (10.70 sous l'origine, 0 sous « du jour ») prouve la datation.
+- **L1** : `formatSwissDate`, `formatSwissDateTime`, `instantDuServeur`, `ZONE_SUISSE` déplacés dans `frontend/src/lib/shared/utils/swiss-date.ts` ;
+  ré-export depuis `reports.api` ; entrées de `local-date-guard.test.ts` suivies. Autres formateurs de date suisse : aucun (les `split('-')`
+  du frontend font de l'arithmétique, non un affichage).
+- **L2** : `docs/api-external.md` range `PERIOD_LOCKED` après `ACCOUNT_ARCHIVED`, avant le lot, et dit que le lot ne s'annonce qu'une fois le verrou reculé.
+- **L3, L4** : `cancelRefusalMessage` (`settlement-cancel-blocked.ts`) ; les deux fiches disent le motif avec la borne en date suisse ;
+  `PERIOD_LOCKED` entre dans `isStaleState` de la fiche fournisseur. Rouge : `$GATE_LOGS/e63/rem/v-rouge-1.log` (7 échecs sans le correctif).
+  Capture : `63-1-refus-au-clic-reglement-client.png`, `63-1-refus-au-clic-facture-fournisseur.png` (la boîte native : `.txt`). À noter :
+  sur la fiche fournisseur, le motif (gris) et le refus (rouge) disent alors la même chose.
+- **L5, L6, L7** : doc-comments du socle, angle mort de la garde lexicale, message d'assertion (aucun code de production changé).
+- **L8** : somme de l'AC-3 API bornée à 2025 (`entry_date`). Sensibilité vérifiée par une fenêtre rétrécie (rouge) ; le rouge sous datation « du jour »
+  reste celui de M1 (`mutations/`), l'assertion de date tombant avant.
+- **L9** : `cancelled_invoice_returns_to_draft_legacy_reversal_dated_today` garde l'attendu d'avant la v0.21.0 (V2-5) pour l'état hérité.
+- **L11, L13** : « Cette écriture » dans le motif de la période verrouillée ; « la période du règlement / du solde / de l'achat / du paiement » dans
+  les quatre confirmations ; anglais « dated on the … date » ; quatre locales, replis et tests.
+- **L12, M1** : manuels (`.tex` seulement, PDF non commités, recompilés dans une copie sous `/tmp`).
+- **Gates de remédiation** (`$GATE_LOGS/e63/rem/`) : fmt, clippy `-D warnings` verts ; nextest 1108/1108 (binaires touchés, kesh-i18n, lib kesh-api) ;
+  Vitest complet 326 fichiers / 5589 tests, `npm run check` 0 erreur, `lint-i18n-ownership`, `build` verts ; spec E2E `annulations-datees-origine` 5/5.
+  **L'E2E complet n'a pas tourné** (condition de clôture, inchangée).
 
 ### File List
 
@@ -837,3 +864,10 @@ Périmètre `a9b551d5a..HEAD` (69 fichiers, dont 3 neufs).
   « l'annulation sera alors refusée, ce qui protège la déclaration » ajoutée aux quatre confirmations ; points à trancher
   au Dev Agent Record (script du retrait des 232 arguments, import `lib/shared` → `features/reports`, artefact écrit hors du
   worktree). Statut `review` ; prompt de la revue P1 (Opus) : `63-1-annulations-datees-origine-review-prompt-p1.md`.
+- 2026-11-28 — **Revue de code P1** (Opus 5.5, `bmad-code-review` ; rapport `kesh-gate-logs/e63/63-1-revue-p1.md`) : 0 CRITICAL, 0 HIGH, **1 MEDIUM**
+  (M1 : le manuel conseillait de reculer le verrou sans dire que le trimestre déclaré change), 13 LOW, neuf constats écartés. Passe P2 requise
+  (Sonnet, complète) : `63-1-annulations-datees-origine-review-prompt-p2.md`.
+- 2026-11-28 — **Remédiation de la revue P1** (Opus 5.5) : M1 corrigé dans les deux manuels (cinq endroits : verrou de l'admin, annuler une facture
+  fournisseur, règlement fournisseur, règlement/solde client, décompte de TVA) ; **13 LOW corrigés dans la story**, aucun renvoyé en issue, aucun
+  jugé faux ; commits `c12c7a09b` (manuels), `1bade8c97` (code), `8891c1e7c` (E2E, captures). Détail et preuves au Dev Agent Record
+  (*Remédiation de la revue P1*). Cette remédiation touche du code de production : passe P2 complète, non ciblée.

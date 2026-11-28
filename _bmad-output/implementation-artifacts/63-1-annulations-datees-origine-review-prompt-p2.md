@@ -18,6 +18,8 @@ désormais l'écriture **à sa date, dans son exercice** (`CancellationDating::O
 
 - Worktree `kesh-63-1`, branche `story/63-1-annulations-datees-origine` ; relis la tête par `git log -1`.
 - Diff de la story : `a9b551d5a..HEAD`. Diff de la remédiation de la P1 : depuis `13f7d6177` (la tête relue par la P1).
+- Commits de la remédiation de la P1 : `c12c7a09b` (manuels : M1, L12), `1bade8c97` (code : L1 à L9, L11, L13), `8891c1e7c` (E2E et captures
+  `$GATE_LOGS/e63/captures/63-1-refus-au-clic-*`), puis le commit de la fiche (Dev Agent Record, Change Log). Journaux : `$GATE_LOGS/e63/rem/`.
 - Fiche : `_bmad-output/implementation-artifacts/63-1-annulations-datees-origine.md` (décisions D1 à D8, AC-1 à AC-17, Dev Agent Record,
   Change Log). Les décisions du Project Lead (Q1 à Q6, Q-A à Q-D) **ne se rouvrent pas** : en particulier, le refus en période verrouillée des
   trois gestes est voulu (Q-A).
