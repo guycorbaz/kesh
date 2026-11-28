@@ -1276,16 +1276,16 @@ development_status:
   epic-62-retrospective: optional
   # 2026-11-21 — Triage P1 (décision du Project Lead) : tout P1 passe en priorité dans la release suivante ; les epics avancés (49, 50) continuent ;
   # l'Epic 49 reste la fonctionnalité nouvelle du vendredi 2026-11-27 ; l'Epic 53 passe avant l'Epic 51.
-  epic-53: in-progress  # « Écritures justes » — lancé le 2026-11-23 (kickoff ; stories dès le 2026-11-24, ordre 53-1, 53-3, 53-4, 53-2 après l'entrée de l'Epic 49) ; v0.21.0, vendredi 2026-12-04 (Guy, 2026-11-24) ; fichier epic-53-ecritures-justes.md
+  epic-53: in-progress  # 2026-11-28 RÉDUIT (décision du Project Lead) : se clôt avec la release des corrections P1, sur 53-1a, 53-1b, 53-3, 53-6a et sa story de solde 53-5 ; 53-2 et 53-6b → Epic 67. — « Écritures justes » — lancé le 2026-11-23 (kickoff ; stories dès le 2026-11-24, ordre 53-1, 53-3, 53-4, 53-2 après l'entrée de l'Epic 49) ; v0.21.0, vendredi 2026-12-04 (Guy, 2026-11-24) ; fichier epic-53-ecritures-justes.md
   53-1a-saisie-pas-deux-fois: done  # #1355 (P1) ; revues de code P1 (Opus 0/0/2/9) et P2 (Sonnet 0/0/0/9) remédiées, boucle close le 2026-11-26 ; fusionnée dans epic/53
   53-1b-conversion-pas-deux-fois: done  # #1365 (P1) ; revue de code P1 (Opus 0/0/0/8) : boucle close le 2026-11-26 ;  découpée de la 53-1 le 2026-11-25 ; dépend de la 53-1a (fusionnée) ; validation P1, P2 et P3 remédiées (2026-11-26), développée le 2026-11-26 (dernier commit de code 95e3ed3d9), gates et E2E complet verts, mutations tuées ; Q2 et Q3 ouvertes ; revue de code P1 (Opus) à lancer
-  53-2-tva-sur-compte-de-la-vente: backlog  # #525, #1198 (P1 au lancement, reclassées P2 le 2026-11-21 par le Project Lead : conformité légale) ; migration probable (b monte, de préférence un vendredi)
+  53-2-tva-sur-compte-de-la-vente: backlog  # 2026-11-28 → Epic 67 (réduction de l'Epic 53). — #525, #1198 (P1 au lancement, reclassées P2 le 2026-11-21 par le Project Lead : conformité légale) ; migration probable (b monte, de préférence un vendredi)
   53-3-ouverture-sous-verrou: done  # #513 (P1) ; fiche rédigée le 2026-11-25 (aucune migration) ; validation P1 (Opus 0/0/3/8) et P2 (Sonnet 0/0/4/8) remédiées ; P3 (Opus 0/0/3/5) remédiée, Q1 tranchée, story unique par dérogation ; P4 (Sonnet 0/0/0/6) remédiée ; développement terminé le 2026-11-26 (mutations, gates et E2E verts) ; revue de code P1 (Opus 0/0/1/6) remédiée, P2 ciblée (Haiku 0/0/0/4) : boucle close le 2026-11-26
   53-4-assistant-compte-bancaire: backlog  # 2026-11-25 SORTIE de l'Epic 53 (décision du Project Lead) : #1004 reclassée P3 (aucun principal possible avant l'étape 6, aucune écriture touchée) ; fiche drafted et validations P1/P2 sur story/53-4-assistant-compte-bancaire, liste d'attente
   53-6-annulation-rapprochement-exercice: split  # #1674 (P1, CLO-2) ; découpée le 2026-11-27 en 53-6a et 53-6b (décision du Project Lead, signal de recyclage de la validation P2 : Sonnet 0/0/9/9 puis Opus 0/0/3/8) ; fiche d'origine = page de renvoi ; Q1 à Q6 tranchées le 2026-11-27
   53-6a-annulation-rapprochement-date-origine: done  # 2026-11-28 close (revue P1 Opus 0/0/2/13 → P2 Sonnet 0/0/0/5 → P3 Haiku 0/0/0/2 ; clôture sur idefix à 4677a1df9 : test-fast 7068, gate-ci 0, frontend 0, E2E 544 passés / 7 = KF-029) ; #1674 ; développement terminé le 2026-11-27 (test-fast et front verts sur idefix ; gate-ci non obtenu, environnement d'idefix ; E2E à la clôture) ; lancé le 2026-11-27 (Opus 5.5, worktree kesh-53-6, main 0e99cd2db repris) ; le correctif, aucune migration ; VALIDÉE : P1 (Opus, 0/1/1/10), P2 (Sonnet, 0/0/1/6) et P3 (Opus, 0/0/1/4) remédiées le 2026-11-27 ; P4 ciblée (Haiku, 0/0/0/1, LOW : citation de R5 à corriger au développement) ; signal de recyclage de la P3 déclaré au Project Lead ; écrite contre main 56d47b2cc, recontrôlée à 0e99cd2db (v0.20.0, code inchangé) ; reprise de main avant le développement
-  53-6b-detection-contre-passations-autre-exercice: backlog  # #1674 (suite) ; détection en lecture + panneau + procédure de correction ; dépend de la 53-6a ; fiche non validée ; sortie de l'Epic 53 proposée (borne de six)
-  53-5-solde-dette-epic: backlog  # story de solde ; plafond de trois issues (décision de Guy du 2026-11-23)
+  53-6b-detection-contre-passations-autre-exercice: backlog  # 2026-11-28 → Epic 67 (réduction de l'Epic 53). — #1674 (suite) ; détection en lecture + panneau + procédure de correction ; dépend de la 53-6a ; fiche non validée ; sortie de l'Epic 53 proposée (borne de six)
+  53-5-solde-dette-epic: backlog  # 2026-11-28 lancée avant la release des corrections P1 (#1653, #1656, #1657 proposées). — story de solde ; plafond de trois issues (décision de Guy du 2026-11-23)
   epic-53-retrospective: optional
   epic-54: backlog  # « Totaux du décompte de TVA » — après l'Epic 53 ; fichier epic-54-totaux-tva.md
   54-1-avoirs-dans-le-decompte-tva: backlog  # #390, #391, #392 (P1)
@@ -1293,9 +1293,12 @@ development_status:
   epic-54-retrospective: optional
 
   # 2026-11-27 — Epic 63 « Annulations datées de l'origine » : la story de correction de la v0.21.0 (décision du Project Lead du 2026-11-27) ; dépend de la 53-6a ; fichier epic-63-annulations-datees-origine.md
-  epic-63: in-progress  # v0.21.0 (vendredi 2026-12-04), avec l'Epic 53 ; aucune migration ; branche story/63-1-… à repartir d'epic/53-ecritures-justes une fois la 53-6a fusionnée
+  epic-63: in-progress  # 2026-11-28 RÉDUIT (décision du Project Lead) : se clôt avec la release des corrections P1, sur la 63-1 ; la fiche de #401 (frais de rappel, P2) → Epic 67. — v0.21.0 (vendredi 2026-12-04), avec l'Epic 53 ; aucune migration ; branche story/63-1-… à repartir d'epic/53-ecritures-justes une fois la 53-6a fusionnée
   63-1-annulations-datees-origine: done  # 2026-11-28 close (revue : six passes, P1 Opus 0/0/1/13 → P6 Opus 0/0/0/3 ; clôture sur idefix à 8e29ae3fa : test-fast, gate-ci et frontend verts, E2E 549 / 7 = KF-029) ; #1752, #1753, #1754 (P1) ; fiche validée en trois passes (2026-11-27) ; développée le 2026-11-28 (test-fast, gate-ci, front verts sur idefix ; E2E complet à la clôture) ; revue P1 (Opus) à lancer ; aucune migration
   epic-63-retrospective: optional
+  # 2026-11-28 — Epic 67 : « Écritures justes, suite » (réduction des Epics 53 et 63, décision du Project Lead) ; release à fixer ; fichier à écrire au kickoff
+  epic-67: backlog  # 53-2 (TVA de l'avoir, migration probable), 53-6b (détection des contre-passations dans un autre exercice), fiche de #401 (frais de rappel) ; les stories gardent leur clé
+  epic-67-retrospective: optional
 
   # 2026-11-18 — Epic 49 « Types de lignes de la facture client » (#1242, P2, demande de Guy, échéance fin novembre), release 0.20.0 ;
   # fichier epic-49-types-de-lignes-facture.md ; porte la SEULE migration de la 0.20.0 (49-1). Menée en parallèle de l'Epic 48,
