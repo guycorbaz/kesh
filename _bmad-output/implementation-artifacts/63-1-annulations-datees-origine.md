@@ -786,6 +786,38 @@ fiche fournisseur : une capture ne les montre pas, leur texte est écrit à côt
   Vitest complet 326 fichiers / 5589 tests, `npm run check` 0 erreur, `lint-i18n-ownership`, `build` verts ; spec E2E `annulations-datees-origine` 5/5.
   **L'E2E complet n'a pas tourné** (condition de clôture, inchangée).
 
+#### Remédiation de la revue P3 — classe « ce qu'une annulation change à la TVA » (2026-11-28, Opus 5.5)
+
+- **Méthode.** Partir du **symptôme**, non d'une liste : inventaire clos de **72 sites** (`$GATE_LOGS/e63/inventaire-tva-annulation.md`), avec fichier:ligne, phrase,
+  geste visé, verdict avant et après. Avant : **43 justes, 25 faux, 4 ambigus** ; après : **72 justes, 0 faux, 0 ambigu**. 29 sites modifiés (25 faux + 4 ambigus) ;
+  les 43 justes n'ont pas bougé (`git diff` ne contient aucune de leurs phrases).
+- **La règle, vérifiée au code** (`vat_report.rs:126-136, 294-312, 372-390` ; `invoice_settlements.rs:237-300, 367-376` ; `supplier_invoices.rs:146, 2698-2720` ;
+  `reconciliation_cancel.rs:79-93, 129-232`) : seules l'annulation d'un **achat** et celle d'un **solde** changent un décompte de TVA. Un règlement client, un paiement
+  fournisseur et le dé-rapprochement de l'un d'eux ou d'un règlement groupé ne changent que des soldes (la contrepartie est un compte du plan, parfois interne).
+  **Réserve établie** : le dé-rapprochement d'une écriture propre (éclatement, règle, rapprochement manuel, écriture saisie au journal) change la TVA récupérable si
+  elle porte le compte d'impôt préalable (aucun code ne restreint le compte, et `recoverable_balance` lit le solde du compte). Une écriture de vente ou d'achat n'est
+  pas défaite par le dé-rapprochement (refus du socle, `reconciliation_cancel.rs:56-60`, `journal_entries.rs:2655-2660`) : établi par la lecture, non par un test rejoué.
+- **Corrigé.** M2 (verrou de l'administrateur : « Pour une facture fournisseur ou un solde … » ; règlement, paiement et leur rapprochement ne changent aucun décompte) ;
+  L2 de la P2 (confirmations des deux règlements : « Les soldes de la période du règlement changent, la TVA non » et « Si cette période est verrouillée, l'annulation
+  sera refusée : un administrateur doit d'abord faire reculer le verrou » — **sans « déclarée »**) ; L2 de la P3 (`reconciliation-cancel-confirm-vat` : conditionnel
+  « Si cette écriture porte le compte d'impôt préalable, la TVA de sa période change », **montré seulement pour une écriture propre** — condition de `vatText`) ; L1
+  (« le compte de contrepartie et le compte débiteurs / créanciers ») ; L3 (`admin-manual.tex` note de Zurich : « contre-passation d'une écriture depuis sa fiche », renvoi
+  nommé au titre de `sec:verrou-periode`) ; L4 (doc-comment de `vat_report.rs`) ; en plus, trouvés par l'inventaire : § *Annuler un rapprochement* du manuel (« TVA comprise »
+  pour tout genre) et « période de TVA déclarée » du motif de verrou. Quatre locales, replis Svelte mot pour mot, tests (`invoice-write-off-page`, `supplier-settlement-page`,
+  `CancelReconciliationDialog` + **un test neuf par genre**, spec E2E `reconciliation-cancel`). **Aucune règle de code changée** ; seul comportement : la phrase de TVA du
+  dé-rapprochement ne s'affiche plus pour un règlement, un paiement ou un règlement groupé.
+- **Mutation** (`$GATE_LOGS/e63/rem4/mutation-vat-condition.log`) : condition ramenée à `view && !view.unlinkOnly` ⇒ le test neuf rougit (1 échec, 24 réussis) ; condition
+  restaurée, fichier touché, diff revérifié.
+- **Angles morts assumés** : manuels DE, IT, EN inexistants ; `CHANGELOG.md` et `_bmad-output/` (archives) ; « formulaires de l'AFC » sans source dans le dépôt (à confirmer
+  auprès de la fiduciaire) ; un texte sans mot-clé de TVA ni verbe d'annulation échapperait au grep (parade : le PDF aplati lu par la P4).
+- **PDF** : recompilés dans une **copie** sous `/tmp/claude-1000/m631p4/manual/` (trois passes, stables, 0 « undefined »), aplatis, greppés (apostrophe typographique : grep sans
+  apostrophe) ; **aucun PDF commité**.
+- **Gates** (`$GATE_LOGS/e63/rem4/`, base `kesh_e631`, `flock /tmp/station-heavy.lock` puis `.gate.lock`) : `cargo fmt --check` vert ; clippy `-D warnings` vert ; nextest
+  `binary(textes_coherents) | package(kesh-i18n) | package(kesh-report)` **378/378** (1 ignoré) ; Vitest complet **326 fichiers / 5590 tests** (+1, le test neuf) sous `.gate-front.lock` ;
+  `npm run check` 0 erreur ; `lint-i18n-ownership` ; `build` verts. Aucun compteur de garde n'a bougé (`sitesTotal` : aucun appel `i18nMsg` neuf). **Ni le gate complet ni l'E2E
+  complet n'ont tourné** (conditions de clôture inchangées) ; la spec `reconciliation-cancel.spec.ts`, dont l'assertion a changé, **n'a pas été rejouée**.
+- **Prompt de la P4** : `63-1-annulations-datees-origine-review-prompt-p4.md` (Opus, passe complète : la remédiation touche trois modules et un état visible).
+
 ### File List
 
 Périmètre `a9b551d5a..HEAD` (69 fichiers, dont 3 neufs).
@@ -872,3 +904,5 @@ Périmètre `a9b551d5a..HEAD` (69 fichiers, dont 3 neufs).
   jugé faux ; commits `c12c7a09b` (manuels), `1bade8c97` (code), `8891c1e7c` (E2E, captures). Détail et preuves au Dev Agent Record
   (*Remédiation de la revue P1*). Cette remédiation touche du code de production : passe P2 complète, non ciblée.
 - 2026-11-28 — **Revue de code P2** (Sonnet 5.5, `$GATE_LOGS/e63/63-1-revue-p2.md`) : **0/0/1/4**. M1′ (MEDIUM) : le remède de M1 conseillait une correction auprès de l'AFC aussi pour l'annulation d'un **règlement** client et d'un **paiement** fournisseur, qui ne portent aucune TVA (`vat_report.rs`) — **signal de recyclage** (défaut de même sévérité né du correctif précédent), déclaré au Project Lead le 2026-11-28 ; aucun découpage (deux paragraphes du manuel). **Remédié par l'orchestrateur** : les deux paragraphes disent que l'annulation ne change aucun décompte de TVA, seulement les soldes de la période ; L1, « décompte rectificatif » (terme de l'AFC non vérifié) remplacé aux quatre endroits par « une correction du décompte déposé (selon les formulaires de l'AFC) » ; L3, renvoi ajouté à la note historique du manuel d'administration (les annulations ne sont plus datées du jour depuis la 0.21.0) ; L2 (texte des confirmations antérieur à la story) → issue ; L4 jugé non défaut. PDF régénérés dans une copie, aucune référence indéfinie. Passe P3 ciblée (Haiku) sur ce seul commit.
+- 2026-11-28 — **Revue de code P3** (Haiku, passe ciblée, `$GATE_LOGS/e63/63-1-revue-p3.md`) : **0/0/1/4**. M2 (MEDIUM) : le callout du verrou (`admin-manual.tex:3556`) disait « le trimestre déjà déclaré change alors » pour toute la liste, règlement et paiement compris — **troisième passe de suite, même défaut** (M1, M1′, M2) ; L1 contreparties « (banque, …) », L2 confirmation du dé-rapprochement, L3 note de Zurich, L4 doc-comment de `vat_report.rs`. Tendance : P1 Opus 0/0/1/13 → P2 Sonnet 0/0/1/4 → P3 Haiku 0/0/1/4. **Signal de recyclage** déjà déclaré (P2) ; les remèdes locaux laissaient un site faux à chaque tour.
+- 2026-11-28 — **Remédiation de la classe de défauts** (Opus 5.5, commit `8f2699ceb`) : conduite **à partir du symptôme**, par un inventaire clos de **72 sites** (43 justes, 25 faux, 4 ambigus ; 29 modifiés ; **72 justes après**, `$GATE_LOGS/e63/inventaire-tva-annulation.md`). M2, L1, L2 (P3), L2 (P2), L3, L4 corrigés dans la story, plus deux sites trouvés par l'inventaire (manuel § *Annuler un rapprochement*, motif de verrou) ; la phrase de TVA du dé-rapprochement ne se montre plus que pour une écriture propre (seul changement de comportement). Détail au Dev Agent Record (*Remédiation de la revue P3*). Gates : fmt, clippy, nextest 378/378, Vitest 5590, check, lint-i18n, build verts ; E2E complet non rejoué. Remédiation touchant trois modules et un état visible : **passe P4 complète, Opus** (`63-1-annulations-datees-origine-review-prompt-p4.md`), qui vérifie l'inventaire comme un finding.
