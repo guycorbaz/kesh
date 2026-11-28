@@ -1293,13 +1293,10 @@ const ATTENDU = {
 	// Fusion de origin/main (Epic 55, 3958 + 7 = 3965) dans la branche de la 49-2 (2026-11-27) : les deux côtés gardés, soit 3958 + 5 + 7 = 3970 (garde : `$GATE_LOGS/e492/remediation/garde-sites-1.log`).
 	// Remédiation de la revue P1 de la 49-2 : **3971** (« expected 3971 to be 3970 ») — `invoice-line-remove`, lue une fois
 	// (`aria-label` de la poubelle du snippet `actionsDeLigne`) : 3970 + 1.
-
-	// Fusion de pr/46-rapports-groupes-v2 (ecf6cf835, main avec les Epics 39 et 40, garde de la 46-5) dans
-	// epic/55-navigation (2026-11-26) : les deux côtés gardés ; 3958 (pr/46) + 7 (Epic 55, 3789 → 3796 de son côté)
-	// = **3965**, confirmé par la garde (`kesh-gate-logs/s55-revue/fusion/gardes-1.log`).
 	// Story 64-1 (#1178, #1758) : **3965 → 3978** (+13 : six messages de la page des taux de TVA, deux du changement
 	// de taux après clôture, cinq de la page de modification d'une facture), relevé par la garde (« expected 3978 to be 3965 »).
 	// Revue P1 de la 64-1 (R1-7) : **3978 → 3979** (+1 : le message du changement de taux après une coupure).
+	// Fusion de la 0.20.1 (2026-11-28) : 3971 (49-2) + 14 (64-1, 3965 → 3979) = **3985**, relevé par la garde.
 	sitesTotal: 3985,
 	sitesNonResolus: 31,
 	relais: 6,
