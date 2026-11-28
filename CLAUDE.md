@@ -381,8 +381,12 @@ Règle décidée par le Project Lead le 2026-11-21 ; sa mise en œuvre fait l'ob
 
 ### Ordre des releases
 
+- **Des epics en parallèle, un réservoir d'epics prêts** (décision de Guy du 2026-11-28). Plusieurs epics avancent ensemble, pourvu que leurs kickoffs ne déclarent pas les mêmes modules sans arbitrage du Project Lead. Un epic **terminé** prend l'état `ready-for-release` : à sa ligne `epic-N` de `sprint-status.yaml`, et sur le kanban par ses issues, en *Ready for Release*. Toute release, celle du vendredi comme une release en cours de semaine, embarque les epics prêts. C'est ainsi qu'entre le travail d'un contributeur, sans le caler sur notre calendrier. *Motif : ne pas faire attendre ce qui est fini.*
+  - **Un epic est terminé** quand toutes ses stories sont closes, story de solde comprise, et que le gate complet et l'E2E complet sont verts sur la tête de sa branche, poussée. Sa rétrospective peut attendre la release.
+  - **Un epic prêt attend tel quel** : il ne reprend pas `main` après chaque release. C'est la **branche de release** qui le fusionne à l'intégration, résout, puis rejoue une seule fois les gates et l'E2E complet pour l'ensemble. La revue du code d'intégration y cherche les interactions sans conflit de texte.
+  - **Une release en cours de semaine se justifie** par un P1, par un epic attendu dans l'usage réel, ou par le travail d'un contributeur, et non par chaque epic dès qu'il est fini : on regroupe ce qui est prêt, pour ménager l'accord de fusion, le tag et la mise à jour du NAS.
 - **La première release terminée sort la première** ; si besoin, on échange les dates et les milestones (le numéro de version ne s'attribue qu'au tag).
-- **Le second arrivé reprend `main`** dans sa branche, résout, puis rejoue tous les gates et l'E2E complet ; si les deux releases portent des migrations, leur ordre se contrôle sur une base peuplée par la release du premier. La recette de montée part toujours de la dernière image publiée.
+- **Deux releases en cours** : la seconde reprend `main` dans sa branche de release, résout, puis rejoue tous les gates et l'E2E complet ; si les deux portent des migrations, leur ordre se contrôle sur une base peuplée par la release de la première. La recette de montée part toujours de la dernière image publiée.
 - Toute release part de `main` (§ *Cadence*) : un correctif dont la base a été dépassée par une release se publie depuis `main`, sauf décision du Project Lead.
 - **Seul le Project Lead pose un tag et publie une image**, ou l'orchestrateur sur son mandat explicite.
 
@@ -413,7 +417,7 @@ Règle décidée par le Project Lead le 2026-11-21 ; sa mise en œuvre fait l'ob
 
 - Pas de branche `develop`.
 - **Une branche par epic, fusionnée une fois** (le squash rend toute suite après fusion source de faux conflits). La protection de `main` impose un historique linéaire : toute PR entre par squash, et une branche d'epic qui continuerait après une entrée dans `main` (exception) reprend `main` aussitôt.
-- **Reprendre `main` dans sa branche au moins après chaque release publiée** par un autre.
+- **Un epic en cours reprend `main` dans sa branche après chaque release publiée** par un autre ; un epic prêt (`ready-for-release`) attend tel quel, et c'est l'intégration qui le reprend (§ *Ordre des releases*).
 - **On ne touche ni aux branches ni aux bases de test d'un autre.**
 
 ### Fusions et fichiers communs
