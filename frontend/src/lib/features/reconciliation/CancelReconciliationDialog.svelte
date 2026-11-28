@@ -192,16 +192,19 @@
 	});
 
 	/**
-	 * Story 53-6a (#1674, D4) — la contre-passation change les totaux de la période de
-	 * l'écriture, TVA comprise. Montrée **toujours** quand une écriture inverse est passée (choix du
-	 * développement, D4 : Kesh ne tient pas la périodicité de TVA, et un seuil « mois courant »
-	 * exigerait le jour, que la vue ne lit plus) ; jamais pour un retrait seul.
+	 * Story 53-6a (#1674, D4), corrigée par la 63-1 — la contre-passation d'une **écriture propre**
+	 * (`kind === 'entry'` : éclatement, règle, rapprochement manuel, écriture saisie au journal)
+	 * ne change la TVA de sa période que si l'écriture porte le compte d'impôt préalable : le
+	 * rapport lit ce compte au grand livre (`vat_report.rs`, `recoverable_balance`). Un règlement
+	 * client, un paiement fournisseur ou un règlement groupé ne portent aucune ligne de TVA : leurs
+	 * seuls effets sont les soldes de la période (contrepartie, débiteurs ou créanciers) — aucune
+	 * phrase de TVA n'est montrée. Jamais pour un retrait seul (aucune écriture inverse).
 	 */
 	const vatText = $derived(
-		view && !view.unlinkOnly
+		view && !view.unlinkOnly && (view.kind === 'entry' || view.kind == null)
 			? i18nMsg(
 					'reconciliation-cancel-confirm-vat',
-					"Les totaux de cette période changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
+					"Si cette écriture porte le compte d'impôt préalable, la TVA de sa période change : si cette période a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
 				)
 			: null,
 	);

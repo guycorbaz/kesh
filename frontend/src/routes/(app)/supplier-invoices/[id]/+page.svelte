@@ -317,7 +317,7 @@
 		settlementCancelError = '';
 		let message = i18nMsg(
 			'supplier-invoices-settlement-cancel-confirm',
-			"Annuler ce règlement ? Une écriture inverse, datée du paiement, sera passée au grand livre dans son exercice, et la facture redeviendra validée, à payer. Les totaux de la période du paiement changent : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
+			"Annuler ce règlement ? Une écriture inverse, datée du paiement, sera passée au grand livre dans son exercice, et la facture redeviendra validée, à payer. Les soldes de la période du paiement changent, la TVA non : un paiement n'en porte pas. Si cette période est verrouillée, l'annulation sera refusée : un administrateur doit d'abord faire reculer le verrou.",
 		);
 		const batch = invoice.lastConfirmedBatch;
 		if (batch) {

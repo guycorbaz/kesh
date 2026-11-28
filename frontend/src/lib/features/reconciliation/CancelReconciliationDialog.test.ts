@@ -129,9 +129,33 @@ describe('CancelReconciliationDialog', () => {
 		expect(t).toContain("dans l'exercice « FY 2025 »");
 		expect(t).not.toContain("aujourd'hui");
 		const tva = (await findByTestId('reconciliation-cancel-vat')).textContent ?? '';
-		expect(tva).toContain('TVA comprise');
+		// Story 63-1 (revue P4) — une écriture propre ne change la TVA que si elle porte le
+		// compte d'impôt préalable : la phrase est conditionnelle, jamais « TVA comprise ».
+		expect(tva).toContain("Si cette écriture porte le compte d'impôt préalable");
+		expect(tva).not.toContain('TVA comprise');
 		// Revue P1, L2 — le conseil dit aussi ce qui s'ensuit : un refus, qui protège la déclaration.
 		expect(tva).toContain("l'annulation sera alors refusée, ce qui protège la déclaration");
+	});
+
+	// Story 63-1 — un règlement client, un paiement fournisseur ou un règlement groupé ne portent
+	// aucune ligne de TVA : leur dé-rapprochement ne change aucun décompte, la phrase de TVA se tait
+	// (mutation : phrase montrée pour tous les genres, comme avant).
+	it('aucune phrase de TVA pour un règlement, un paiement ou un règlement groupé', async () => {
+		const cas: Partial<ReconciliationTransactionResponse>[] = [
+			{ kind: 'invoice_settlement', invoiceId: 5, invoiceNumber: 'F-1' },
+			{ kind: 'supplier_settlement', supplierInvoiceId: 31, supplierInvoiceNumber: 'FF-1' },
+			{
+				kind: 'grouped_settlement',
+				groupedInvoices: [{ kind: 'invoice', id: 1, number: 'F-1', amount: '10.00' }],
+			},
+		];
+		for (const partial of cas) {
+			mockApi.getReconciliationTransaction.mockResolvedValue(view(partial));
+			const { findByTestId, queryByTestId } = monter();
+			await findByTestId('reconciliation-cancel-confirm-text');
+			expect(queryByTestId('reconciliation-cancel-vat'), JSON.stringify(partial)).toBeNull();
+			cleanup();
+		}
 	});
 
 	it('Revue P1 (L4) — une vue sans date ni exercice (serveur antérieur) ne tronque pas la phrase', async () => {

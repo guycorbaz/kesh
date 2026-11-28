@@ -1981,9 +1981,10 @@ le règlement de la facture, et le montant redevient dû --- la facture repasse 
 rien ne la solde. L'écriture d'origine et sa contre-passation restent toutes deux au grand livre, et
 le journal d'audit nomme le geste. \keshAttention\ Depuis la version~0.21.0, l'écriture inverse
 n'est plus datée du jour~: une annulation faite après la fin de l'exercice du règlement --- rouvert,
-ou pas encore clôturé --- ne passe plus rien dans l'exercice courant. Les totaux de la période du
-règlement changent~; si elle a déjà été déclarée, faites-la d'abord verrouiller~: l'annulation sera
-alors refusée, ce qui protège la déclaration.
+ou pas encore clôturé --- ne passe plus rien dans l'exercice courant. Les soldes de la période du
+règlement changent (le compte de contrepartie et le compte débiteurs), la TVA non~: un règlement
+n'en porte pas. Si cette période est verrouillée, l'annulation est refusée~: un administrateur
+doit d'abord faire reculer le verrou (\S\ref{sec:verrou-periode}).
 
 Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~:
 
@@ -2011,8 +2012,8 @@ Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~:
     \item \textbf{le règlement est dans une période verrouillée} (sa date est au plus tard la
           borne du verrou, indiquée)~: un administrateur doit faire reculer le verrou avant sa
           date (\S\ref{sec:verrou-periode}). Un règlement ne porte pas de TVA~: l'annuler ne change
-          aucun décompte de TVA déjà déclaré, seulement les soldes de la période (banque,
-          débiteurs).
+          aucun décompte de TVA déjà déclaré, seulement les soldes de la période (le compte de
+          contrepartie et le compte débiteurs).
 \end{itemize}
 
 \textbf{Lettrage.} Une facture \textbf{soldée} --- par ses règlements, par le solde de son reste
@@ -2639,8 +2640,10 @@ fiche d'une facture payée, \emph{Annuler le règlement} (comptable ou administr
 écriture inverse \textbf{datée du paiement, dans son exercice} (depuis la version~0.21.0~; elle
 était datée du jour) et ramène la facture à \emph{validée}, à payer --- c'est
 le geste à choisir quand c'est le \textbf{paiement} qui est faux et que vous voulez le refaire.
-Les totaux de la période du paiement changent~; si elle a déjà été déclarée, faites-la d'abord
-verrouiller~: l'annulation sera alors refusée, ce qui protège la déclaration.
+Les soldes de la période du paiement changent (le compte de contrepartie et le compte
+créanciers), la TVA non~: un paiement n'en porte pas. Si cette période est verrouillée,
+l'annulation est refusée~: un administrateur doit d'abord faire reculer le verrou
+(\S\ref{sec:verrou-periode}).
 L'écriture d'origine et sa contre-passation restent toutes deux au grand livre, et le journal
 d'audit nomme le geste. Un lien mène de la fiche à l'écriture de règlement. Si c'est la
 \textbf{facture} elle-même qui est à écarter, payée ou non, voyez «~Annuler une facture
@@ -2660,7 +2663,8 @@ reculer le verrou avant sa date), ou le paiement est \textbf{rapproché} d'une t
 réconciliation l'a réglée (\S\ref{sec:matching-fournisseur})~: annulez d'abord le rapprochement,
 depuis le détail de l'import bancaire (\S\ref{sec:annuler-rapprochement}), qui retire aussi le
 paiement. Un paiement ne porte pas de TVA~: l'annuler ne change aucun décompte de TVA déjà
-déclaré, seulement les soldes de la période (banque, créanciers).
+déclaré, seulement les soldes de la période (le compte de contrepartie et le compte
+créanciers).
 
 \subsubsection{Une facture fournisseur au total sous le centime}\label{sec:facture-fournisseur-sous-centime}
 
@@ -4171,10 +4175,14 @@ Avant de confirmer, Kesh dit ce qui va se passer. À la confirmation~:
           prête à être rattachée à la bonne pièce.
 \end{itemize}
 
-\keshAttention\ L'écriture inverse change les \textbf{totaux de la période} de l'écriture, TVA
-comprise~: si ce décompte de TVA a déjà été déclaré, faites d'abord verrouiller la période
-(\S\ref{sec:verrou-periode}) --- l'annulation sera alors refusée, ce qui protège la déclaration.
-La confirmation le rappelle. Si une \textbf{réévaluation de fin d'exercice} des comptes en devise
+\keshAttention\ L'écriture inverse change les \textbf{soldes de la période} de l'écriture. Pour un
+règlement de facture client, un paiement de facture fournisseur ou un règlement groupé, c'est
+tout~: ils ne portent aucune ligne de TVA, et aucun décompte de TVA ne change. Pour une
+\textbf{écriture propre} (éclatement, règle, rapprochement manuel, écriture saisie au journal),
+la TVA de la période ne change que si l'écriture porte le compte d'impôt préalable~: si ce
+décompte de TVA a déjà été déclaré, faites alors d'abord verrouiller la période
+(\S\ref{sec:verrou-periode}) --- l'annulation sera refusée, ce qui protège la déclaration. La
+confirmation d'une écriture propre le rappelle. Si une \textbf{réévaluation de fin d'exercice} des comptes en devise
 (\S\ref{sec:reevaluation-devises}) a déjà été passée dans l'exercice de l'écriture, elle ne se recalcule
 pas d'elle-même~: l'inverse change le solde en devise sur lequel elle portait~; rejouez-la après
 l'annulation.
@@ -4231,7 +4239,7 @@ possible, Kesh en donne la raison~:
           refusée. Un administrateur doit faire reculer le verrou avant sa date~; la raison
           affichée dit jusqu'à quand la période est verrouillée («~La période est verrouillée
           jusqu'au 30.06.2026 inclus~»), non la date de l'écriture. C'est le cas courant d'une
-          période de TVA déclarée puis verrouillée~: le verrou la protège, et c'est voulu~;
+          période déclarée puis verrouillée~: le verrou la protège, et c'est voulu~;
     \item \textbf{un compte de l'écriture a été archivé}~: réactivez-le (son numéro est
           indiqué).
 \end{itemize}

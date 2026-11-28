@@ -914,7 +914,7 @@ invoices-settlements-type-bank = Virement bancaire
 invoices-settlements-type-internal = Espèces ou autre compte
 invoices-settlement-cancel-button = Annuler le règlement
 invoices-settlement-cancel-reconciliation = Annuler le rapprochement
-invoices-settlement-cancel-confirm = Annuler ce règlement ? Une écriture inverse, datée du règlement, sera passée au grand livre dans son exercice, et le montant redeviendra dû. Les totaux de la période du règlement changent : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.
+invoices-settlement-cancel-confirm = Annuler ce règlement ? Une écriture inverse, datée du règlement, sera passée au grand livre dans son exercice, et le montant redeviendra dû. Les soldes de la période du règlement changent, la TVA non : un règlement n'en porte pas. Si cette période est verrouillée, l'annulation sera refusée : un administrateur doit d'abord faire reculer le verrou.
 invoices-settlement-cancelled = Règlement annulé : l'écriture inverse a été passée.
 invoices-settlement-cancel-blocked-credited = Cette facture a été créditée par un avoir : ce règlement reste ouvert au compte débiteurs, il ne s'annule pas.
 invoices-settlement-cancel-blocked-written-off = Le reste de cette facture a été soldé : annulez d'abord le solde.
@@ -969,7 +969,7 @@ reconciliation-cancel-loading = Lecture du rapprochement…
 reconciliation-cancel-confirm-entry = Une écriture inverse datée du { $date } (date de l'écriture du rapprochement) sera passée dans l'exercice « { $fiscalYear } », et la transaction redeviendra à rapprocher.
 reconciliation-cancel-confirm-invoice = Une écriture inverse datée du { $date } (date de l'écriture du rapprochement) sera passée dans l'exercice « { $fiscalYear } », le règlement de la facture { $invoice } sera retiré et la facture redeviendra à régler ; la transaction redeviendra à rapprocher.
 reconciliation-cancel-confirm-supplier-invoice = Une écriture inverse datée du { $date } (date de l'écriture du rapprochement) sera passée dans l'exercice « { $fiscalYear } », le paiement de la facture fournisseur { $invoice } sera retiré et la facture redeviendra validée, à payer ; la transaction redeviendra à rapprocher.
-reconciliation-cancel-confirm-vat = Les totaux de cette période changent, TVA comprise : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.
+reconciliation-cancel-confirm-vat = Si cette écriture porte le compte d'impôt préalable, la TVA de sa période change : si cette période a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.
 reconciliation-cancel-confirm-submit = Confirmer l'annulation
 reconciliation-cancel-dismiss = Fermer
 reconciliation-cancel-done = Rapprochement annulé.
@@ -3248,7 +3248,7 @@ supplier-invoices-cancel-blocked-in-payment-batch = Cette facture figure dans un
 
 ## Story 25-3-a-2 (#414) — annuler un règlement fournisseur
 supplier-invoices-settlement-cancel-button = Annuler le règlement
-supplier-invoices-settlement-cancel-confirm = Annuler ce règlement ? Une écriture inverse, datée du paiement, sera passée au grand livre dans son exercice, et la facture redeviendra validée, à payer. Les totaux de la période du paiement changent : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.
+supplier-invoices-settlement-cancel-confirm = Annuler ce règlement ? Une écriture inverse, datée du paiement, sera passée au grand livre dans son exercice, et la facture redeviendra validée, à payer. Les soldes de la période du paiement changent, la TVA non : un paiement n'en porte pas. Si cette période est verrouillée, l'annulation sera refusée : un administrateur doit d'abord faire reculer le verrou.
 supplier-invoices-settlement-cancel-batch-warning = Cette facture figure dans le lot de paiement n° { $batch }, confirmé le { $date }. Si la banque a exécuté cet ordre, elle a déjà été payée : corrigez alors par un nouveau règlement direct, jamais par un nouveau lot.
 supplier-invoices-settlement-cancelled = Règlement annulé : l'écriture inverse a été passée et la facture est de nouveau validée, à payer.
 supplier-invoices-settlement-entry-link = Voir l'écriture de règlement

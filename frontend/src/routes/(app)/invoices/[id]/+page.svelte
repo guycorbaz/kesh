@@ -1875,7 +1875,7 @@
 							)
 						: i18nMsg(
 								'invoices-settlement-cancel-confirm',
-								"Annuler ce règlement ? Une écriture inverse, datée du règlement, sera passée au grand livre dans son exercice, et le montant redeviendra dû. Les totaux de la période du règlement changent : si elle a déjà été déclarée, faites d'abord verrouiller la période — l'annulation sera alors refusée, ce qui protège la déclaration.",
+								"Annuler ce règlement ? Une écriture inverse, datée du règlement, sera passée au grand livre dans son exercice, et le montant redeviendra dû. Les soldes de la période du règlement changent, la TVA non : un règlement n'en porte pas. Si cette période est verrouillée, l'annulation sera refusée : un administrateur doit d'abord faire reculer le verrou.",
 							)}
 				</Dialog.Description>
 			</Dialog.Header>
