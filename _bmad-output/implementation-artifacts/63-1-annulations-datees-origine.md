@@ -410,15 +410,15 @@ Après chaque mutation, toucher le fichier à la restauration.
   corriger la fiche s'il le faut (P4 fichier par fichier ; P8 au code de `kesh-report` ; D6 la date de l'écriture d'achat `:1831` ; D4 si `pay`
   accepte un paiement antérieur à la facture ; P10 l'annulation d'un lot) ; `gh issue view 1752|1753|1754 --json state` (lecture seule,
   espacées).
-- [ ] **T1 — Tests rouges d'abord** (AC-1 à AC-5, AC-8, AC-9, AC-10 ; AC-11 : changer les attendus des quatre tests `ac3_*`) ; commit, push.
-- [ ] **T2 — Gestes et lecteurs** (D1, D2, D3) : les trois datations, les trois lecteurs, le retrait d'`aujourd_hui` de la chaîne de vue
+- [x] **T1 — Tests rouges d'abord** (AC-1 à AC-5, AC-8, AC-9, AC-10 ; AC-11 : changer les attendus des quatre tests `ac3_*`) ; commit, push.
+- [x] **T2 — Gestes et lecteurs** (D1, D2, D3) : les trois datations, les trois lecteurs, le retrait d'`aujourd_hui` de la chaîne de vue
   fournisseur, de ses enveloppes en `kesh-db` (`validate`, `unvalidate`, `unvalidate_with_policy`, `pay`, `cancel`, `cancel_in_tx`, `cancel_settlement`,
   `get_settlement_view`) et de **tous** leurs appelants (routes, quatre `_once`, 230 sites de tests, P4/D3) ; doc-comments « datée du jour » (`SettlementCancellation`, `CancelledSettlement` `:1233`,
   `SupplierSettlementCancellation` `:3413`, `SupplierSettlementCancelled` `:3620`, doc de `cancel_settlement_in_tx` `:3417-3438`,
   `supplier_invoice_cancel_blocker`, routes `invoices.rs:1601-1610`, `supplier_invoices.rs:1007-1016`, `:1046-1055`) ; commit, push.
-- [ ] **T3 — Textes serveur** (D5, D7) : `kesh-api/src/errors.rs` (deux bras `PeriodLocked`, commentaires des rangs 5) ; quatre locales
+- [x] **T3 — Textes serveur** (D5, D7) : `kesh-api/src/errors.rs` (deux bras `PeriodLocked`, commentaires des rangs 5) ; quatre locales
   (deux motifs neufs, quatre confirmations) ; garde lexicale d'AC-10 ; commit, push.
-- [ ] **T4 — Écran** : `settlement-cancel-blocked.ts`, `invoice-cancel.ts` (unions, textes, borne) ; **les quatre replis inline des deux pages**
+- [x] **T4 — Écran** : `settlement-cancel-blocked.ts`, `invoice-cancel.ts` (unions, textes, borne) ; **les quatre replis inline des deux pages**
   (`invoices/[id]/+page.svelte:1867` et `:1871`, `supplier-invoices/[id]/+page.svelte:319` et `:366`, qui disent « datée d'aujourd'hui » et
   doivent dire mot pour mot le FTL fr-CH réécrit — garde `i18n-un-repli-par-cle.test.ts`) ; grep de la **valeur** `datée d'aujourd'hui` /
   `d'aujourd'hui` sur `frontend/src` et `kesh-i18n/locales` (quatre locales : DE « heutigen Datum », IT « oggi », EN « today »), et relecture
@@ -426,7 +426,7 @@ Après chaque mutation, toucher le fichier à la restauration.
   vrai pour une annulation d'avant la v0.21.0, `+page.svelte:1342-1346`, commentaire `:14`) ; `invoices/[id]/+page.svelte` et
   `supplier-invoices/[id]/+page.svelte` (lecture de ce qu'ils affichent d'un `400 PERIOD_LOCKED` au clic) ; tests unitaires ; `sitesTotal` ;
   commit, push.
-- [ ] **T5 — Manuel et API** (AC-14) ; commit, push.
+- [x] **T5 — Manuel et API** (AC-14) ; commit, push.
 - [ ] **T6 — E2E** (AC-15), recette visuelle, gates, mutations (AC-16) ; Dev Agent Record ; commit, push de la seule branche `story/…`.
 
 ## Dev Notes
@@ -617,7 +617,170 @@ aucun compteur commun n'a donc divergé (`sitesTotal` de `i18n-keys.test.ts` est
 
 ### Completion Notes List
 
+**Ce qui est fait.** Les trois gestes (D1) passent `CancellationDating::OriginDate` ; les trois lecteurs (D2) lisent sous la
+même datation ; la date du jour sort de la chaîne (D3) — `cancel_settlement` client et fournisseur, `cancel`, `cancel_in_tx`,
+`supplier_invoice_cancel_blocker`, `get_settlement_view(_in_tx)`, `commit_with_view` et ses enveloppes `validate`,
+`unvalidate(_with_policy)`, `pay`, leurs appelants (routes `supplier_invoices.rs` et `imported_supplier_invoices.rs` avec
+leurs `_once`, `services::factures`, `services::factures_fournisseur`) ; `cancel_invoice_settlement_handler` ne lit plus le
+jour que pour `from_parts`. Textes (D5) : deux motifs neufs **plus** une phrase de borne
+(`settlement-cancel-blocked-period-locked-through`, choix de développement : la borne en phrase à part, patron de la 53-6a,
+L1 de sa revue P1 — accolée entre parenthèses elle se lirait comme la date de l'écriture ; la fonction
+`periodLockedThrough` de `lib/shared` sert les deux fiches, la clé n'est donc écrite qu'une fois) ; quatre confirmations
+réécrites, quatre locales, avec la phrase « — l'annulation sera alors refusée, ce qui protège la déclaration » reprise de la
+53-6a (`reconciliation-cancel-confirm-vat`) : sans elle, « faites d'abord verrouiller » se lisait comme un préalable à
+l'annulation. D7 : rang 5 et bras `Today` gardés, doc-comments « inatteignable en production depuis la 63-1 » (#1759).
+Aucune migration (AC-17 : `git diff --stat a9b551d5a..HEAD -- crates/kesh-db/migrations/ crates/kesh-db/test-schema/` vide).
+
+⚠️ **Retrait mécanique des 232 arguments de tests** (D3) : par un script Python hors dépôt (scratchpad), qui retire
+l'argument de rang connu de chaque appel des douze fonctions, et **journalise chaque argument retiré**
+(`$GATE_LOGS/e63/t2-retrait-a.log` 165 lignes + `t2-retrait-date-tests-sir.log` 67 lignes = 232 ; recompte : `git grep -o` des
+signatures à `e4a65d522` = 233, dont un appel **dans une chaîne** de `supplier_invoice_response_e2e.rs:474`, laissé tel quel).
+Une première exécution avait mal découpé un turbofish (`Ok::<(), DbError>(())`) et retiré quatre fermetures `|_| id` dans
+`supplier_invoices_repository.rs` : fichier restauré par `git checkout`, script corrigé, rejoué ; le journal final ne
+contient que des dates (`…aujourd_hui_test()` ×216, `aujourd_hui()` ×11, `today`/`today()` ×3, `jour`/`jour(11, 17)` ×2 :
+232). L'outil Edit a servi
+pour tout le code de production et pour chaque attendu de test changé ; le script seulement pour ce retrait mécanique,
+contrôlé par le compilateur (clippy `-D warnings` vert) — **écart à la consigne « outil Edit pour le code », à arbitrer**.
+
+#### Inventaire des sites non résolus (parti du symptôme)
+
+1. **Créations de contre-passation** — `git grep -n "reverse_in_tx(\|reverse_owned_in_tx(\|reverse_at_next_fiscal_year_start_in_tx(\|create_in_tx_inner(" -- 'crates/*/src/*'` :
+   `reverses_entry_id` n'est posé que par `create_in_tx_inner` (`journal_entries.rs:778`), appelé avec une origine par
+   `reverse_in_tx_inner` (`:3858`) seul ; ses entrées : `reverse_in_tx`, `reverse_owned_in_tx`,
+   `reverse_at_next_fiscal_year_start_in_tx`. Appelants de production : R1–R6 (dé-rapprochement, `OriginDate`, 53-6a),
+   **R7** `invoice_settlements_write.rs:1134` (via `cancel_settlement` → `OriginDate`, résolu), **R8** `supplier_invoices.rs`
+   `cancel_settlement_in_tx` (via `cancel_settlement` → `OriginDate`, résolu), **R9** `cancel_in_tx` (`OriginDate`, résolu),
+   **R10** `journal_entries::reverse` (`Today`, inchangé : correction d'une écriture non possédée depuis le présent), **R11**
+   `/reverse-at-next-fiscal-year-start` (inchangé). Aucun autre.
+2. **Gestes qui annulent sans `reverses_entry_id`** : avoirs (`credit_notes.rs`, leur propre écriture, datée de l'avoir —
+   53-2), lot de paiement (`payment_batches::cancel_batch`, n'écrit rien), dévalidation (supprime). Angle mort assumé : aucun.
+3. **Lectures du jour** — `git grep -n "\.aujourd_hui()" -- crates/kesh-api/src` (22 fichiers) : sur les chemins
+   d'annulation, ne restent que `routes/journal_entries.rs:556` (R10) et `routes/invoices.rs` (`from_parts`, échéance de la
+   réponse) ; `routes/reconciliation.rs:1936` sert le règlement groupé (création, non annulation). Côté `kesh-db`, toute
+   datation d'annulation passe par `CancellationDating` : la garde d'AC-10 en tient l'inventaire clos (au rouge, elle voyait
+   exactement les six sites corrigés : `reglements`, `cancel_settlement` ×2, `cancel_in_tx`, `get_settlement_view_in_tx`,
+   `supplier_invoice_cancel_blocker`).
+
+#### Tests par critère
+
+| AC | Tests (rouges avant le correctif, `$GATE_LOGS/e63/rouge/`) |
+|---|---|
+| AC-1 | `jour_suisse_nuit_e2e::s631_ac1_un_reglement_client_se_contre_passe_dans_son_exercice` (date, exercice, rien dans 2026, lettrage `reversal`, audit `originDate`) ; `ac3_annulation_d_un_reglement_client_la_nuit` (AC-11) |
+| AC-2 | `s631_ac2_un_reglement_client_du_meme_exercice_se_contre_passe_a_sa_date` |
+| AC-3 | `s631_ac3_un_escompte_se_contre_passe_tva_comprise_dans_sa_periode` (ligne de TVA comprise, nets à zéro par compte, rien dans 2026) ; `kesh-report::vat_report_write_off::s631_ac3_a_cancelled_discount_is_reversed_in_its_own_period` (décompte du trimestre = TVA due du trimestre au grand livre par date d'écriture) |
+| AC-4 | `s631_ac4_un_paiement_fournisseur_se_contre_passe_dans_son_exercice` ; `ac3_annulation_d_un_reglement_fournisseur_la_nuit` |
+| AC-5 | `s631_ac5_une_facture_fournisseur_validee_…` (charge nette à zéro dans 2025), `s631_ac5_une_facture_fournisseur_payee_…` (règlement détaché à sa date, audit) ; `ac3_annulation_d_une_facture_fournisseur_la_nuit` |
+| AC-6 | `s631_ac6_une_facture_fournisseur_d_un_exercice_rouvert_s_y_contre_passe` (puis reclôture) |
+| AC-7 | `s631_ac7_un_exercice_d_origine_clos_refuse_les_trois_gestes` (vert avant comme après : non-régression) |
+| AC-8 | (a, c, d) `s631_ac8_un_reglement_client_sous_le_verrou_…` ; (b, c, d) `s631_ac8_un_paiement_fournisseur_sous_le_verrou_…` (montage D4 : payé au 10, achat au 15, borne au 10), `s631_ac8_une_facture_fournisseur_sous_le_verrou_…` ; `kesh-db` : lignes `PeriodLocked` d'`invoice_cancel_motives_and_their_precedence`, `lettering_documents::locked_period_supplier_cancels_are_refused_until_unlocked` (AC-11) ; (e) `lettering_documents::locked_period_cancel_is_refused_until_unlocked`, vert, inchangé |
+| AC-9 | `ac3_sans_exercice_au_jour_suisse_l_annulation_passe`, `…_d_un_paiement_fournisseur_passe` (renommés : ils disaient « est_refusee »), `ac7_les_services_jugent_au_jour_suisse` ; `s631_tail_motives_through_the_supplier_gesture` et les lignes `NoOpenFiscalYearToday` d'`invoice_cancel_motives_and_their_precedence` (lecture `None`, clic accepté) |
+| AC-10 | `cancellation_dating_today_lexical` (inventaire clos, sonde positive R10, contournements fermés ; échantillons synthétiques) |
+| AC-12 | `supplier_invoices_repository::s631_ac12_l_annulation_tient_l_exercice_de_l_achat_et_non_celui_du_jour` (sonde `NOWAIT` sur un geste de la fiche : exercice de l'achat tenu, exercice du jour libre — tenu sous `Today`, rouge avant) ; `a_concurrent_close_waits_for_the_invoice_cancellation` (seconde branche, vert) |
+| AC-13 | `settlement-cancel-blocked.test.ts`, `invoice-cancel.test.ts`, `InvoiceSettlements.test.ts`, `invoice-write-off-page.test.ts` (deux confirmations client, texte neuf affirmé), `supplier-settlement-page.test.ts` (deux confirmations fournisseur) ; `sitesTotal` 3976 → 3979, `CLES_RELEVEES` 480 → 481 |
+| AC-14 | documentation (`.tex`, `api-external.md`) |
+| AC-15 | `frontend/tests/e2e/annulations-datees-origine.spec.ts` |
+
+**AC-11, inventaire des rouges** (méthode de clôture : `kesh-db` et `kesh-api` entiers après T2, `$GATE_LOGS/e63/t2-nextest-1.log`,
+7083 tests, 7 rouges — chacun lu, aucun défaut) :
+- `jour_suisse_nuit_e2e::s631_ac4…` — défaut **du test** (la réponse est `{ invoice, reversalJournalEntryId }`), corrigé ;
+- `supplier_invoices_draft::cancelled_invoice_returns_to_draft` — attendu « la période de l'achat perd l'achat » → « la
+  paire est nette à zéro dans sa période » (datation de l'origine ; P9) ;
+- `supplier_invoices_draft::cancelled_redraft_refused_when_the_reversal_is_locked` et
+  `cancelled_redraft_precedence_reversal_speaks_first` — l'état « contre-passation datée du jour » ne naît plus du geste :
+  **état d'avant la v0.21.0 posé en SQL** (`datee_du_jour_comme_avant_la_v0210`), pour garder la preuve que la dévalidation
+  juge aussi la contre-passation ; `cancelled_redraft_refused_when_a_later_year_is_closed` (vert, mais sa prémisse « exercice
+  clos entre l'achat et la contre-passation » ne tenait plus) reçoit le même montage ;
+- `invoice_settlement::la_precedence_de_l_annulation_lecture_et_ecriture`,
+  `supplier_invoices_repository::tail_motives_through_the_supplier_path`, `invoice_cancel_motives_and_their_precedence` — les
+  trois harnais d'AC-11, réécrits selon la prescription (branche `Today` par la forme `_in_tx` ; geste public sous
+  `OriginDate` : `s631_la_precedence_du_geste_de_la_fiche`, `s631_tail_motives_through_the_supplier_gesture` ; lignes
+  `PeriodLocked` et `NoOpenFiscalYearToday`).
+- Prescrits par la fiche et rougis dès T1 : `lettering_documents::locked_period_supplier_cancels_are_refused_until_unlocked`
+  (déverrouillage avant l'achat, `PeriodLocked` entre les deux), `open_items::as_of_under_the_lock_is_stable_until_an_admin_unlocks`
+  (`+2` → `+1`, ligne de règlement acquise au X).
+- Montages relus « sans changement d'attendu » (P3) : verts ; commentaires « datée du jour » corrigés
+  (`invoice_settlement.rs:764`, `:1657`, `letterings.rs:2371`, `supplier_invoices_internal_number.rs:331` — l'extension de A à
+  2099 retirée, devenue inutile).
+
+**M7 de la 35-5a0** (jour UTC au lieu du jour suisse) : les trois gestes et `services::factures::reglements` ne lisant plus le
+jour, seul `ac3_contre_passation_la_nuit_du_nouvel_an` (R10) la tue encore parmi les annulations ; **aucun test ne tient plus
+le jour suisse de `reglements`**, qui ne le lit plus (la forme « services » de M7 n'y a plus de prise).
+
+**Course avec `lock_books`** (AC-12, angle mort assumé, hérité de la 53-6a) : la borne est lue sans verrou par
+`create_in_tx_inner` ; sous `OriginDate`, une annulation peut être validée à l'instant où une borne qui couvre sa date est
+posée — comme toute saisie antidatée.
+
+#### Mutations (`$GATE_LOGS/e63/mutations/resume.txt`, un `.diff` et un `.log` chacune ; restauration par copie puis `touch`, `git diff` vide contrôlé)
+
+| # | Mutation | Tuée par |
+|---|---|---|
+| M1 | R7 `OriginDate` → `Today(Utc::now())` | `s631_ac1`, `s631_ac3` (API), `s631_ac3` (`kesh-report`) — et l'E2E (1) sous binaire muté (`E2E-M1.log`) |
+| M2 | R8 | `s631_ac4` |
+| M3 | R9 | `s631_ac5_…validee…`, `s631_ac12` |
+| M4 | lecteur client sous `Today` | `s631_ac8_un_reglement_client…`, `ac3_sans_exercice_au_jour_suisse_l_annulation_passe` |
+| M5 | vue fournisseur, bloqueur du règlement | `s631_ac8_un_paiement_fournisseur…` |
+| M6 | `supplier_invoice_cancel_blocker` | `s631_ac8_une_facture_fournisseur…` |
+| M7 | `CancellationDating::Today` ajouté (bras mort) dans `cancel_settlement` | `cancellation_dating_today_n_est_construit_que_par_reverse` |
+| M8 | clé et texte de `PERIOD_LOCKED` échangés (`settlement-cancel-blocked.ts` ; `invoice-cancel.ts`) | 3 tests ; 2 tests |
+
+#### Gates
+
+- Station, gate ciblé puis complet local : `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`,
+  `cargo nextest run --workspace` **7085/7085** (`$GATE_LOGS/e63/t2-nextest-2.log`) ; frontend `test:unit` **5581/5581**,
+  `lint-i18n-ownership` vert, `check` 0 erreur (`$GATE_LOGS/e63/t4-front-2.log`), `build` vert (`t4-build.log`).
+- idefix, au dernier commit de code : voir § *Gates sur idefix* ci-dessous.
+- E2E : la spec neuve et ses voisines, seules, sur une base jetable (`$GATE_LOGS/e63/e2e-ac15-2.log`, 12/13 — le rouge,
+  `supplier-invoice-draft-cycle.spec.ts:666`, vient du répertoire `/tmp/kesh-e2e/inbox` codé en dur, absent de mon montage).
+  **L'E2E complet n'a pas tourné** (consigne : à la clôture).
+
+#### Recette visuelle (`$GATE_LOGS/e63/captures/`, thème clair, animations coupées, base jetable `kesh_e631_e2e`)
+
+`63-1-confirmation-reglement-client.png`, `63-1-confirmation-solde-client.png` (dialogues) ;
+`63-1-confirmation-reglement-fournisseur.txt`, `63-1-confirmation-facture-fournisseur.txt` (boîtes natives `confirm()` de la
+fiche fournisseur : une capture ne les montre pas, leur texte est écrit à côté) ; `63-1-fiche-fournisseur-payee.png` ;
+`63-1-motif-reglement-client-periode-verrouillee.png`, `63-1-motif-facture-fournisseur-periode-verrouillee.png` ;
+`63-1-inverse-datee-du-reglement.png` (l'inverse du 20.12.2025).
+
+#### Points à trancher par le Project Lead
+
+1. Le script du retrait mécanique des 232 arguments de tests (écart à « outil Edit pour le code », ci-dessus).
+2. `lib/shared/utils/settlement-cancel-blocked.ts` importe `formatSwissDate` de `features/reports/reports.api` : première
+   dépendance de `lib/shared` vers `features/` (le seul formateur de date suisse du frontend y vit) — accepter, ou le déplacer
+   dans `lib/shared` (issue `technical-debt`).
+3. La boîte de confirmation de la fiche fournisseur est un `confirm()` natif : la recette visuelle ne peut la capturer.
+4. Un artefact écrit par erreur hors du worktree : `/home/gcorbaz/devel/kesh/frontend/test-results/.last-run.json` (créé le
+   2026-11-28 à 04:00 par trois lancements de Playwright partis par mégarde du dépôt principal, « No tests found » ; fichier
+   ignoré par git, `git status` du dépôt principal propre). Sa suppression m'a été refusée par les permissions : à effacer par
+   l'orchestrateur (répertoire `test-results/` créé à cette heure-là, sans autre contenu).
+
 ### File List
+
+Périmètre `a9b551d5a..HEAD` (69 fichiers, dont 3 neufs).
+
+- **Production `kesh-db`** : `crates/kesh-db/src/repositories/invoice_settlements_write.rs`,
+  `crates/kesh-db/src/repositories/supplier_invoices.rs`, `crates/kesh-db/src/repositories/settlement_cancellation.rs` (doc),
+  `crates/kesh-db/src/errors.rs` (doc).
+- **Production `kesh-api`** : `crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/routes/invoices.rs`,
+  `crates/kesh-api/src/routes/supplier_invoices.rs`, `crates/kesh-api/src/routes/imported_supplier_invoices.rs`,
+  `crates/kesh-api/src/services/factures.rs`, `crates/kesh-api/src/services/factures_fournisseur.rs`,
+  `crates/kesh-api/src/services/mod.rs` (doc).
+- **i18n** : `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`.
+- **Frontend** : `frontend/src/lib/shared/utils/settlement-cancel-blocked.ts`,
+  `frontend/src/lib/features/supplier-invoices/invoice-cancel.ts`, `frontend/src/routes/(app)/invoices/[id]/+page.svelte`,
+  `frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte` ; tests : `settlement-cancel-blocked.test.ts`,
+  `invoice-cancel.test.ts`, `InvoiceSettlements.test.ts`, `invoice-write-off-page.test.ts`, `supplier-settlement-page.test.ts`,
+  `i18n-keys.test.ts`, `i18n-un-repli-par-cle.test.ts` ; E2E : `frontend/tests/e2e/annulations-datees-origine.spec.ts` (neuf).
+- **Tests Rust** — neufs ou changés d'attendu : `crates/kesh-db/tests/cancellation_dating_today_lexical.rs` (neuf),
+  `crates/kesh-api/tests/jour_suisse_nuit_e2e.rs`, `crates/kesh-db/tests/{invoice_settlement,supplier_invoices_repository,supplier_invoices_draft,lettering_documents,open_items,letterings,supplier_invoices_internal_number}.rs`,
+  `crates/kesh-report/tests/vat_report_write_off.rs` ; signatures seules (D3) :
+  `crates/kesh-api/tests/{accounts_designated_archive_e2e,admin_full_import_e2e,bank_accounts_closed_e2e,homepage_summary_e2e,letterings_e2e,mcp_outils_e2e,reconciliation_e2e,supplier_invoice_draft_e2e,supplier_settlement_cancel_e2e}.rs`,
+  `crates/kesh-db/tests/{credit_notes_repository,filet_bilan_clos,grouped_settlements,grouped_settlements_supplier,invoice_amount_due_parity,invoice_write_off,lettering_documents_backfill,migrations_upgrade_path,payment_batches_repository,reconciliation_cancel,supplier_document_attachment,supplier_invoice_duplicate,supplier_invoice_duplicate_lock}.rs`,
+  `crates/kesh-db/tests/support/{fournisseur_rapproche,lettering_documents}.rs`,
+  `crates/kesh-report/tests/{aged_receivables,open_items_invariant}.rs`.
+- **Documentation** : `docs/manual/fr/user-manual.tex`, `docs/manual/fr/admin-manual.tex`, `docs/api-external.md` (PDF non
+  commités).
+- **BMAD** : cette fiche, `_bmad-output/implementation-artifacts/sprint-status.yaml`,
+  `_bmad-output/implementation-artifacts/63-1-annulations-datees-origine-review-prompt-p1.md` (neuf).
 
 ## Change Log
 
